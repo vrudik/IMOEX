@@ -2,12 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from apps.api.main import app
-
-client = TestClient(app)
-
-
-def test_create_journal_entry_and_attach_it_to_signal_detail() -> None:
+def test_create_journal_entry_and_attach_it_to_signal_detail(client: TestClient) -> None:
     listing = client.get("/api/v1/signals", params={"root": "Si"})
     assert listing.status_code == 200
     signal_id = listing.json()[0]["signal_id"]

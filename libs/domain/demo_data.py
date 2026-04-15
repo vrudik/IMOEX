@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
+from libs.adapters.registry import get_adapter_registry
 from libs.domain.contracts import (
     AssetClass,
-    CapabilityRegistry,
     ContinuousSeriesSnapshot,
     FinalSignalCard,
     FinalSignalDetail,
-    HealthStatus,
     HorizonCode,
     RootDeepDive,
     RootSeriesSummary,
@@ -171,88 +170,6 @@ _SIGNALS: list[FinalSignalDetail] = [
     ),
 ]
 
-_SOURCES: list[SourceHealth] = [
-    SourceHealth(
-        provider="moex",
-        role="exchange_reference",
-        status=HealthStatus.OK,
-        detail="Reference, calendar and bars are healthy.",
-        freshness_seconds=5,
-        primary=True,
-    ),
-    SourceHealth(
-        provider="finam",
-        role="shadow_market_data",
-        status=HealthStatus.DEGRADED,
-        detail="Shadow comparison is available with intermittent lag.",
-        freshness_seconds=38,
-        primary=False,
-    ),
-    SourceHealth(
-        provider="bcs",
-        role="secondary_market_data",
-        status=HealthStatus.OK,
-        detail="Secondary quotes and limits are reachable.",
-        freshness_seconds=12,
-        primary=False,
-    ),
-    SourceHealth(
-        provider="cbr",
-        role="macro_events",
-        status=HealthStatus.OK,
-        detail="Key-rate calendar synced for the next known meeting.",
-        freshness_seconds=900,
-        primary=True,
-    ),
-]
-
-_CAPABILITIES: dict[str, CapabilityRegistry] = {
-    "moex": CapabilityRegistry(
-        historical_bars=True,
-        stream_bars=False,
-        trades=True,
-        order_book=True,
-        status=True,
-        futures_limits=False,
-        sandbox=False,
-        auth_type="public",
-        known_constraints=["Reference truth source for calendar and contract metadata."],
-    ),
-    "finam": CapabilityRegistry(
-        historical_bars=True,
-        stream_bars=True,
-        trades=True,
-        order_book=True,
-        status=True,
-        futures_limits=False,
-        sandbox=False,
-        auth_type="api_key",
-        known_constraints=["Requires reconnect manager for long-lived streams."],
-    ),
-    "bcs": CapabilityRegistry(
-        historical_bars=False,
-        stream_bars=True,
-        trades=True,
-        order_book=True,
-        status=True,
-        futures_limits=True,
-        sandbox=False,
-        auth_type="token",
-        known_constraints=["Shadow adapter only until full normalization is implemented."],
-    ),
-    "alor": CapabilityRegistry(
-        historical_bars=True,
-        stream_bars=True,
-        trades=True,
-        order_book=True,
-        status=True,
-        futures_limits=False,
-        sandbox=True,
-        auth_type="oauth",
-        known_constraints=["GraphQL layer may be needed for some metadata slices."],
-    ),
-}
-
 _DEEP_DIVES: dict[str, RootDeepDive] = {
     "SI": RootDeepDive(
         root=_ROOTS[0],
@@ -280,11 +197,8 @@ _DEEP_DIVES: dict[str, RootDeepDive] = {
         ),
         roll_event=None,
         active_signals=[_SIGNALS[0]],
-        sources=[_SOURCES[0], _SOURCES[1], _SOURCES[3]],
-        capability_registry={
-            "moex": _CAPABILITIES["moex"],
-            "finam": _CAPABILITIES["finam"],
-        },
+        sources=[],
+        capability_registry={},
     ),
     "BR": RootDeepDive(
         root=_ROOTS[1],
@@ -312,11 +226,8 @@ _DEEP_DIVES: dict[str, RootDeepDive] = {
         ),
         roll_event=None,
         active_signals=[_SIGNALS[1]],
-        sources=[_SOURCES[0], _SOURCES[2]],
-        capability_registry={
-            "moex": _CAPABILITIES["moex"],
-            "bcs": _CAPABILITIES["bcs"],
-        },
+        sources=[],
+        capability_registry={},
     ),
     "MXI": RootDeepDive(
         root=_ROOTS[2],
@@ -344,18 +255,8 @@ _DEEP_DIVES: dict[str, RootDeepDive] = {
         ),
         roll_event=None,
         active_signals=[],
-        sources=[_SOURCES[0], SourceHealth(
-            provider="alor",
-            role="secondary_market_data",
-            status=HealthStatus.OK,
-            detail="HTTP and WebSocket adapters are planned in the next implementation slice.",
-            freshness_seconds=20,
-            primary=False,
-        )],
-        capability_registry={
-            "moex": _CAPABILITIES["moex"],
-            "alor": _CAPABILITIES["alor"],
-        },
+        sources=[],
+        capability_registry={},
     ),
 }
 
@@ -365,7 +266,18 @@ def list_roots() -> list[RootSeriesSummary]:
 
 
 def get_root_deep_dive(root: str) -> RootDeepDive | None:
-    return _clone(_DEEP_DIVES.get(root.upper()))
+    deep_dive = _clone(_DEEP_DIVES.get(root.upper()))
+    if deep_dive is None:
+        return None
+    registry = get_adapter_registry()
+    providers = _providers_for_root(deep_dive.root)
+    return deep_dive.model_copy(
+        update={
+            "sources": registry.source_health_for(providers),
+            "capability_registry": registry.capability_registry_for(providers),
+        },
+        deep=True,
+    )
 
 
 def list_signals(
@@ -397,10 +309,18 @@ def get_signal(signal_id: str) -> FinalSignalDetail | None:
 
 
 def list_sources() -> list[SourceHealth]:
-    return [item.model_copy(deep=True) for item in _SOURCES]
+    return [item.model_copy(deep=True) for item in get_adapter_registry().list_source_health()]
 
 
 def _clone(value: RootDeepDive | None) -> RootDeepDive | None:
     if value is None:
         return None
     return value.model_copy(deep=True)
+
+
+def _providers_for_root(root: RootSeriesSummary) -> list[str]:
+    providers = [root.primary_provider]
+    if root.secondary_provider:
+        providers.append(root.secondary_provider)
+    providers.append("cbr")
+    return providers

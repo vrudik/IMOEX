@@ -250,3 +250,69 @@ class UserJournalEntryRecord(Base):
     author: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
+
+class UserNotificationPreferenceRecord(Base):
+    __tablename__ = "user_notification_preference"
+
+    profile_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    default_root: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
+    subscribed_roots_json: Mapped[str] = mapped_column(String(2048), default="[]")
+    subscribed_horizons_json: Mapped[str] = mapped_column(String(512), default="[]")
+    subscribed_event_kinds_json: Mapped[str] = mapped_column(String(512), default='["digest","signal_open","resolution","post_mortem"]')
+    skip_next_event_kinds_json: Mapped[str] = mapped_column(String(512), default="[]")
+    min_priority_score: Mapped[int] = mapped_column(Integer, default=0)
+    quiet_hours_start: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    quiet_hours_end: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    suppress_during_quiet_hours: Mapped[bool] = mapped_column(Boolean, default=True)
+    digest_limit: Mapped[int] = mapped_column(Integer, default=3)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class NotificationDeliveryEventRecord(Base):
+    __tablename__ = "notification_delivery_event"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    activity_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    profile_id: Mapped[str] = mapped_column(String(64), index=True)
+    action: Mapped[str] = mapped_column(String(32), index=True)
+    event_kind: Mapped[str] = mapped_column(String(32), index=True)
+    delivery_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    root_code: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    detail: Mapped[str] = mapped_column(String(2048))
+    signal_ids_json: Mapped[str] = mapped_column(String(2048), default="[]")
+    provider_message_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class SchedulerRunRecord(Base):
+    __tablename__ = "scheduler_run"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    job_id: Mapped[str] = mapped_column(String(128), index=True)
+    command: Mapped[str] = mapped_column(String(64))
+    trigger_mode: Mapped[str] = mapped_column(String(32), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(256), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    detail: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    payload_blob: Mapped[str] = mapped_column(String(8192), default="{}")
+    result_blob: Mapped[str | None] = mapped_column(String(16384), nullable=True)
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class SchedulerLockRecord(Base):
+    __tablename__ = "scheduler_lock"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    lock_key: Mapped[str] = mapped_column(String(256), unique=True, index=True)
+    job_id: Mapped[str] = mapped_column(String(128), index=True)
+    owner_id: Mapped[str] = mapped_column(String(128))
+    acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+

@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from libs.adapters.contracts import Bar
+from libs.bootstrap.container import get_app_container
+from libs.domain.contracts import EvaluationReport, EvaluationSummary
 from libs.quality.repository import SqlAlchemySourceQualityRepository
+from libs.quality.service import ShadowComparisonService
 from libs.utils.db import database_available, get_session_factory
 
 router = APIRouter(tags=["quality"])
@@ -29,9 +35,18 @@ class SourceQualityCheckResponse(BaseModel):
 class QualityPairSummary(BaseModel):
     provider_a: str
     provider_b: str
-    latest_at: str | None
+    latest_at: datetime | None
     latest_contract: str | None
     contracts_count: int
+
+
+class ShadowCompareRequest(BaseModel):
+    provider_a: str
+    provider_b: str
+    contract: str
+    bars_a: list[Bar]
+    bars_b: list[Bar]
+    persist: bool = True
 
 
 @router.get("/quality/source-checks", response_model=list[SourceQualityCheckResponse])
@@ -107,5 +122,54 @@ async def quality_summary(
         latest_at=latest.created_at if latest else None,
         latest_contract=latest.contract if latest else None,
         contracts_count=repo.count_distinct_contracts_pair(provider_a=provider_a, provider_b=provider_b),
+    )
+
+
+@router.post("/quality/shadow-compare", response_model=SourceQualityCheckResponse)
+async def shadow_compare(payload: ShadowCompareRequest) -> SourceQualityCheckResponse:
+    service = ShadowComparisonService(
+        SqlAlchemySourceQualityRepository(get_session_factory()),
+        get_session_factory(),
+    )
+    result = service.compare_bars(
+        provider_a=payload.provider_a,
+        provider_b=payload.provider_b,
+        contract=payload.contract,
+        bars_a=payload.bars_a,
+        bars_b=payload.bars_b,
+        persist=payload.persist,
+    )
+    return SourceQualityCheckResponse.model_validate(result.to_dict())
+
+
+@router.get("/quality/evaluation", response_model=EvaluationSummary)
+async def evaluation_summary(
+    root: str | None = None,
+    horizon: str | None = None,
+    top_k: int = 5,
+    limit: int = 500,
+) -> EvaluationSummary:
+    service = get_app_container().evaluation_service
+    return service.summarize(
+        root=root,
+        horizon=horizon,
+        top_k=min(max(int(top_k), 1), 50),
+        limit=min(max(int(limit), 1), 5000),
+    )
+
+
+@router.get("/quality/evaluation-report", response_model=EvaluationReport)
+async def evaluation_report(
+    root: str | None = None,
+    horizon: str | None = None,
+    top_k: int = 5,
+    limit: int = 500,
+) -> EvaluationReport:
+    service = get_app_container().evaluation_service
+    return service.report(
+        root=root,
+        horizon=horizon,
+        top_k=min(max(int(top_k), 1), 50),
+        limit=min(max(int(limit), 1), 5000),
     )
 

@@ -18,12 +18,13 @@ def test_contract_master_service_seeds_and_returns_roots(tmp_path: Path) -> None
     engine = create_engine(f"sqlite:///{database_path}", future=True)
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True, class_=Session)
+    repository = SqlAlchemyContractMasterRepository(session_factory)
 
     service = ContractMasterService(
-        SqlAlchemyContractMasterRepository(session_factory),
+        repository,
         SessionEngine(),
         ContinuousSeriesEngine(),
-        FeatureService(SqlAlchemyContractMasterRepository(session_factory)),
+        FeatureService(repository),
     )
 
     roots = service.list_roots()
@@ -48,3 +49,11 @@ def test_contract_master_service_seeds_and_returns_roots(tmp_path: Path) -> None
         "macro_event",
     }
     assert {item.verdict.value for item in deep_dive.skeptic_reviews}
+
+    active_contract = repository.get_contract_meta("SiM6")
+    next_contract = repository.get_contract_meta("SiU6")
+    assert active_contract is not None
+    assert next_contract is not None
+    assert active_contract.last_trade_date.isoformat() == "2026-06-17"
+    assert active_contract.expiry_date.isoformat() == "2026-06-19"
+    assert next_contract.last_trade_date.isoformat() == "2026-09-16"

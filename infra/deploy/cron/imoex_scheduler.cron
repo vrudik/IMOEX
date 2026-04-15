@@ -1,0 +1,6 @@
+# Run due scheduler jobs every minute on weekdays from the repository checkout.
+# Adjust paths for your host.
+* * * * 1-5 cd /opt/imoex-trading-system && PYTHONPATH=/opt/imoex-trading-system/.vendor:/opt/imoex-trading-system python -m apps.worker.runner run-schedule-loop --iterations 1 --sleep-seconds 0 >> /var/log/imoex-scheduler.log 2>&1
+
+# Optional nightly backup at 23:58 Moscow time.
+58 23 * * * cd /opt/imoex-trading-system && PYTHONPATH=/opt/imoex-trading-system/.vendor:/opt/imoex-trading-system python -m apps.worker.runner backup --label cron-nightly >> /var/log/imoex-backup.log 2>&1
