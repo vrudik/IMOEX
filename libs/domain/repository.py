@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, desc, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from libs.domain.contracts import (
@@ -21,13 +23,19 @@ from libs.domain.models import (
     ContractMetaRecord,
     FeatureSnapshotRecord,
     FinalSignalRecord,
+    NotificationDeliveryEventRecord,
     RootSeriesRecord,
+    SchedulerLockRecord,
+    SchedulerRunRecord,
     SkepticReviewRecord,
     SignalResolutionRecord,
     SignalVersionRecord,
     TradingSessionRecord,
     UserJournalEntryRecord,
+    UserNotificationPreferenceRecord,
 )
+from libs.reference.service import get_moex_reference_service
+from libs.session.engine import SessionEngine
 
 
 class SqlAlchemyContractMasterRepository:
@@ -51,8 +59,11 @@ class SqlAlchemyContractMasterRepository:
                 return
 
             created_at = datetime.now(UTC)
+            reference_service = get_moex_reference_service()
+            session_engine = SessionEngine(reference_service=reference_service)
             for root in list_roots():
                 deep_dive = get_root_deep_dive(root.root_code)
+                root_rule_set = reference_service.sync_root_rule_set(calendar_day=deep_dive.session.calendar_day) if deep_dive else root.session_rule_set
                 session.add(
                     RootSeriesRecord(
                         root_code=root.root_code,
@@ -68,57 +79,49 @@ class SqlAlchemyContractMasterRepository:
                         lock_selected=root.manual_override == "lock",
                         primary_provider=root.primary_provider,
                         secondary_provider=root.secondary_provider,
-                        session_rule_set=root.session_rule_set,
+                        session_rule_set=root_rule_set,
                         created_at=created_at,
                     )
                 )
                 if deep_dive is None:
                     continue
 
+                reference_session = session_engine.resolve(
+                    at=deep_dive.session.session_start_at,
+                    last_trade_date=reference_service.get_contract(root.active_contract).last_trade_date
+                    if reference_service.get_contract(root.active_contract) is not None
+                    else None,
+                )
                 session.add(
                     TradingSessionRecord(
                         root_code=root.root_code,
-                        trading_day=deep_dive.session.trading_day,
-                        session_type=deep_dive.session.session_type.value,
-                        session_start_at=deep_dive.session.session_start_at,
-                        session_end_at=deep_dive.session.session_end_at,
-                        is_weekend_linked=deep_dive.session.is_weekend_linked,
-                        is_clearing_window=deep_dive.session.is_clearing_window,
-                        effective_rule_set=deep_dive.session.effective_rule_set,
+                        trading_day=reference_session.trading_day,
+                        session_type=reference_session.session_type.value,
+                        session_start_at=reference_session.session_start_at,
+                        session_end_at=reference_session.session_end_at,
+                        is_weekend_linked=reference_session.is_weekend_linked,
+                        is_clearing_window=reference_session.is_clearing_window,
+                        effective_rule_set=reference_session.effective_rule_set,
                         created_at=created_at,
                     )
                 )
 
-                session.add_all(
-                    [
+                contract_rows = []
+                for contract in reference_service.list_contracts_for_root(root.root_code):
+                    contract_rows.append(
                         ContractMetaRecord(
-                            contract_code=root.active_contract,
-                            root_code=root.root_code,
-                            expiry_date=deep_dive.session.trading_day
-                            + timedelta(days=deep_dive.continuous_series.days_to_expiry),
-                            last_trade_date=deep_dive.session.trading_day
-                            + timedelta(days=deep_dive.continuous_series.days_to_last_trade),
-                            tick_size=1.0,
-                            lot_size=1,
-                            currency=_currency_for_root(root.root_code),
-                            active_flag=True,
+                            contract_code=contract.contract_code,
+                            root_code=contract.root_code,
+                            expiry_date=contract.expiry_date,
+                            last_trade_date=contract.last_trade_date,
+                            tick_size=contract.tick_size,
+                            lot_size=contract.lot_size,
+                            currency=contract.currency,
+                            active_flag=contract.active_flag,
                             created_at=created_at,
-                        ),
-                        ContractMetaRecord(
-                            contract_code=root.next_contract,
-                            root_code=root.root_code,
-                            expiry_date=deep_dive.session.trading_day
-                            + timedelta(days=deep_dive.continuous_series.days_to_expiry + 90),
-                            last_trade_date=deep_dive.session.trading_day
-                            + timedelta(days=deep_dive.continuous_series.days_to_last_trade + 90),
-                            tick_size=1.0,
-                            lot_size=1,
-                            currency=_currency_for_root(root.root_code),
-                            active_flag=True,
-                            created_at=created_at,
-                        ),
-                    ]
-                )
+                        )
+                    )
+                session.add_all(contract_rows)
 
             session.commit()
 
@@ -155,6 +158,99 @@ class SqlAlchemyContractMasterRepository:
                 .order_by(ContractMetaRecord.last_trade_date.asc(), ContractMetaRecord.contract_code.asc())
             )
             return list(session.execute(stmt).scalars().all())
+
+    def sync_reference_snapshot(
+        self,
+        *,
+        as_of: datetime,
+    ) -> tuple[int, int]:
+        self._ensure_schema()
+        reference_service = get_moex_reference_service()
+        roots = list_roots()
+        contracts = reference_service.list_contracts()
+        session_engine = SessionEngine(reference_service=reference_service)
+        session_snapshot_by_root = {}
+        for root in roots:
+            contract = reference_service.get_contract(root.active_contract)
+            session_snapshot_by_root[root.root_code] = session_engine.resolve(
+                at=as_of,
+                last_trade_date=contract.last_trade_date if contract is not None else None,
+            )
+
+        with self.session_factory() as session:
+            roots_synced = 0
+            contracts_synced = 0
+            for root in roots:
+                root_row = session.get(RootSeriesRecord, root.root_code)
+                rule_code = reference_service.sync_root_rule_set(calendar_day=as_of.date())
+                if root_row is None:
+                    session.add(
+                        RootSeriesRecord(
+                            root_code=root.root_code,
+                            asset_class=root.asset_class.value,
+                            base_asset=root.base_asset,
+                            active_contract=root.active_contract,
+                            next_contract=root.next_contract,
+                            active_flag=True,
+                            liquidity_rank=root.liquidity_rank,
+                            liquidity_score=root.liquidity_score,
+                            manual_allow=root.manual_override == "allow",
+                            manual_deny=root.manual_override == "deny",
+                            lock_selected=root.manual_override == "lock",
+                            primary_provider=root.primary_provider,
+                            secondary_provider=root.secondary_provider,
+                            session_rule_set=rule_code,
+                            created_at=as_of,
+                        )
+                    )
+                else:
+                    root_row.session_rule_set = rule_code
+                    root_row.active_contract = root.active_contract
+                    root_row.next_contract = root.next_contract
+                roots_synced += 1
+
+                snapshot = session_snapshot_by_root[root.root_code]
+                session.add(
+                    TradingSessionRecord(
+                        root_code=root.root_code,
+                        trading_day=snapshot.trading_day,
+                        session_type=snapshot.session_type.value,
+                        session_start_at=snapshot.session_start_at,
+                        session_end_at=snapshot.session_end_at,
+                        is_weekend_linked=snapshot.is_weekend_linked,
+                        is_clearing_window=snapshot.is_clearing_window,
+                        effective_rule_set=snapshot.effective_rule_set,
+                        created_at=as_of,
+                    )
+                )
+
+            for contract in contracts:
+                row = session.get(ContractMetaRecord, contract.contract_code)
+                if row is None:
+                    session.add(
+                        ContractMetaRecord(
+                            contract_code=contract.contract_code,
+                            root_code=contract.root_code,
+                            expiry_date=contract.expiry_date,
+                            last_trade_date=contract.last_trade_date,
+                            tick_size=contract.tick_size,
+                            lot_size=contract.lot_size,
+                            currency=contract.currency,
+                            active_flag=contract.active_flag,
+                            created_at=as_of,
+                        )
+                    )
+                else:
+                    row.root_code = contract.root_code
+                    row.expiry_date = contract.expiry_date
+                    row.last_trade_date = contract.last_trade_date
+                    row.tick_size = contract.tick_size
+                    row.lot_size = contract.lot_size
+                    row.currency = contract.currency
+                    row.active_flag = contract.active_flag
+                contracts_synced += 1
+            session.commit()
+        return roots_synced, contracts_synced
 
     def upsert_feature_snapshots(self, snapshots: list[FeatureSnapshot]) -> None:
         if not snapshots:
@@ -458,6 +554,447 @@ class SqlAlchemyContractMasterRepository:
                 .order_by(UserJournalEntryRecord.created_at.asc())
             )
             return list(session.execute(stmt).scalars().all())
+
+    def count_signals(self, *, status: str | None = None) -> int:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = select(FinalSignalRecord)
+            if status:
+                stmt = stmt.where(FinalSignalRecord.status == status)
+            return len(list(session.execute(stmt).scalars().all()))
+
+    def count_journal_entries(self) -> int:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = select(UserJournalEntryRecord)
+            return len(list(session.execute(stmt).scalars().all()))
+
+    def get_user_notification_preferences(self, profile_id: str = "default") -> UserNotificationPreferenceRecord | None:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = (
+                select(UserNotificationPreferenceRecord)
+                .where(UserNotificationPreferenceRecord.profile_id == profile_id)
+                .limit(1)
+            )
+            return session.execute(stmt).scalars().first()
+
+    def upsert_user_notification_preferences(
+        self,
+        *,
+        profile_id: str,
+        default_root: str | None,
+        subscribed_roots_json: str,
+        subscribed_horizons_json: str,
+        subscribed_event_kinds_json: str,
+        skip_next_event_kinds_json: str,
+        min_priority_score: int,
+        quiet_hours_start: str | None,
+        quiet_hours_end: str | None,
+        suppress_during_quiet_hours: bool,
+        digest_limit: int,
+        updated_at: datetime,
+    ) -> UserNotificationPreferenceRecord:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            row = session.get(UserNotificationPreferenceRecord, profile_id)
+            if row is None:
+                row = UserNotificationPreferenceRecord(
+                    profile_id=profile_id,
+                    default_root=default_root,
+                    subscribed_roots_json=subscribed_roots_json,
+                    subscribed_horizons_json=subscribed_horizons_json,
+                    subscribed_event_kinds_json=subscribed_event_kinds_json,
+                    skip_next_event_kinds_json=skip_next_event_kinds_json,
+                    min_priority_score=min_priority_score,
+                    quiet_hours_start=quiet_hours_start,
+                    quiet_hours_end=quiet_hours_end,
+                    suppress_during_quiet_hours=suppress_during_quiet_hours,
+                    digest_limit=digest_limit,
+                    created_at=updated_at,
+                    updated_at=updated_at,
+                )
+                session.add(row)
+            else:
+                row.default_root = default_root
+                row.subscribed_roots_json = subscribed_roots_json
+                row.subscribed_horizons_json = subscribed_horizons_json
+                row.subscribed_event_kinds_json = subscribed_event_kinds_json
+                row.skip_next_event_kinds_json = skip_next_event_kinds_json
+                row.min_priority_score = min_priority_score
+                row.quiet_hours_start = quiet_hours_start
+                row.quiet_hours_end = quiet_hours_end
+                row.suppress_during_quiet_hours = suppress_during_quiet_hours
+                row.digest_limit = digest_limit
+                row.updated_at = updated_at
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def add_notification_delivery_event(
+        self,
+        *,
+        activity_id: str,
+        profile_id: str,
+        action: str,
+        event_kind: str,
+        delivery_source: str | None,
+        root_code: str | None,
+        status: str,
+        detail: str,
+        signal_ids_json: str,
+        provider_message_id: str | None,
+        created_at: datetime,
+    ) -> NotificationDeliveryEventRecord:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            session.execute(
+                delete(NotificationDeliveryEventRecord).where(
+                    NotificationDeliveryEventRecord.activity_id == activity_id
+                )
+            )
+            row = NotificationDeliveryEventRecord(
+                activity_id=activity_id,
+                profile_id=profile_id,
+                action=action,
+                event_kind=event_kind,
+                delivery_source=delivery_source,
+                root_code=root_code,
+                status=status,
+                detail=detail,
+                signal_ids_json=signal_ids_json,
+                provider_message_id=provider_message_id,
+                created_at=created_at,
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def list_recent_notification_delivery_events(
+        self,
+        *,
+        profile_id: str = "default",
+        root_code: str | None = None,
+        event_kind: str | None = None,
+        status: str | None = None,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> list[NotificationDeliveryEventRecord]:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = select(NotificationDeliveryEventRecord).where(
+                NotificationDeliveryEventRecord.profile_id == profile_id
+            )
+            if root_code:
+                stmt = stmt.where(NotificationDeliveryEventRecord.root_code == root_code)
+            if event_kind:
+                stmt = stmt.where(NotificationDeliveryEventRecord.event_kind == event_kind)
+            if status:
+                stmt = stmt.where(NotificationDeliveryEventRecord.status == status)
+            stmt = stmt.order_by(desc(NotificationDeliveryEventRecord.created_at)).offset(max(0, offset)).limit(limit)
+            return list(session.execute(stmt).scalars().all())
+
+    def count_notification_delivery_events(
+        self,
+        *,
+        profile_id: str = "default",
+        root_code: str | None = None,
+        event_kind: str | None = None,
+        status: str | None = None,
+    ) -> int:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = select(NotificationDeliveryEventRecord).where(
+                NotificationDeliveryEventRecord.profile_id == profile_id
+            )
+            if root_code:
+                stmt = stmt.where(NotificationDeliveryEventRecord.root_code == root_code)
+            if event_kind:
+                stmt = stmt.where(NotificationDeliveryEventRecord.event_kind == event_kind)
+            if status:
+                stmt = stmt.where(NotificationDeliveryEventRecord.status == status)
+            return len(list(session.execute(stmt).scalars().all()))
+
+    def get_scheduler_run_by_idempotency(self, idempotency_key: str) -> SchedulerRunRecord | None:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = (
+                select(SchedulerRunRecord)
+                .where(SchedulerRunRecord.idempotency_key == idempotency_key)
+                .limit(1)
+            )
+            return session.execute(stmt).scalars().first()
+
+    def get_latest_scheduler_run(self, *, job_id: str | None = None) -> SchedulerRunRecord | None:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = select(SchedulerRunRecord)
+            if job_id:
+                stmt = stmt.where(SchedulerRunRecord.job_id == job_id)
+            stmt = stmt.order_by(desc(SchedulerRunRecord.started_at)).limit(1)
+            return session.execute(stmt).scalars().first()
+
+    def list_recent_scheduler_runs(
+        self,
+        *,
+        job_id: str | None = None,
+        limit: int = 50,
+    ) -> list[SchedulerRunRecord]:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = select(SchedulerRunRecord)
+            if job_id:
+                stmt = stmt.where(SchedulerRunRecord.job_id == job_id)
+            stmt = stmt.order_by(desc(SchedulerRunRecord.started_at)).limit(limit)
+            return list(session.execute(stmt).scalars().all())
+
+    def count_scheduler_runs(self, *, status: str | None = None) -> int:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = select(SchedulerRunRecord)
+            if status:
+                stmt = stmt.where(SchedulerRunRecord.status == status)
+            return len(list(session.execute(stmt).scalars().all()))
+
+    def count_scheduler_locks(self, *, active_only: bool = True, as_of: datetime | None = None) -> int:
+        self._ensure_schema()
+        effective_as_of = as_of or datetime.now(UTC)
+        with self.session_factory() as session:
+            stmt = select(SchedulerLockRecord)
+            if active_only:
+                stmt = stmt.where(SchedulerLockRecord.expires_at >= effective_as_of)
+            return len(list(session.execute(stmt).scalars().all()))
+
+    def has_scheduler_lock(self, lock_key: str, *, as_of: datetime | None = None) -> bool:
+        self._ensure_schema()
+        effective_as_of = as_of or datetime.now(UTC)
+        with self.session_factory() as session:
+            stmt = (
+                select(SchedulerLockRecord)
+                .where(SchedulerLockRecord.lock_key == lock_key)
+                .where(SchedulerLockRecord.expires_at >= effective_as_of)
+                .limit(1)
+            )
+            return session.execute(stmt).scalars().first() is not None
+
+    def get_scheduler_lock(self, lock_key: str) -> SchedulerLockRecord | None:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = (
+                select(SchedulerLockRecord)
+                .where(SchedulerLockRecord.lock_key == lock_key)
+                .limit(1)
+            )
+            return session.execute(stmt).scalars().first()
+
+    def acquire_scheduler_lock(
+        self,
+        *,
+        lock_key: str,
+        job_id: str,
+        owner_id: str,
+        acquired_at: datetime,
+        expires_at: datetime,
+    ) -> bool:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            session.execute(delete(SchedulerLockRecord).where(SchedulerLockRecord.expires_at < acquired_at))
+            try:
+                session.add(
+                    SchedulerLockRecord(
+                        lock_key=lock_key,
+                        job_id=job_id,
+                        owner_id=owner_id,
+                        acquired_at=acquired_at,
+                        expires_at=expires_at,
+                        created_at=acquired_at,
+                    )
+                )
+                session.commit()
+            except IntegrityError:
+                session.rollback()
+                return False
+        return True
+
+    def release_scheduler_lock(self, lock_key: str) -> None:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            session.execute(delete(SchedulerLockRecord).where(SchedulerLockRecord.lock_key == lock_key))
+            session.commit()
+
+    def renew_scheduler_lock(
+        self,
+        *,
+        lock_key: str,
+        owner_id: str,
+        acquired_at: datetime,
+        expires_at: datetime,
+    ) -> bool:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = (
+                select(SchedulerLockRecord)
+                .where(SchedulerLockRecord.lock_key == lock_key)
+                .where(SchedulerLockRecord.owner_id == owner_id)
+                .limit(1)
+            )
+            row = session.execute(stmt).scalars().first()
+            if row is None:
+                return False
+            row.acquired_at = acquired_at
+            row.expires_at = expires_at
+            session.commit()
+            return True
+
+    def release_scheduler_lock_owned(self, *, lock_key: str, owner_id: str) -> None:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            session.execute(
+                delete(SchedulerLockRecord)
+                .where(SchedulerLockRecord.lock_key == lock_key)
+                .where(SchedulerLockRecord.owner_id == owner_id)
+            )
+            session.commit()
+
+    def start_scheduler_run(
+        self,
+        *,
+        run_id: str,
+        job_id: str,
+        command: str,
+        trigger_mode: str,
+        idempotency_key: str,
+        status: str,
+        detail: str | None,
+        payload: dict[str, object] | None,
+        scheduled_for: datetime | None,
+        started_at: datetime,
+    ) -> SchedulerRunRecord | None:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            try:
+                row = SchedulerRunRecord(
+                    run_id=run_id,
+                    job_id=job_id,
+                    command=command,
+                    trigger_mode=trigger_mode,
+                    idempotency_key=idempotency_key,
+                    status=status,
+                    detail=detail,
+                    payload_blob=json.dumps(payload or {}, ensure_ascii=False, sort_keys=True),
+                    result_blob=None,
+                    scheduled_for=scheduled_for,
+                    started_at=started_at,
+                    finished_at=None,
+                    created_at=started_at,
+                )
+                session.add(row)
+                session.commit()
+                session.refresh(row)
+                return row
+            except IntegrityError:
+                session.rollback()
+                return None
+
+    def finish_scheduler_run(
+        self,
+        *,
+        idempotency_key: str,
+        status: str,
+        detail: str | None,
+        result: dict[str, object] | None,
+        finished_at: datetime,
+    ) -> SchedulerRunRecord | None:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = (
+                select(SchedulerRunRecord)
+                .where(SchedulerRunRecord.idempotency_key == idempotency_key)
+                .limit(1)
+            )
+            row = session.execute(stmt).scalars().first()
+            if row is None:
+                return None
+            row.status = status
+            row.detail = detail
+            row.result_blob = json.dumps(result or {}, ensure_ascii=False, sort_keys=True)
+            row.finished_at = finished_at
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def get_latest_signal(self) -> FinalSignalRecord | None:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = select(FinalSignalRecord).order_by(desc(FinalSignalRecord.generated_at)).limit(1)
+            return session.execute(stmt).scalars().first()
+
+    def get_latest_resolution(self) -> SignalResolutionRecord | None:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = select(SignalResolutionRecord).order_by(desc(SignalResolutionRecord.resolved_at)).limit(1)
+            return session.execute(stmt).scalars().first()
+
+    def get_latest_journal_entry(self) -> UserJournalEntryRecord | None:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = select(UserJournalEntryRecord).order_by(desc(UserJournalEntryRecord.created_at)).limit(1)
+            return session.execute(stmt).scalars().first()
+
+    def purge_operational_data_older_than(self, *, days: int) -> dict[str, int]:
+        self._ensure_schema()
+        cutoff = datetime.now(UTC) - timedelta(days=max(0, int(days)))
+        with self.session_factory() as session:
+            deleted = {
+                "feature_snapshots": int(
+                    session.execute(delete(FeatureSnapshotRecord).where(FeatureSnapshotRecord.created_at < cutoff)).rowcount
+                    or 0
+                ),
+                "analyst_outputs": int(
+                    session.execute(delete(AnalystOutputRecord).where(AnalystOutputRecord.created_at < cutoff)).rowcount
+                    or 0
+                ),
+                "skeptic_reviews": int(
+                    session.execute(delete(SkepticReviewRecord).where(SkepticReviewRecord.created_at < cutoff)).rowcount
+                    or 0
+                ),
+                "signal_versions": int(
+                    session.execute(delete(SignalVersionRecord).where(SignalVersionRecord.created_at < cutoff)).rowcount or 0
+                ),
+                "signal_resolutions": int(
+                    session.execute(delete(SignalResolutionRecord).where(SignalResolutionRecord.created_at < cutoff)).rowcount
+                    or 0
+                ),
+                "journal_entries": int(
+                    session.execute(delete(UserJournalEntryRecord).where(UserJournalEntryRecord.created_at < cutoff)).rowcount
+                    or 0
+                ),
+                "notification_delivery_events": int(
+                    session.execute(
+                        delete(NotificationDeliveryEventRecord).where(
+                            NotificationDeliveryEventRecord.created_at < cutoff
+                        )
+                    ).rowcount
+                    or 0
+                ),
+                "scheduler_runs": int(
+                    session.execute(delete(SchedulerRunRecord).where(SchedulerRunRecord.created_at < cutoff)).rowcount or 0
+                ),
+                "scheduler_locks": int(
+                    session.execute(delete(SchedulerLockRecord).where(SchedulerLockRecord.expires_at < cutoff)).rowcount or 0
+                ),
+                "final_signals": int(
+                    session.execute(
+                        delete(FinalSignalRecord)
+                        .where(FinalSignalRecord.created_at < cutoff)
+                        .where(FinalSignalRecord.status != "active")
+                    ).rowcount
+                    or 0
+                ),
+            }
+            session.commit()
+            return deleted
 
 
 def _currency_for_root(root_code: str) -> str:

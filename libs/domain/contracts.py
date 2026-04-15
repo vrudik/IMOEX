@@ -243,6 +243,126 @@ class JournalEntry(BaseModel):
     created_at: datetime
 
 
+class AdminRecalculateRequest(BaseModel):
+    root: str | None = None
+    as_of: datetime | None = None
+    resolve_due: bool = True
+
+
+class AdminRecalculateResult(BaseModel):
+    roots_processed: int
+    signals_built: int
+    signals_resolved: int
+    as_of: datetime | None = None
+    details: list[str] = Field(default_factory=list)
+
+
+class CalibrationBin(BaseModel):
+    lower_bound: float
+    upper_bound: float
+    count: int
+    avg_confidence: float
+    empirical_win_rate: float
+
+
+class EvaluationSummary(BaseModel):
+    resolved_signals: int
+    actionable_signals: int
+    brier_score: float | None = None
+    brier_skill_score: float | None = None
+    log_loss: float | None = None
+    precision: float | None = None
+    recall: float | None = None
+    calibration_error: float | None = None
+    top_k_precision: float | None = None
+    top_k: int
+    calibration_bins: list[CalibrationBin] = Field(default_factory=list)
+
+
+class EvaluationSlice(BaseModel):
+    slice_key: str
+    slice_value: str
+    summary: EvaluationSummary
+
+
+class EvaluationReport(BaseModel):
+    overall: EvaluationSummary
+    slices: list[EvaluationSlice] = Field(default_factory=list)
+
+
+class AdminReplayRequest(BaseModel):
+    root: str | None = None
+    as_of: datetime
+    top_k: int = 5
+    limit: int = 500
+
+
+class AdminReplayResult(BaseModel):
+    recalculation: AdminRecalculateResult
+    evaluation_report: EvaluationReport
+
+
+class AdminMoexReferenceSyncRequest(BaseModel):
+    as_of: datetime | None = None
+    from_date: date | None = None
+    to_date: date | None = None
+    sync_calendar: bool = True
+    sync_contracts: bool = True
+
+
+class AdminMoexReferenceSyncResult(BaseModel):
+    source: str
+    calendar_days_synced: int
+    contracts_synced: int
+    effective_rule_set: str | None = None
+    details: list[str] = Field(default_factory=list)
+
+
+class AdminBackupRequest(BaseModel):
+    label: str | None = None
+
+
+class AdminBackupResult(BaseModel):
+    backup_path: str
+    created_at: datetime
+    size_bytes: int
+
+
+class AdminCleanupRequest(BaseModel):
+    retention_days: int = Field(default=30, ge=0, le=3650)
+
+
+class AdminCleanupResult(BaseModel):
+    retention_days: int
+    total_deleted: int
+    details: list[str] = Field(default_factory=list)
+
+
+class RuntimeMetric(BaseModel):
+    name: str
+    value: float
+    unit: str
+    status: str
+    detail: str | None = None
+
+
+class AdminHealthSnapshot(BaseModel):
+    status: str
+    database_status: str
+    roots_count: int
+    active_signals: int
+    resolved_signals: int
+    invalidated_signals: int
+    journal_entries: int
+    latest_signal_at: datetime | None = None
+    latest_resolution_at: datetime | None = None
+    latest_journal_at: datetime | None = None
+    backup_artifacts: int = 0
+    latest_backup_at: datetime | None = None
+    source_health: list[SourceHealth] = Field(default_factory=list)
+    metrics: list[RuntimeMetric] = Field(default_factory=list)
+
+
 class FinalSignalCard(BaseModel):
     signal_id: str
     version: int

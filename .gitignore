@@ -23,3 +23,5 @@ apps/ui/.next/
 
 local.db
 local.db-journal
+.smoke-local/
+*.egg-info/

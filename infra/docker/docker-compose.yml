@@ -12,21 +12,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  ui:
-    image: imoex-signals-ui:local
-    build:
-      context: ../..
-      dockerfile: infra/docker/ui.Dockerfile
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: http://api:8000/api/v1
-    ports:
-      - "3000:3000"
-    depends_on:
-      api:
-        condition: service_started
 
   worker:
     image: imoex-signals-python:local
@@ -35,13 +20,38 @@ services:
       dockerfile: infra/docker/python.Dockerfile
     env_file:
       - ../../.env.docker.example
-    command: python -m apps.worker.main
+    command: python -m apps.worker.runner recalculate --root Si
+    restart: "no"
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
+
+  scheduler:
+    image: imoex-signals-python:local
+    build:
+      context: ../..
+      dockerfile: infra/docker/python.Dockerfile
+    env_file:
+      - ../../.env.docker.example
+    command: python -m apps.worker.runner run-schedule-loop --iterations 1 --sleep-seconds 0
+    profiles: ["scheduler"]
+    restart: "no"
+    depends_on:
+      postgres:
         condition: service_healthy
-      prefect:
+
+  scheduler_daemon:
+    image: imoex-signals-python:local
+    build:
+      context: ../..
+      dockerfile: infra/docker/python.Dockerfile
+    env_file:
+      - ../../.env.docker.example
+    command: python -m apps.worker.runner run-schedule-loop --iterations 0
+    profiles: ["scheduler-daemon"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
         condition: service_healthy
 
   postgres:
@@ -59,27 +69,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-
-  redis:
-    image: redis:7
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  prefect:
-    image: prefecthq/prefect:3-python3.12
-    command: prefect server start --host 0.0.0.0
-    ports:
-      - "4200:4200"
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health').read()\""]
-      interval: 5s
-      timeout: 5s
-      retries: 30
 
 volumes:
   postgres_data:

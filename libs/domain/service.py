@@ -21,6 +21,7 @@ from libs.domain.demo_data import get_root_deep_dive, list_roots
 from libs.domain.models import ContractMetaRecord, RootSeriesRecord, TradingSessionRecord
 from libs.domain.repository import SqlAlchemyContractMasterRepository
 from libs.features.service import FeatureService
+from libs.reference.service import MoexReferenceService, get_moex_reference_service
 from libs.skeptic.service import SkepticService
 from libs.session.engine import SessionEngine
 from libs.universe.service import UniverseCandidate, UniverseService
@@ -34,6 +35,7 @@ class ContractMasterService:
         session_engine: SessionEngine,
         continuous_engine: ContinuousSeriesEngine,
         feature_service: FeatureService,
+        reference_service: MoexReferenceService | None = None,
         universe_service: UniverseService | None = None,
         analyst_service: AnalystService | None = None,
         skeptic_service: SkepticService | None = None,
@@ -42,6 +44,7 @@ class ContractMasterService:
         self.session_engine = session_engine
         self.continuous_engine = continuous_engine
         self.feature_service = feature_service
+        self.reference_service = reference_service or get_moex_reference_service()
         self.universe_service = universe_service or UniverseService()
         self.analyst_service = analyst_service or AnalystService(repository)
         self.skeptic_service = skeptic_service or SkepticService(repository)
@@ -300,11 +303,13 @@ class ContractMasterService:
 @lru_cache(maxsize=1)
 def get_contract_master_service() -> ContractMasterService:
     repository = SqlAlchemyContractMasterRepository(get_session_factory())
+    reference_service = get_moex_reference_service()
     return ContractMasterService(
         repository,
-        SessionEngine(),
+        SessionEngine(reference_service=reference_service),
         ContinuousSeriesEngine(),
         FeatureService(repository),
+        reference_service,
         UniverseService(),
         AnalystService(repository),
         SkepticService(repository),

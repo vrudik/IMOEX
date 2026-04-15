@@ -2,12 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from apps.api.main import app
-
-client = TestClient(app)
-
-
-def test_list_signals_filters_by_root() -> None:
+def test_list_signals_filters_by_root(client: TestClient) -> None:
     response = client.get("/api/v1/signals", params={"root": "Si"})
 
     assert response.status_code == 200
@@ -18,7 +13,7 @@ def test_list_signals_filters_by_root() -> None:
     assert all("skeptic_score" in item for item in payload)
 
 
-def test_signal_details_returns_explanation_fields() -> None:
+def test_signal_details_returns_explanation_fields(client: TestClient) -> None:
     listing = client.get("/api/v1/signals", params={"root": "Si"})
     assert listing.status_code == 200
     signal_id = listing.json()[0]["signal_id"]
@@ -34,3 +29,4 @@ def test_signal_details_returns_explanation_fields() -> None:
     assert payload["skeptic_verdict"] in {"pass", "soft_fail", "reject", "human_review"}
     assert payload["skeptic_score"] >= 0
     assert "journal_entries" in payload
+    assert "resolution" in payload

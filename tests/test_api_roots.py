@@ -2,12 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from apps.api.main import app
-
-client = TestClient(app)
-
-
-def test_list_roots_returns_seeded_universe() -> None:
+def test_list_roots_returns_seeded_universe(client: TestClient) -> None:
     response = client.get("/api/v1/roots")
 
     assert response.status_code == 200
@@ -19,7 +14,7 @@ def test_list_roots_returns_seeded_universe() -> None:
     assert "universe_status" in payload[0]
 
 
-def test_root_deep_dive_returns_contract_context() -> None:
+def test_root_deep_dive_returns_contract_context(client: TestClient) -> None:
     response = client.get("/api/v1/roots/Si/deep-dive")
 
     assert response.status_code == 200
