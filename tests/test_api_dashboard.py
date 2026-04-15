@@ -21,6 +21,9 @@ def test_dashboard_snapshot_returns_delivery_payload(client: TestClient) -> None
     assert payload["admin_health"]["database_status"] in {"ok", "not_ok"}
     assert len(payload["quality_pairs"]) == 2
     assert len(payload["kpis"]) >= 4
+    assert payload["control_panel"]["llm_product"] == "ChatGPT"
+    assert payload["control_panel"]["model_roles"]
+    assert payload["control_panel"]["market_data_feeds"]
 
 
 def test_workspace_snapshot_returns_user_facing_payload(client: TestClient) -> None:
@@ -41,6 +44,9 @@ def test_workspace_snapshot_returns_user_facing_payload(client: TestClient) -> N
     assert payload["focus_visual"]["metric_bars"]
     assert payload["focus_visual"]["timeline"]
     assert "telegram_preview_message" in payload
+    assert payload["control_panel"]["llm_owner"] == "OpenAI"
+    assert payload["control_panel"]["model_roles"]
+    assert payload["control_panel"]["market_data_feeds"]
 
 
 def test_root_redirects_to_workspace(client: TestClient) -> None:
@@ -55,9 +61,10 @@ def test_dashboard_page_renders_html_control_room(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
-    assert "Signal room for Si" in response.text
-    assert "Active Signal Spotlight" in response.text
-    assert "Root Control Room" in response.text
+    assert 'lang="ru"' in response.text
+    assert "Сигнальная панель для Si" in response.text
+    assert "Модели и источники данных" in response.text
+    assert "Пульт серии" in response.text
     assert 'id="dashboard-data"' in response.text
 
 
@@ -66,15 +73,16 @@ def test_workspace_page_renders_user_journey_html(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
-    assert "What should I do with Si right now?" in response.text
-    assert "Decision pack" in response.text
-    assert "Delivery calendar" in response.text
-    assert "Delivery activity" in response.text
-    assert "Event kind" in response.text
-    assert "Status" in response.text
-    assert "Export CSV" in response.text
-    assert "Send now ignoring quiet hours" in response.text
-    assert "Visual pulse" in response.text
+    assert 'lang="ru"' in response.text
+    assert "Что делать с Si прямо сейчас?" in response.text
+    assert "Пакет решения" in response.text
+    assert "Календарь доставок" in response.text
+    assert "Активность доставок" in response.text
+    assert "Статус" in response.text
+    assert "Экспорт CSV" in response.text
+    assert "Отправить сейчас" in response.text
+    assert "Визуальный пульс" in response.text
+    assert "Модели и источники данных" in response.text
     assert 'id="workspace-journal-form"' in response.text
     assert 'id="workspace-data"' in response.text
 
@@ -103,10 +111,11 @@ def test_workspace_signal_page_renders_detail_html(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
-    assert "Signal Detail | User Workflow" in response.text
-    assert "Signal chart" in response.text
-    assert "Lifecycle timeline" in response.text
-    assert "Decision anatomy" in response.text
+    assert 'lang="ru"' in response.text
+    assert "Сигнал | Пользовательский сценарий" in response.text
+    assert "График сигнала" in response.text
+    assert "Хронология" in response.text
+    assert "Анатомия решения" in response.text
     assert 'id="signal-journal-form"' in response.text
     assert 'id="signal-page-data"' in response.text
 
@@ -152,8 +161,9 @@ def test_workspace_journal_page_renders_html(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
-    assert "Trading memory for the signal system" in response.text
-    assert "Journal tape" in response.text
+    assert 'lang="ru"' in response.text
+    assert "Память торговой системы" in response.text
+    assert "Лента журнала" in response.text
     assert 'id="journal-workspace-data"' in response.text
 
 
@@ -193,14 +203,14 @@ def test_workspace_preferences_page_renders_html(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
-    assert "Control what reaches you and when" in response.text
-    assert "Telegram events" in response.text
-    assert "Delivery calendar" in response.text
-    assert "Delivery activity" in response.text
-    assert "Event kind" in response.text
-    assert "Status" in response.text
-    assert "Export CSV" in response.text
-    assert "Send now ignoring quiet hours" in response.text
+    assert 'lang="ru"' in response.text
+    assert "Управляйте тем, что приходит и когда" in response.text
+    assert "Telegram" in response.text
+    assert "Календарь доставок" in response.text
+    assert "Активность доставок" in response.text
+    assert "Статус" in response.text
+    assert "Экспорт CSV" in response.text
+    assert "Отправить сейчас" in response.text
     assert 'id="preferences-form"' in response.text
     assert 'id="preferences-data"' in response.text
 
@@ -239,10 +249,11 @@ def test_workspace_delivery_history_page_renders_html(client: TestClient) -> Non
 
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
-    assert "Audit trail for Telegram delivery" in response.text
-    assert "Delivery activity" in response.text
-    assert "Grouped summary" in response.text
-    assert "Export CSV" in response.text
+    assert 'lang="ru"' in response.text
+    assert "Журнал доставки в Telegram" in response.text
+    assert "Активность доставок" in response.text
+    assert "Сводка по группам" in response.text
+    assert "Экспорт CSV" in response.text
     assert 'id="delivery-history-data"' in response.text
 
 

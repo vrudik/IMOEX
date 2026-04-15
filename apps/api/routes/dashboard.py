@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from html import escape
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from libs.bootstrap.container import get_app_container
@@ -37,10 +38,561 @@ from libs.runtime.feature_flags import is_feature_enabled
 
 router = APIRouter(tags=["dashboard"])
 
+LANGUAGE_COOKIE = "imoex_lang"
+SUPPORTED_LANGUAGES = {"ru", "en"}
+
 
 def _ensure_dashboard_enabled() -> None:
     if not is_feature_enabled("dashboard_ui"):
         raise HTTPException(status_code=404, detail="Dashboard feature is disabled.")
+
+
+def _resolve_language(request: Request) -> str:
+    candidate = (
+        request.query_params.get("lang")
+        or request.cookies.get(LANGUAGE_COOKIE)
+        or "ru"
+    )
+    candidate = candidate.lower().strip()
+    return candidate if candidate in SUPPORTED_LANGUAGES else "ru"
+
+
+def _page_hint(page_key: str, language: str) -> str:
+    hints = {
+        "dashboard": {
+            "ru": "Смотрите сверху вниз: сначала KPI и пульт серии, затем активные сигналы, оценку и здоровье платформы.",
+            "en": "Read top to bottom: start with the KPIs and root control room, then move to active signals, evaluation, and platform health.",
+        },
+        "workspace": {
+            "ru": "Начните с сигнала в фокусе и ленты серий, затем проверьте пакет решения, календарь доставок и журнал.",
+            "en": "Start with the focus signal and root lane, then review the decision pack, delivery calendar, and journal.",
+        },
+        "journal": {
+            "ru": "Сначала используйте фильтры, затем смотрите ленту журнала и переходите в нужный сигнал из карточки записи.",
+            "en": "Use the filters first, then scan the journal tape and jump into the relevant signal from an entry card.",
+        },
+        "delivery-history": {
+            "ru": "Смотрите фильтры и группировку сверху, а ниже проверяйте последние события доставки и их статусы.",
+            "en": "Start with the filters and grouped summary, then review the latest delivery events and their statuses below.",
+        },
+        "preferences": {
+            "ru": "Проверьте настройки подписки и Telegram, затем календарь доставок и историю действий ниже на странице.",
+            "en": "Review subscription and Telegram settings first, then check the delivery calendar and activity lower on the page.",
+        },
+        "signal": {
+            "ru": "Смотрите hero-блок сигнала, потом анатомию решения, хронологию и Telegram-сводку справа.",
+            "en": "Read the signal hero first, then the decision anatomy, timeline, and Telegram brief on the side.",
+        },
+    }
+    page_hints = hints.get(page_key, hints["workspace"])
+    return page_hints["ru"] if language == "ru" else page_hints["en"]
+
+
+def _localize_html(html: str, language: str) -> str:
+    html = html.replace("Â·", "·")
+    if language != "ru":
+        return html
+    replacements = (
+        ("<title>IMOEX Signal Dashboard</title>", "<title>Панель сигналов IMOEX</title>"),
+        ("<title>IMOEX Workspace</title>", "<title>Рабочее пространство IMOEX</title>"),
+        ("<title>Journal Workspace</title>", "<title>Журнал сигналов</title>"),
+        ("<title>Delivery History</title>", "<title>История доставок</title>"),
+        ("<title>Notification Preferences</title>", "<title>Настройки уведомлений</title>"),
+        ("<div class=\"panel-head\"><h2>Root Control Room</h2>", "<div class=\"panel-head\"><h2>Пульт серии</h2>"),
+        (">Open deep-dive JSON</a>", ">Открыть JSON deep-dive</a>"),
+        ("<h1>Signal room for ", "<h1>Сигнальная панель для "),
+        (">Open JSON snapshot</a>", ">Открыть JSON-снимок</a>"),
+        ("<h2>Active Signal Spotlight</h2>", "<h2>Ключевые активные сигналы</h2>"),
+        (">Open API list</a>", ">Открыть список API</a>"),
+        ("<h2>Recent Signal Tape</h2>", "<h2>Лента последних сигналов</h2>"),
+        ("<h2>Evaluation</h2>", "<h2>Оценка</h2>"),
+        (">Open report</a>", ">Открыть отчёт</a>"),
+        ("<h2>Platform Health</h2>", "<h2>Здоровье платформы</h2>"),
+        (">Open health JSON</a>", ">Открыть JSON health</a>"),
+        ("<h2>Source Quality</h2>", "<h2>Качество источников</h2>"),
+        (">Open quality API</a>", ">Открыть API качества</a>"),
+        ("<h2>Snapshot Payload</h2>", "<h2>Снимок данных</h2>"),
+        ("<h2>Context band</h2>", "<h2>Контекст</h2>"),
+        ("<h1>What should I do with ", "<h1>Что делать с "),
+        (" right now?</h1>", " прямо сейчас?</h1>"),
+        (">Open workspace JSON</a>", ">Открыть JSON рабочего пространства</a>"),
+        (">Preferences</a>", ">Настройки</a>"),
+        (">Delivery history</a>", ">История доставок</a>"),
+        (">Open ops console</a>", ">Открыть ops-консоль</a>"),
+        (">Inspect active signals API</a>", ">Открыть API активных сигналов</a>"),
+        ("<h2>Focus signal</h2>", "<h2>Сигнал в фокусе</h2>"),
+        ("<h2>Root lane</h2>", "<h2>Лента серий</h2>"),
+        ("<h2>Signal lane</h2>", "<h2>Лента сигналов</h2>"),
+        ("<h2>Decision pack</h2>", "<h2>Пакет решения</h2>"),
+        (">Open full signal page</a>", ">Открыть страницу сигнала</a>"),
+        (">Open signal JSON</a>", ">Открыть JSON сигнала</a>"),
+        ("<h2>Visual pulse</h2>", "<h2>Визуальный пульс</h2>"),
+        ("<h2>Quick capture</h2>", "<h2>Быстрая запись</h2>"),
+        (">Save journal note</button>", ">Сохранить заметку</button>"),
+        ("<h2>Action plan</h2>", "<h2>План действий</h2>"),
+        ("<h2>Telegram brief</h2>", "<h2>Сводка Telegram</h2>"),
+        ("<h2>Delivery calendar</h2>", "<h2>Календарь доставок</h2>"),
+        ("<h2>Delivery activity</h2>", "<h2>Активность доставок</h2>"),
+        ("<h2>Evaluation and health</h2>", "<h2>Оценка и здоровье</h2>"),
+        ("<h2>Source quality</h2>", "<h2>Качество источников</h2>"),
+        ("<h2>Raw snapshot</h2>", "<h2>Сырые данные</h2>"),
+        (">Telegram JSON</a>", ">JSON Telegram</a>"),
+        (">Admin health</a>", ">Health админки</a>"),
+        ("<h1>Trading memory for the signal system</h1>", "<h1>Память торговой системы</h1>"),
+        (">Open journal JSON</a>", ">Открыть JSON журнала</a>"),
+        (">Open workspace</a>", ">Открыть рабочее пространство</a>"),
+        ("<h2>Filters</h2>", "<h2>Фильтры</h2>"),
+        ("<h2>Journal tape</h2>", "<h2>Лента журнала</h2>"),
+        ("<h2>Current signal lane</h2>", "<h2>Текущая лента сигналов</h2>"),
+        ("<h1>Audit trail for Telegram delivery</h1>", "<h1>Журнал доставки в Telegram</h1>"),
+        (">Open history JSON</a>", ">Открыть JSON истории</a>"),
+        (">Journal</a>", ">Журнал</a>"),
+        ("<h2>Root scope</h2>", "<h2>Серия</h2>"),
+        ("<h2>Grouped summary</h2>", "<h2>Сводка по группам</h2>"),
+        ("<h1>Control what reaches you and when</h1>", "<h1>Управляйте тем, что приходит и когда</h1>"),
+        (">Open preferences JSON</a>", ">Открыть JSON настроек</a>"),
+        (">Back to workspace</a>", ">Назад в рабочее пространство</a>"),
+        (">Open journal</a>", ">Открыть журнал</a>"),
+        ("<h2>Subscription settings</h2>", "<h2>Настройки подписки</h2>"),
+        (">Save preferences</button>", ">Сохранить настройки</button>"),
+        ("<h2>Current summary</h2>", "<h2>Текущая сводка</h2>"),
+        (">Open page JSON</a>", ">Открыть JSON страницы</a>"),
+        (">Open signal API</a>", ">Открыть API сигнала</a>"),
+        (">Open deep-dive</a>", ">Открыть deep-dive</a>"),
+        ("<h2>Probability map</h2>", "<h2>Карта вероятностей</h2>"),
+        ("<h2>Signal chart</h2>", "<h2>График сигнала</h2>"),
+        ("<h2>Horizon pulse</h2>", "<h2>Пульс горизонтов</h2>"),
+        ("<h2>Decision anatomy</h2>", "<h2>Анатомия решения</h2>"),
+        ("<h2>Resolution</h2>", "<h2>Резюме</h2>"),
+        ("<h2>Lifecycle timeline</h2>", "<h2>Хронология</h2>"),
+        ("<h2>Related signals</h2>", "<h2>Связанные сигналы</h2>"),
+        (">Open signal page</a>", ">Открыть страницу сигнала</a>"),
+        (">Open in workspace</a>", ">Открыть в рабочем пространстве</a>"),
+        ("No active signals yet.", "Пока нет активных сигналов."),
+        ("No recent signals yet.", "Пока нет недавних сигналов."),
+        ("No signals available for the selected root yet.", "Для выбранной серии пока нет сигналов."),
+        ("No drivers recorded yet.", "Драйверы пока не зафиксированы."),
+        ("No objections recorded yet.", "Возражения пока не зафиксированы."),
+        ("No invalidation conditions recorded yet.", "Условия инвалидации пока не зафиксированы."),
+        ("No journal entries yet. Capture thesis and risk before acting.", "Записей в журнале пока нет. Зафиксируйте тезис и риск перед действием."),
+        ("No focus signal yet", "Сигнала в фокусе пока нет"),
+        ("Select a root or wait for the next recalculation cycle.", "Выберите серию или дождитесь следующего цикла пересчёта."),
+        ("watch mode", "режим наблюдения"),
+        ("Telegram preview is not available.", "Предпросмотр Telegram недоступен."),
+        ("This browser workspace", "Рабочее пространство в браузере"),
+        ("Browser workspace + Telegram brief", "Рабочее пространство в браузере + сводка Telegram"),
+        ("Ready to send.", "Готово к отправке."),
+        ("Preview available even if delivery is not configured yet.", "Предпросмотр доступен, даже если доставка ещё не настроена."),
+        ("Short title", "Короткий заголовок"),
+        ("Write what changed, why it matters, and what you will watch next.", "Опишите, что изменилось, почему это важно и что вы будете отслеживать дальше."),
+        ("What changed, what risk you see, and what should be watched next.", "Что изменилось, какой риск вы видите и что нужно отслеживать дальше."),
+        ("Select a signal first.", "Сначала выберите сигнал."),
+        ("Title and note are required.", "Нужны заголовок и заметка."),
+        ("Saving...", "Сохраняем..."),
+        ("Journal save failed.", "Не удалось сохранить заметку."),
+        ("Saved. Reloading...", "Сохранено. Перезагружаем..."),
+        ("Delivery action failed.", "Не удалось выполнить действие доставки."),
+        ("Updating next run...", "Обновляем следующий запуск..."),
+        ("Skip-next action failed.", "Не удалось пропустить следующий запуск."),
+        ("Next run updated. Reloading...", "Следующий запуск обновлён. Перезагружаем..."),
+        ("Undoing skip...", "Отменяем пропуск..."),
+        ("Undo-skip action failed.", "Не удалось отменить пропуск."),
+        ("Skip removed. Reloading...", "Пропуск снят. Перезагружаем..."),
+        ("Preferences save failed.", "Не удалось сохранить настройки."),
+        ("Sending...", "Отправляем..."),
+        ("Sending with quiet-hours override...", "Отправляем с игнорированием тихих часов..."),
+        ("Pick a signal first to enable quick capture.", "Сначала выберите сигнал, чтобы включить быструю запись."),
+        ("Manual send", "Ручная отправка"),
+        ("Manual send with quiet-hours override", "Ручная отправка с игнорированием тихих часов"),
+        ("Scheduled delivery", "Плановая доставка"),
+        ("Skip next", "Пропустить следующий"),
+        ("Undo skip", "Отменить пропуск"),
+        ("Mute next digest", "Заглушить следующий digest"),
+        ("Skip next brief", "Пропустить следующий brief"),
+        ("All events", "Все события"),
+        ("All roots", "Все серии"),
+        ("All statuses", "Все статусы"),
+        ("By event", "По событию"),
+        ("By root", "По серии"),
+        ("By status", "По статусу"),
+        ("Event kind", "Тип события"),
+        ("Root scope", "Серия"),
+        ("<strong>Status</strong>", "<strong>Статус</strong>"),
+        (">Previous</a>", ">Назад</a>"),
+        (">Next</a>", ">Вперёд</a>"),
+        ("Export CSV", "Экспорт CSV"),
+        ("Export JSONL", "Экспорт JSONL"),
+        ("No chart data available yet.", "Данных для графика пока нет."),
+        ("No lifecycle events recorded yet.", "Событий жизненного цикла пока нет."),
+        ("No horizon pulse data available yet.", "Данных по пульсу горизонтов пока нет."),
+        ("No delivery windows configured yet.", "Окна доставки пока не настроены."),
+        ("No delivery actions recorded yet.", "Действий доставки пока не зафиксировано."),
+        ("User Workspace | Signals-only", "Рабочее пространство | Только сигналы"),
+        ("The primary user experience is this browser workspace at <strong>/workspace</strong>.", "Основной пользовательский экран находится здесь: <strong>/workspace</strong>."),
+        ("Telegram gives the portable brief, and <strong>/dashboard</strong> remains the operations console.", "Telegram даёт компактную сводку, а <strong>/dashboard</strong> остаётся операционной консолью."),
+        ("<span>Primary surface</span>", "<span>Основной экран</span>"),
+        ("<span>Bias</span>", "<span>Направление</span>"),
+        ("<span>Confidence</span>", "<span>Уверенность</span>"),
+        ("<span>Skeptic</span>", "<span>Скепсис</span>"),
+        ("Each card answers whether this root deserves attention now.", "Каждая карточка показывает, заслуживает ли серия внимания прямо сейчас."),
+        ("<span>Session</span>", "<span>Сессия</span>"),
+        ("Trading day ", "Торговый день "),
+        ("<span>Active contract</span>", "<span>Активный контракт</span>"),
+        ("<span>Roll risk</span>", "<span>Риск ролла</span>"),
+        ("<span>Universe</span>", "<span>Вселенная</span>"),
+        ("Pick the signal you want to review in detail.", "Выберите сигнал, который хотите разобрать подробнее."),
+        ("The minimum context a human needs before acting.", "Минимальный контекст, нужный человеку перед действием."),
+        ("<span>Priority</span>", "<span>Приоритет</span>"),
+        ("<span>Freshness</span>", "<span>Актуальность</span>"),
+        ("<span>Expiry risk</span>", "<span>Риск экспирации</span>"),
+        ("<h3>Why now</h3>", "<h3>Почему сейчас</h3>"),
+        ("<h3>Pushback</h3>", "<h3>Сдерживающие факторы</h3>"),
+        ("<h3>Invalidation</h3>", "<h3>Что отменяет сценарий</h3>"),
+        ("Provider comparison stays visible to the user, not only to ops.", "Сравнение провайдеров видно пользователю, а не только ops-команде."),
+        ("Useful when you need to inspect the exact payload behind the page.", "Полезно, когда нужно посмотреть точный payload за страницей."),
+        ("Delivery History | User Workflow", "История доставок | Пользовательский сценарий"),
+        ("This page keeps the full user-facing history of Telegram sends, suppressions, skip controls and scheduled delivery outcomes.", "На этой странице хранится полная пользовательская история Telegram-отправок, подавлений, пропусков и результатов плановой доставки."),
+        ("Selected root: ", "Выбранная серия: "),
+        ("Telegram enabled: ", "Telegram включён: "),
+        ("Telegram configured: ", "Telegram настроен: "),
+        ("Total events: ", "Всего событий: "),
+        ("Current page: ", "Текущая страница: "),
+        ("The same audit trail as the workspace block, but with a longer page size and dedicated navigation.", "Это тот же журнал действий, что и в рабочем пространстве, но с большим размером страницы и отдельной навигацией."),
+        ("This is the user-facing journal hub: thesis notes, risk notes, execution notes and post-mortems across the current signal inventory.", "Это пользовательский центр журнала: тезисы, риски, заметки по исполнению и post-mortem по текущему набору сигналов."),
+        ("Total entries", "Всего записей"),
+        ("Thesis ", "Тезисы "),
+        ("Risk ", "Риски "),
+        ("Post-mortems ", "Пост-мортемы "),
+        ("This page controls the single local user profile: default root, subscribed roots and horizons, event subscriptions, minimum priority and quiet hours for Telegram delivery.", "Эта страница управляет локальным профилем пользователя: серией по умолчанию, подписками на серии и горизонты, событиями, минимальным приоритетом и тихими часами для Telegram-доставки."),
+        ("Default root: ", "Серия по умолчанию: "),
+        ("Quiet hours: ", "Тихие часы: "),
+        ("Quiet-hours delivery: ", "Доставка в тихие часы: "),
+        ("Default root", "Серия по умолчанию"),
+        ("Suppress delivery during quiet hours", "Подавлять доставку в тихие часы"),
+        ("Preview still works, sends are paused unless overridden.", "Предпросмотр работает, а отправка стоит на паузе, если её не переопределить."),
+        ("No related signals in the current filter window.", "В текущем окне фильтра связанных сигналов нет."),
+        ("No related signals available right now.", "Сейчас связанных сигналов нет."),
+        ("Signal is still active; no resolution record yet.", "Сигнал всё ещё активен; записи о разрешении пока нет."),
+        ("Resolved at ", "Разрешён в "),
+        (" | return ", " | доходность "),
+        ("Writes straight into the signal journal.", "Пишет прямо в журнал сигнала."),
+        ("Writes directly to the signal journal.", "Пишет напрямую в журнал сигнала."),
+        ("Delivery action completed.", "Действие доставки выполнено."),
+        ("IMOEX Signals · Dashboard", "Сигналы IMOEX · Дашборд"),
+        ("Delivery-layer dashboard over the live signal pipeline: roots, current signal inventory, evaluation status, source quality and operational health in one place.", "Операционный дашборд поверх живого сигнального контура: серии, текущий инвентарь сигналов, оценка, качество источников и здоровье платформы в одном месте."),
+        ("Inspect signals API", "Открыть API сигналов"),
+        ("Inspect admin health", "Открыть health админки"),
+        ("Resolved signals", "Разрешённые сигналы"),
+        ("Journal Workspace | User Workflow", "Журнал | Пользовательский сценарий"),
+        ("<span>Total</span>", "<span>Всего</span>"),
+        ("<span>Thesis</span>", "<span>Тезисы</span>"),
+        ("<span>Risk</span>", "<span>Риски</span>"),
+        ("<span>Post-mortems</span>", "<span>Пост-мортемы</span>"),
+        ("Signal Detail | User Workflow", "Сигнал | Пользовательский сценарий"),
+        ("Signal id: ", "Идентификатор сигнала: "),
+        ("Live Root", "Текущая серия"),
+        ("Active Signals", "Активные сигналы"),
+        ("Roll Share", "Доля ролла"),
+        ("Resolved", "Разрешено"),
+        ("Platform", "Платформа"),
+        ("Current dashboard focus root.", "Текущая серия в фокусе дашборда."),
+        ("Visible active signals for the selected root.", "Видимые активные сигналы для выбранной серии."),
+        ("Visible active сигналов for the selected root.", "Видимые активные сигналы для выбранной серии."),
+        ("Current MOEX session classification.", "Текущая классификация сессии MOEX."),
+        ("Share migrating into the next contract.", "Доля, переходящая в следующий контракт."),
+        ("Signals available for calibration and quality checks.", "Сигналы, доступные для калибровки и проверок качества."),
+        ("Operational health snapshot across DB, sources and backups.", "Снимок операционного состояния по БД, источникам и резервным копиям."),
+        ("DB status", "Состояние БД"),
+        ("Active / resolved", "Активные / разрешённые"),
+        ("Backups", "Резервные копии"),
+        ("contracts ", "контрактов "),
+        ("latest ", "последний "),
+        ("mismatch ", "расхождение "),
+        ("Universe", "Вселенная"),
+        ("Session", "Сессия"),
+        ("Trading Day", "Торговый день"),
+        ("Rule Set", "Набор правил"),
+        ("Next Contract", "Следующий контракт"),
+        ("Days To Last Trade", "Дней до последней торговли"),
+        ("Next Share", "Доля следующего"),
+        ("<span>Up</span>", "<span>Рост</span>"),
+        ("<span>Down</span>", "<span>Падение</span>"),
+        ("<span>No edge</span>", "<span>Без преимущества</span>"),
+        ("<h3>Drivers</h3>", "<h3>Драйверы</h3>"),
+        ("<h3>Objections</h3>", "<h3>Возражения</h3>"),
+        ("<h3>Data sources</h3>", "<h3>Источники данных</h3>"),
+        ("Same root across horizons, using point-in-time features and active signal probabilities.", "Одна и та же серия по всем горизонтам с использованием point-in-time признаков и вероятностей активных сигналов."),
+        ("Signal room for ", "Сигнальная панель для "),
+        ("suppressed during quiet hours", "подавляется в тихие часы"),
+        ("allowed during quiet hours", "разрешена в тихие часы"),
+        ("Send now", "Отправить сейчас"),
+        ("Send now ignoring quiet hours", "Отправить сейчас, игнорируя тихие часы"),
+        ("User Workflow", "Пользовательский сценарий"),
+        ("signals ", "сигналов "),
+        ("no signal ids", "без id сигналов"),
+        ("provider message ", "сообщение провайдера "),
+        ("not scheduled", "не запланировано"),
+        ("never", "никогда"),
+        ("profile default", "профиль по умолчанию"),
+    )
+    for source, target in replacements:
+        html = html.replace(source, target)
+    html = html.replace("<h2>Models and data feeds</h2>", "<h2>Модели и источники данных</h2>")
+    html = html.replace(
+        "Visible role routing and the live price-source ownership for this root.",
+        "Здесь видно, какие роли закреплены за моделями и чей price API сейчас даёт данные по этой серии.",
+    )
+    html = html.replace("<label>LLM runtime</label>", "<label>LLM-стек</label>")
+    html = html.replace("<label>LLM owner</label>", "<label>Владелец LLM</label>")
+    html = html.replace("<label>Latest market data</label>", "<label>Последние рыночные данные</label>")
+    html = html.replace("<h3>Role routing</h3>", "<h3>Ролевая маршрутизация</h3>")
+    html = html.replace("<h3>Market-data feeds</h3>", "<h3>Потоки рыночных данных</h3>")
+    html = html.replace("No model roles configured yet.", "Роли моделей пока не настроены.")
+    html = html.replace(
+        "No market-data feeds are attached to this root yet.",
+        "Для этой серии пока не привязаны рыночные источники.",
+    )
+    html = html.replace("No detail available.", "Детали пока не указаны.")
+    html = html.replace(
+        "Temporary fixed mapping until configurable role routing is added.",
+        "Временная жёсткая привязка до появления управляемой маршрутизации ролей.",
+    )
+    html = html.replace("Trend / volatility analyst", "Аналитик тренда и волатильности")
+    html = html.replace("Flow / liquidity analyst", "Аналитик потока и ликвидности")
+    html = html.replace("OI / roll analyst", "Аналитик OI и ролла")
+    html = html.replace("Macro-event analyst", "Аналитик макро-событий")
+    html = html.replace("Broker market-data API", "Брокерский market-data API")
+    html = html.replace("Exchange reference API", "Биржевой reference API")
+    html = html.replace("Secondary market-data API", "Вторичный market-data API")
+    html = html.replace("Shadow market-data API", "Теневой market-data API")
+    html = html.replace("Latest market data", "Последние рыночные данные")
+    html = html.replace("Skeptic", "Скептик")
+    html = html.replace("Arbiter", "Арбитр")
+    html = html.replace("Broker market-data API", "Брокерский API рыночных данных")
+    html = html.replace("Exchange reference API", "Биржевой справочный API")
+    html = html.replace("Secondary market-data API", "Вторичный API рыночных данных")
+    html = html.replace("Shadow market-data API", "Теневой API рыночных данных")
+    html = html.replace("Macro-event calendar", "Календарь макро-событий")
+    html = html.replace(" &middot; last ", " &middot; обновлено ")
+    regex_replacements = (
+        (r">confidence ", ">уверенность "),
+        (r">skeptic ", ">скепсис "),
+        (r">priority ", ">приоритет "),
+        (r">signal probability ", ">вероятность сигнала "),
+        (r">return score ", ">оценка доходности "),
+        (r">volatility ", ">волатильность "),
+        (r"\| trend ", "| тренд "),
+        (r">author ", ">автор "),
+        (r"\| created ", "| создано "),
+        (r">root ", ">серия "),
+        (r"\| next ", "| след. запуск "),
+        (r">subscription on", ">подписка включена"),
+        (r">subscription off", ">подписка выключена"),
+        (r">skip next pending", ">следующий пропуск: да"),
+        (r">skip next off", ">следующий пропуск: нет"),
+        (r">last run ", ">последний запуск "),
+        (r">Page ([0-9]+) of ([0-9]+) \| ([0-9]+) total events \| page size ([0-9]+)</p>", r">Страница \1 из \2 | всего событий \3 | размер страницы \4</p>"),
+        (r"Analyst consensus remains net bullish; horizon=", "Консенсус аналитиков остаётся бычьим; горизонт="),
+        (r"Analyst consensus remains net bearish; horizon=", "Консенсус аналитиков остаётся медвежьим; горизонт="),
+        (r"Analyst consensus remains net neutral; horizon=", "Консенсус аналитиков остаётся нейтральным; горизонт="),
+        (r"Delivery-layer dashboard over the live signal pipeline:\s*roots, current signal inventory,\s*evaluation status, source quality and operational health in one place\.", "Операционный дашборд поверх живого сигнального контура: серии, текущий инвентарь сигналов, оценка, качество источников и здоровье платформы в одном месте."),
+        (r"No active setup yet; keep root on watch\.", "Активного сетапа пока нет; держите серию под наблюдением."),
+        (r"Consensus is mixed and arbiter keeps the setup near no-edge; horizon=", "Консенсус смешанный, и арбитр удерживает сценарий рядом с no-edge; горизонт="),
+        (r"roll_state=", "состояние_ролла="),
+        (r"состояние_ролла=stable", "состояние_ролла=стабильно"),
+        (r"skeptic=pass", "скептик=пройдено"),
+        (r"skeptic_score=", "оценка_скептика="),
+        (r"breakout_state=", "состояние_пробоя="),
+        (r"trend_slope=", "наклон_тренда="),
+        (r"realized_volatility=", "реализованная_волатильность="),
+        (r"liquidity_score=", "оценка_ликвидности="),
+        (r"vwap_distance_bps=", "отклонение_vwap_бпс="),
+        (r"no material skeptic objections for the current horizon", "существенных возражений скептика для текущего горизонта нет"),
+        (r"OI logic currently uses roll proxies until exchange OI feed is connected", "логика OI пока использует прокси ролла, пока не подключён биржевой поток открытого интереса"),
+        (r"trend slope flips sign on the next feature refresh", "наклон тренда меняет знак на следующем обновлении признаков"),
+        (r"liquidity ranking drops on the next weekly universe refresh", "рейтинг ликвидности снижается на следующем недельном обновлении вселенной"),
+        (r"next contract share accelerates above the current roll threshold", "доля следующего контракта ускоряется выше текущего порога ролла"),
+        (r"Session is ([^,]+), skeptic verdict is ([^,]+), roll share is ([^.]+)\.", r"Сессия: \1, вердикт скептика: \2, доля ролла: \3."),
+        (r"Capture the reason for acting, the main risk, and whether market structure still matches the analyst drivers\.", "Зафиксируйте причину действия, главный риск и то, соответствует ли структура рынка драйверам аналитика."),
+        (r"Send the midday digest using the current user delivery preferences\.", "Отправить дневной дайджест с использованием текущих пользовательских настроек доставки."),
+        (r"Send the end-of-day resolution brief for resolved signals\.", "Отправить вечернюю сводку по разрешённым сигналам."),
+        (r"Send the post-mortem brief after the journal window closes\.", "Отправить пост-мортем сводку после закрытия окна журнала."),
+        (r"Send the opening signal alert to the configured Telegram chat\.", "Отправить стартовый alert по сигналу в настроенный чат Telegram."),
+        (r"Probability of upward continuation\.", "Вероятность продолжения вверх."),
+        (r"Probability of downward continuation\.", "Вероятность продолжения вниз."),
+        (r"Final calibrated confidence\.", "Итоговая откалиброванная уверенность."),
+        (r"Skeptic approval score\.", "Оценка одобрения скептика."),
+        (r"Higher means contract transition risk is more relevant\.", "Чем выше значение, тем важнее риск перехода между контрактами."),
+        (r"Higher means expiry proximity matters more\.", "Чем выше значение, тем значимее близость экспирации."),
+        (r"no-edge", "без преимущества"),
+        (r">bullish ·", ">бычий ·"),
+        (r">bearish ·", ">медвежий ·"),
+        (r">no_edge<", ">без_преимущества<"),
+        (r"· bullish<", "· бычий<"),
+        (r"· bearish<", "· медвежий<"),
+        (r"· no_edge<", "· без_преимущества<"),
+        (r">bullish \|", ">бычий |"),
+        (r">bearish \|", ">медвежий |"),
+        (r">neutral \|", ">нейтральный |"),
+        (r"\| active<", "| активен<"),
+        (r"\| resolved<", "| разрешён<"),
+        (r"\| invalidated<", "| инвалидирован<"),
+        (r"<strong>main</strong>", "<strong>основная</strong>"),
+        (r"<strong>selected</strong>", "<strong>выбрана</strong>"),
+        (r"<p>degraded</p>", "<p>ухудшено</p>"),
+        (r"<p>ok</p>", "<p>ок</p>"),
+        (r"<strong>pass</strong>", "<strong>пройдено</strong>"),
+        (r"<strong>digest</strong>", "<strong>дайджест</strong>"),
+        (r"<strong>resolution</strong>", "<strong>разрешение</strong>"),
+        (r"<strong>post_mortem</strong>", "<strong>пост-мортем</strong>"),
+        (r"<strong>signal_open</strong>", "<strong>открытие сигнала</strong>"),
+        (r">digest \|", ">дайджест |"),
+        (r">resolution \|", ">разрешение |"),
+        (r">post_mortem \|", ">пост-мортем |"),
+        (r">signal_open \|", ">открытие сигнала |"),
+    )
+    for pattern, target in regex_replacements:
+        html = re.sub(pattern, target, html)
+    return html
+
+
+def _decorate_html_page(html: str, *, language: str, page_key: str) -> str:
+    html = _localize_html(html, language)
+    html = html.replace('<html lang="en">', f'<html lang="{language}">', 1)
+    utility_style = """
+  <style>
+    .utility-shell {
+      width: min(1320px, calc(100% - 28px));
+      margin: 18px auto 0;
+    }
+    .utility-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(23, 34, 44, 0.12);
+      background: rgba(255, 250, 241, 0.82);
+      box-shadow: 0 10px 26px rgba(23, 34, 44, 0.08);
+      backdrop-filter: blur(12px);
+    }
+    .utility-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+    .utility-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #425057;
+    }
+    .utility-select,
+    .utility-button {
+      min-height: 40px;
+      border-radius: 12px;
+      border: 1px solid rgba(23, 34, 44, 0.12);
+      background: rgba(255, 255, 255, 0.8);
+      color: #17222c;
+      font: inherit;
+    }
+    .utility-select {
+      padding: 0 12px;
+    }
+    .utility-button {
+      padding: 0 14px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .utility-hint {
+      margin-top: 10px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(25, 58, 82, 0.08);
+      color: #23323d;
+      line-height: 1.5;
+      border: 1px solid rgba(25, 58, 82, 0.12);
+    }
+  </style>
+"""
+    language_label = "Язык" if language == "ru" else "Language"
+    hint_button_label = "Куда смотреть?" if language == "ru" else "Where to look?"
+    hint = escape(_page_hint(page_key, language))
+    utility_markup = f"""
+  <div class="utility-shell">
+    <div class="utility-bar">
+      <div class="utility-controls">
+        <label class="utility-label" for="ui-language-select">{language_label}</label>
+        <select class="utility-select" id="ui-language-select" data-language-select>
+          <option value="ru">Русский</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+      <button class="utility-button" type="button" data-hint-toggle aria-expanded="false">{hint_button_label}</button>
+    </div>
+    <div class="utility-hint" data-hint-box data-message="{hint}" hidden></div>
+  </div>
+"""
+    utility_script = f"""
+  <script>
+    (() => {{
+      const select = document.querySelector("[data-language-select]");
+      const hintButton = document.querySelector("[data-hint-toggle]");
+      const hintBox = document.querySelector("[data-hint-box]");
+      const swapPage = async (nextUrl) => {{
+        try {{
+          const response = await fetch(nextUrl, {{
+            credentials: "same-origin",
+            headers: {{ "X-Requested-With": "imoex-ui" }},
+          }});
+          if (!response.ok) {{
+            window.location.assign(nextUrl);
+            return;
+          }}
+          const htmlText = await response.text();
+          history.replaceState({{}}, "", nextUrl);
+          document.open();
+          document.write(htmlText);
+          document.close();
+        }} catch {{
+          window.location.assign(nextUrl);
+        }}
+      }};
+      window.__imoexSwapPage = swapPage;
+      window.__imoexRefreshPage = async (nextUrl) => {{
+        await swapPage(nextUrl || window.location.href);
+      }};
+      if (select) {{
+        select.value = "{language}";
+        select.addEventListener("change", async () => {{
+          document.cookie = "{LANGUAGE_COOKIE}=" + encodeURIComponent(select.value) + "; path=/; max-age=31536000; SameSite=Lax";
+          const nextUrl = new URL(window.location.href);
+          nextUrl.searchParams.set("lang", select.value);
+          await swapPage(nextUrl.toString());
+        }});
+      }}
+      if (hintButton && hintBox) {{
+        hintButton.addEventListener("click", () => {{
+          const hidden = hintBox.hasAttribute("hidden");
+          if (hidden) {{
+            hintBox.textContent = hintBox.dataset.message || "";
+            hintBox.removeAttribute("hidden");
+            hintButton.setAttribute("aria-expanded", "true");
+            return;
+          }}
+          hintBox.setAttribute("hidden", "hidden");
+          hintButton.setAttribute("aria-expanded", "false");
+        }});
+      }}
+    }})();
+  </script>
+"""
+    html = html.replace("</head>", utility_style + "\n</head>", 1)
+    html = html.replace("<body>", "<body>\n" + utility_markup, 1)
+    html = html.replace("</body>", utility_script + "\n</body>", 1)
+    return html
 
 
 def _build_delivery_windows(*, selected_root: str | None = None) -> list[NotificationDeliveryWindow]:
@@ -411,6 +963,7 @@ async def undo_skip_workspace_delivery(payload: NotificationDeliverySkipRequest)
 
 @router.get("/workspace", response_class=HTMLResponse)
 async def get_workspace_page(
+    request: Request,
     root: str | None = None,
     signal_id: str | None = None,
     activity_event_kind: NotificationEventKind | None = None,
@@ -419,6 +972,7 @@ async def get_workspace_page(
     activity_page_size: int = 8,
 ) -> HTMLResponse:
     _ensure_dashboard_enabled()
+    language = _resolve_language(request)
     snapshot = _build_workspace_snapshot(
         root=root,
         signal_id=signal_id,
@@ -427,11 +981,12 @@ async def get_workspace_page(
         activity_page=activity_page,
         activity_page_size=activity_page_size,
     )
-    return HTMLResponse(_render_workspace(snapshot))
+    return HTMLResponse(_decorate_html_page(_render_workspace(snapshot), language=language, page_key="workspace"))
 
 
 @router.get("/workspace/preferences", response_class=HTMLResponse)
 async def get_workspace_preferences_page(
+    request: Request,
     activity_root_scope: str | None = None,
     activity_event_kind: NotificationEventKind | None = None,
     activity_status: str | None = None,
@@ -439,6 +994,7 @@ async def get_workspace_preferences_page(
     activity_page_size: int = 12,
 ) -> HTMLResponse:
     _ensure_dashboard_enabled()
+    language = _resolve_language(request)
     snapshot = _build_preference_workspace_snapshot(
         activity_root_scope=activity_root_scope,
         activity_event_kind=activity_event_kind,
@@ -446,7 +1002,7 @@ async def get_workspace_preferences_page(
         activity_page=activity_page,
         activity_page_size=activity_page_size,
     )
-    return HTMLResponse(_render_workspace_preferences(snapshot))
+    return HTMLResponse(_decorate_html_page(_render_workspace_preferences(snapshot), language=language, page_key="preferences"))
 
 
 @router.get("/api/v1/workspace/delivery-history", response_model=DeliveryHistoryWorkspaceSnapshot)
@@ -471,6 +1027,7 @@ async def get_workspace_delivery_history_snapshot(
 
 @router.get("/workspace/delivery-history", response_class=HTMLResponse)
 async def get_workspace_delivery_history_page(
+    request: Request,
     root: str | None = None,
     activity_root_scope: str | None = None,
     activity_event_kind: NotificationEventKind | None = None,
@@ -479,6 +1036,7 @@ async def get_workspace_delivery_history_page(
     activity_page_size: int = 24,
 ) -> HTMLResponse:
     _ensure_dashboard_enabled()
+    language = _resolve_language(request)
     snapshot = _build_delivery_history_snapshot(
         selected_root=root,
         activity_root_scope=activity_root_scope,
@@ -487,7 +1045,7 @@ async def get_workspace_delivery_history_page(
         activity_page=activity_page,
         activity_page_size=activity_page_size,
     )
-    return HTMLResponse(_render_delivery_history_workspace(snapshot))
+    return HTMLResponse(_decorate_html_page(_render_delivery_history_workspace(snapshot), language=language, page_key="delivery-history"))
 
 
 @router.get("/api/v1/workspace/delivery/activity/export")
@@ -552,19 +1110,21 @@ async def get_workspace_journal_snapshot(
 
 @router.get("/workspace/journal", response_class=HTMLResponse)
 async def get_workspace_journal_page(
+    request: Request,
     root: str | None = None,
     status: SignalStatus | None = None,
     kind: JournalEntryKind | None = None,
     signal_id: str | None = None,
 ) -> HTMLResponse:
     _ensure_dashboard_enabled()
+    language = _resolve_language(request)
     snapshot = get_app_container().dashboard_service.build_journal_snapshot(
         root=root,
         status=status,
         kind=kind,
         signal_id=signal_id,
     )
-    return HTMLResponse(_render_journal_workspace(snapshot))
+    return HTMLResponse(_decorate_html_page(_render_journal_workspace(snapshot), language=language, page_key="journal"))
 
 
 @router.get("/api/v1/workspace/signals/{signal_id}", response_model=WorkspaceSignalSnapshot)
@@ -574,10 +1134,11 @@ async def get_workspace_signal_snapshot(signal_id: str) -> WorkspaceSignalSnapsh
 
 
 @router.get("/workspace/signals/{signal_id}", response_class=HTMLResponse)
-async def get_workspace_signal_page(signal_id: str) -> HTMLResponse:
+async def get_workspace_signal_page(request: Request, signal_id: str) -> HTMLResponse:
     _ensure_dashboard_enabled()
+    language = _resolve_language(request)
     snapshot = _build_signal_workspace_snapshot(signal_id)
-    return HTMLResponse(_render_signal_workspace(snapshot))
+    return HTMLResponse(_decorate_html_page(_render_signal_workspace(snapshot), language=language, page_key="signal"))
 
 
 @router.get("/api/v1/dashboard", response_model=DashboardSnapshot)
@@ -587,10 +1148,11 @@ async def get_dashboard_snapshot(root: str | None = None) -> DashboardSnapshot:
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
-async def get_dashboard_page(root: str | None = None) -> HTMLResponse:
+async def get_dashboard_page(request: Request, root: str | None = None) -> HTMLResponse:
     _ensure_dashboard_enabled()
+    language = _resolve_language(request)
     snapshot = get_app_container().dashboard_service.build_snapshot(root=root)
-    return HTMLResponse(_render_dashboard(snapshot))
+    return HTMLResponse(_decorate_html_page(_render_dashboard(snapshot), language=language, page_key="dashboard"))
 
 
 def _render_dashboard(snapshot: DashboardSnapshot) -> str:
@@ -617,6 +1179,7 @@ def _render_dashboard(snapshot: DashboardSnapshot) -> str:
     spotlight = "".join(_render_signal_card(item) for item in snapshot.spotlight_signals) or '<p class="empty">No active signals yet.</p>'
     recent = "".join(_render_signal_row(item) for item in snapshot.recent_signals) or '<p class="empty">No recent signals yet.</p>'
     quality = "".join(_render_quality_pair(item) for item in snapshot.quality_pairs)
+    control_panel = _render_control_panel(snapshot.control_panel)
 
     session_block = ""
     if snapshot.root_details is not None:
@@ -967,6 +1530,12 @@ def _render_dashboard(snapshot: DashboardSnapshot) -> str:
         </section>
         <section class="panel">
           <div class="panel-head">
+            <h2>Models and data feeds</h2>
+          </div>
+          {control_panel}
+        </section>
+        <section class="panel">
+          <div class="panel-head">
             <h2>Source Quality</h2>
             <a class="ghost-link" href="/api/v1/quality/summary?provider_a=moex&provider_b=finam">Open quality API</a>
           </div>
@@ -1059,6 +1628,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
         pagination=snapshot.delivery_activity_pagination,
     )
     quality = "".join(_render_quality_pair(item) for item in snapshot.quality_pairs)
+    control_panel = _render_control_panel(snapshot.control_panel)
     payload = escape(json.dumps(snapshot.model_dump(mode="json"), ensure_ascii=False))
     selected_signal_id = escape(snapshot.selected_signal_id or "")
     form_disabled = "disabled" if focus is None else ""
@@ -1588,6 +2158,13 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
         </section>
         <section class="panel">
           <div class="panel-head">
+            <h2>Models and data feeds</h2>
+            <p>Visible role routing and the live price-source ownership for this root.</p>
+          </div>
+          {control_panel}
+        </section>
+        <section class="panel">
+          <div class="panel-head">
             <h2>Source quality</h2>
             <p>Provider comparison stays visible to the user, not only to ops.</p>
           </div>
@@ -1649,7 +2226,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
         }}
         const url = new URL(window.location.href);
         url.searchParams.set("signal_id", signalId);
-        window.location.href = url.toString();
+        await window.__imoexRefreshPage(url.toString());
       }});
     }}
     const deliverySendButtons = document.querySelectorAll(".delivery-send-now");
@@ -1680,7 +2257,9 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
       if (deliveryStatus) {{
         deliveryStatus.textContent = payload.detail || payload.delivery_status || "Delivery action completed.";
       }}
-      window.setTimeout(() => window.location.reload(), 800);
+      window.setTimeout(() => {{
+        void window.__imoexRefreshPage();
+      }}, 800);
     }};
     for (const button of deliverySendButtons) {{
       button.addEventListener("click", async () => {{
@@ -1712,7 +2291,9 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
         if (deliveryStatus) {{
           deliveryStatus.textContent = "Next run updated. Reloading...";
         }}
-        window.setTimeout(() => window.location.reload(), 600);
+        window.setTimeout(() => {{
+          void window.__imoexRefreshPage();
+        }}, 600);
       }});
     }}
     for (const button of deliveryUndoButtons) {{
@@ -1735,7 +2316,9 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
         if (deliveryStatus) {{
           deliveryStatus.textContent = "Skip removed. Reloading...";
         }}
-        window.setTimeout(() => window.location.reload(), 600);
+        window.setTimeout(() => {{
+          void window.__imoexRefreshPage();
+        }}, 600);
       }});
     }}
   </script>
@@ -2563,7 +3146,7 @@ def _render_workspace_preferences(snapshot: NotificationPreferenceWorkspaceSnaps
         if (status) {{
           status.textContent = "Saved. Reloading...";
         }}
-        window.location.reload();
+        await window.__imoexRefreshPage();
       }});
     }}
     const deliverySendButtons = document.querySelectorAll(".delivery-send-now");
@@ -2594,7 +3177,9 @@ def _render_workspace_preferences(snapshot: NotificationPreferenceWorkspaceSnaps
       if (deliveryStatus) {{
         deliveryStatus.textContent = payload.detail || payload.delivery_status || "Delivery action completed.";
       }}
-      window.setTimeout(() => window.location.reload(), 800);
+      window.setTimeout(() => {{
+        void window.__imoexRefreshPage();
+      }}, 800);
     }};
     for (const button of deliverySendButtons) {{
       button.addEventListener("click", async () => {{
@@ -2626,7 +3211,9 @@ def _render_workspace_preferences(snapshot: NotificationPreferenceWorkspaceSnaps
         if (deliveryStatus) {{
           deliveryStatus.textContent = "Next run updated. Reloading...";
         }}
-        window.setTimeout(() => window.location.reload(), 600);
+        window.setTimeout(() => {{
+          void window.__imoexRefreshPage();
+        }}, 600);
       }});
     }}
     for (const button of deliveryUndoButtons) {{
@@ -2649,7 +3236,9 @@ def _render_workspace_preferences(snapshot: NotificationPreferenceWorkspaceSnaps
         if (deliveryStatus) {{
           deliveryStatus.textContent = "Skip removed. Reloading...";
         }}
-        window.setTimeout(() => window.location.reload(), 600);
+        window.setTimeout(() => {{
+          void window.__imoexRefreshPage();
+        }}, 600);
       }});
     }}
   </script>
@@ -3105,7 +3694,7 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot) -> str:
         if (journalStatus) {{
           journalStatus.textContent = "Saved. Reloading...";
         }}
-        window.location.reload();
+        await window.__imoexRefreshPage();
       }});
     }}
   </script>
@@ -3523,6 +4112,41 @@ def _render_signal_row(signal) -> str:
     )
 
 
+def _render_control_panel(panel) -> str:
+    latest_market_data = _format_timestamp(panel.latest_market_data_at)
+    role_cards = "".join(
+        (
+            "<article>"
+            f"<strong>{escape(item.role_label)}</strong>"
+            f"<p>{escape(item.product)} &middot; {escape(item.model)} &middot; {escape(item.owner)}</p>"
+            f'<p class="muted">{escape(item.detail or item.control_mode)}</p>'
+            "</article>"
+        )
+        for item in panel.model_roles
+    ) or '<p class="empty">No model roles configured yet.</p>'
+    feed_cards = "".join(
+        (
+            "<article>"
+            f"<strong>{escape(item.provider)} &middot; {escape(item.owner)}</strong>"
+            f"<p>{escape(item.role)} &middot; {escape(item.status)} &middot; last {escape(_format_timestamp(item.last_update_at))}</p>"
+            f'<p class="muted">{escape(item.detail or "No detail available.")}</p>'
+            "</article>"
+        )
+        for item in panel.market_data_feeds
+    ) or '<p class="empty">No market-data feeds are attached to this root yet.</p>'
+    return (
+        '<div class="spotlight-grid">'
+        f'<div><label>LLM runtime</label><strong>{escape(panel.llm_product)} &middot; {escape(panel.llm_model)}</strong></div>'
+        f'<div><label>LLM owner</label><strong>{escape(panel.llm_owner)}</strong></div>'
+        f'<div><label>Latest market data</label><strong>{escape(latest_market_data)}</strong></div>'
+        "</div>"
+        '<div class="panel-head" style="margin-top:18px;"><h3>Role routing</h3></div>'
+        f'<div class="metric-list">{role_cards}</div>'
+        '<div class="panel-head" style="margin-top:18px;"><h3>Market-data feeds</h3></div>'
+        f'<div class="metric-list">{feed_cards}</div>'
+    )
+
+
 def _render_quality_pair(pair: DashboardQualityPair) -> str:
     latest_contract = pair.latest_contract or "n/a"
     mismatch = _format_optional(pair.mismatch_rate_overlap)
@@ -3538,3 +4162,9 @@ def _format_optional(value: float | None) -> str:
     if value is None:
         return "n/a"
     return f"{value:.4f}"
+
+
+def _format_timestamp(value: datetime | None) -> str:
+    if value is None:
+        return "n/a"
+    return value.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")

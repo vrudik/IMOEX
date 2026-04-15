@@ -42,6 +42,37 @@ class DashboardQualityPair(BaseModel):
     mismatch_rate_overlap: float | None = None
 
 
+class ModelRoleAssignment(BaseModel):
+    role_key: str
+    role_label: str
+    owner: str
+    product: str
+    model: str
+    control_mode: str = "fixed"
+    detail: str | None = None
+
+
+class MarketDataFeedStatus(BaseModel):
+    provider: str
+    owner: str
+    role: str
+    status: str
+    primary: bool = False
+    detail: str | None = None
+    freshness_seconds: int | None = None
+    last_update_at: datetime | None = None
+
+
+class RuntimeControlPanel(BaseModel):
+    generated_at: datetime
+    llm_owner: str
+    llm_product: str
+    llm_model: str
+    model_roles: list[ModelRoleAssignment] = Field(default_factory=list)
+    market_data_feeds: list[MarketDataFeedStatus] = Field(default_factory=list)
+    latest_market_data_at: datetime | None = None
+
+
 class DashboardSnapshot(BaseModel):
     generated_at: datetime
     selected_root: str
@@ -53,6 +84,7 @@ class DashboardSnapshot(BaseModel):
     admin_health: AdminHealthSnapshot
     quality_pairs: list[DashboardQualityPair] = Field(default_factory=list)
     kpis: list[DashboardKpi] = Field(default_factory=list)
+    control_panel: RuntimeControlPanel
 
 
 class WorkspaceRootPulse(BaseModel):
@@ -117,6 +149,7 @@ class WorkspaceSnapshot(BaseModel):
     evaluation: EvaluationSummary
     admin_health: AdminHealthSnapshot
     quality_pairs: list[DashboardQualityPair] = Field(default_factory=list)
+    control_panel: RuntimeControlPanel
     action_items: list[WorkspaceActionItem] = Field(default_factory=list)
     delivery_windows: list[NotificationDeliveryWindow] = Field(default_factory=list)
     delivery_activity: list[NotificationDeliveryActivityItem] = Field(default_factory=list)

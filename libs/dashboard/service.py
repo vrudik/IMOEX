@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from libs.dashboard.contracts import (
     DashboardKpi,
+    MarketDataFeedStatus,
+    ModelRoleAssignment,
     DashboardQualityPair,
     DashboardSnapshot,
     HorizonPulsePoint,
     JournalWorkspaceEntry,
     JournalWorkspaceSnapshot,
+    RuntimeControlPanel,
     SignalMetricBar,
     SignalTimelineEvent,
     SignalVisualSnapshot,
@@ -51,6 +54,7 @@ class DashboardService:
         if roots and all(item.root_code.upper() != selected_root.upper() for item in roots):
             selected_root = roots[0].root_code
 
+        generated_at = datetime.now(UTC)
         root_details = self.contract_service.get_root_deep_dive(selected_root) if roots else None
         spotlight_signals = self._list_signals(
             root=selected_root,
@@ -68,9 +72,14 @@ class DashboardService:
             admin_health=admin_health,
             root_details=root_details,
         )
+        control_panel = self._build_control_panel(
+            generated_at=generated_at,
+            root_details=root_details,
+            admin_health=admin_health,
+        )
 
         return DashboardSnapshot(
-            generated_at=datetime.now(UTC),
+            generated_at=generated_at,
             selected_root=selected_root,
             roots=roots,
             root_details=root_details,
@@ -80,6 +89,7 @@ class DashboardService:
             admin_health=admin_health,
             quality_pairs=quality_pairs,
             kpis=kpis,
+            control_panel=control_panel,
         )
 
     def build_workspace_snapshot(
@@ -93,6 +103,7 @@ class DashboardService:
         if roots and all(item.root_code.upper() != selected_root.upper() for item in roots):
             selected_root = roots[0].root_code
 
+        generated_at = datetime.now(UTC)
         root_details = self.contract_service.get_root_deep_dive(selected_root) if roots else None
         signal_lane = self._list_signals(
             root=selected_root,
@@ -114,9 +125,14 @@ class DashboardService:
         admin_health = self.observability_service.admin_health()
         quality_pairs = [self._quality_pair("moex", "finam"), self._quality_pair("moex", "bcs")]
         all_active = self._list_signals(status=SignalStatus.ACTIVE, limit=max(len(roots) * 6, 20))
+        control_panel = self._build_control_panel(
+            generated_at=generated_at,
+            root_details=root_details,
+            admin_health=admin_health,
+        )
 
         return WorkspaceSnapshot(
-            generated_at=datetime.now(UTC),
+            generated_at=generated_at,
             selected_root=selected_root,
             selected_signal_id=selected_signal_id,
             roots=roots,
@@ -127,6 +143,7 @@ class DashboardService:
             evaluation=evaluation,
             admin_health=admin_health,
             quality_pairs=quality_pairs,
+            control_panel=control_panel,
             action_items=self._build_workspace_actions(
                 focus_signal=focus_signal,
                 root_details=root_details,
@@ -259,6 +276,141 @@ class DashboardService:
                 round(float(latest.mismatch_rate_overlap), 4) if latest is not None else None
             ),
         )
+
+    def _build_control_panel(self, *, generated_at: datetime, root_details, admin_health) -> RuntimeControlPanel:
+        feeds = self._build_market_data_feeds(
+            generated_at=generated_at,
+            root_details=root_details,
+            admin_health=admin_health,
+        )
+        latest_market_data_at = max(
+            (item.last_update_at for item in feeds if item.last_update_at is not None),
+            default=None,
+        )
+        return RuntimeControlPanel(
+            generated_at=generated_at,
+            llm_owner="OpenAI",
+            llm_product="ChatGPT",
+            llm_model="gpt-5",
+            model_roles=self._build_model_roles(),
+            market_data_feeds=feeds,
+            latest_market_data_at=latest_market_data_at,
+        )
+
+    def _build_model_roles(self) -> list[ModelRoleAssignment]:
+        detail = "Temporary fixed mapping until configurable role routing is added."
+        return [
+            ModelRoleAssignment(
+                role_key="trend_vol",
+                role_label="Trend / volatility analyst",
+                owner="OpenAI",
+                product="ChatGPT",
+                model="gpt-5",
+                detail=detail,
+            ),
+            ModelRoleAssignment(
+                role_key="flow_liquidity",
+                role_label="Flow / liquidity analyst",
+                owner="OpenAI",
+                product="ChatGPT",
+                model="gpt-5",
+                detail=detail,
+            ),
+            ModelRoleAssignment(
+                role_key="oi_roll",
+                role_label="OI / roll analyst",
+                owner="OpenAI",
+                product="ChatGPT",
+                model="gpt-5",
+                detail=detail,
+            ),
+            ModelRoleAssignment(
+                role_key="macro_event",
+                role_label="Macro-event analyst",
+                owner="OpenAI",
+                product="ChatGPT",
+                model="gpt-5",
+                detail=detail,
+            ),
+            ModelRoleAssignment(
+                role_key="skeptic",
+                role_label="Skeptic",
+                owner="OpenAI",
+                product="ChatGPT",
+                model="gpt-5",
+                detail=detail,
+            ),
+            ModelRoleAssignment(
+                role_key="arbiter",
+                role_label="Arbiter",
+                owner="OpenAI",
+                product="ChatGPT",
+                model="gpt-5",
+                detail=detail,
+            ),
+        ]
+
+    def _build_market_data_feeds(self, *, generated_at: datetime, root_details, admin_health) -> list[MarketDataFeedStatus]:
+        provider_order: list[str] = []
+        if root_details is not None:
+            provider_order.append(root_details.root.primary_provider)
+            if root_details.root.secondary_provider:
+                provider_order.append(root_details.root.secondary_provider)
+
+        source_index = {item.provider: item for item in admin_health.source_health}
+        if root_details is not None:
+            source_index.update({item.provider: item for item in root_details.sources})
+
+        root_sources = [
+            source_index[provider]
+            for provider in provider_order
+            if provider in source_index
+        ]
+
+        feeds: list[MarketDataFeedStatus] = []
+        for item in root_sources:
+            feeds.append(
+                MarketDataFeedStatus(
+                    provider=item.provider,
+                    owner=self._provider_owner(item.provider),
+                    role=self._market_data_role_label(item.role),
+                    status=item.status.value,
+                    primary=bool(item.primary),
+                    detail=item.detail,
+                    freshness_seconds=item.freshness_seconds,
+                    last_update_at=self._derive_last_update_at(
+                        generated_at=generated_at,
+                        freshness_seconds=item.freshness_seconds,
+                    ),
+                )
+            )
+        return feeds
+
+    def _provider_owner(self, provider: str) -> str:
+        owners = {
+            "alor": "Alor Broker",
+            "bcs": "BCS",
+            "cbr": "Bank of Russia",
+            "finam": "Finam",
+            "moex": "MOEX",
+            "tbank": "T-Bank",
+        }
+        return owners.get(provider, provider.upper())
+
+    def _market_data_role_label(self, role: str) -> str:
+        labels = {
+            "broker_market_data": "Broker market-data API",
+            "exchange_reference": "Exchange reference API",
+            "macro_events": "Macro-event calendar",
+            "secondary_market_data": "Secondary market-data API",
+            "shadow_market_data": "Shadow market-data API",
+        }
+        return labels.get(role, role.replace("_", " "))
+
+    def _derive_last_update_at(self, *, generated_at: datetime, freshness_seconds: int | None) -> datetime | None:
+        if freshness_seconds is None:
+            return None
+        return generated_at - timedelta(seconds=max(0, freshness_seconds))
 
     def _resolve_focus_signal(
         self,
