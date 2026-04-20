@@ -57,6 +57,7 @@ class ContinuousSeriesEngine:
             active_contract=front.contract_code,
             next_contract=next_contract.contract_code,
             days_to_expiry=days_to_expiry,
+            expiry_date=front.expiry_date,
             days_to_last_trade=days_to_last_trade,
             roll_risk_flag=days_to_last_trade <= self.rules.roll_window_days,
             next_contract_share=next_contract_share,

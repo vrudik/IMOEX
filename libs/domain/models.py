@@ -86,6 +86,17 @@ class ContractMetaRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class ReferenceSyncStateRecord(Base):
+    __tablename__ = "reference_sync_state"
+
+    sync_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source: Mapped[str] = mapped_column(String(64), index=True)
+    detail: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class TradingSessionRecord(Base):
     __tablename__ = "trading_session"
 
@@ -184,8 +195,13 @@ class SignalVersionRecord(Base):
     priority_score: Mapped[int] = mapped_column(Integer)
     skeptic_score: Mapped[float] = mapped_column(Numeric(18, 10), default=1)
     skeptic_verdict: Mapped[str] = mapped_column(String(32))
+    freshness_score: Mapped[float | None] = mapped_column(Numeric(18, 10), nullable=True)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     summary: Mapped[str] = mapped_column(String(512))
+    drivers_blob: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    objections_blob: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    invalidation_conditions_blob: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    data_sources_blob: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
@@ -212,6 +228,7 @@ class FinalSignalRecord(Base):
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     freshness_score: Mapped[float] = mapped_column(Numeric(18, 10))
     summary: Mapped[str] = mapped_column(String(512))
+    workflow_state: Mapped[str] = mapped_column(String(32), default="watching")
     drivers_blob: Mapped[str] = mapped_column(String(2048))
     objections_blob: Mapped[str] = mapped_column(String(2048))
     invalidation_conditions_blob: Mapped[str] = mapped_column(String(2048))
@@ -248,7 +265,21 @@ class UserJournalEntryRecord(Base):
     title: Mapped[str] = mapped_column(String(256))
     note: Mapped[str] = mapped_column(String(4096))
     author: Mapped[str] = mapped_column(String(64))
+    tags_json: Mapped[str] = mapped_column(String(1024), default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class UserWorkspaceWatchRecord(Base):
+    __tablename__ = "user_workspace_watch"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    watch_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    profile_id: Mapped[str] = mapped_column(String(64), index=True)
+    root_code: Mapped[str] = mapped_column(String(32), index=True)
+    signal_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
+    note: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class UserNotificationPreferenceRecord(Base):
@@ -283,6 +314,44 @@ class NotificationDeliveryEventRecord(Base):
     detail: Mapped[str] = mapped_column(String(2048))
     signal_ids_json: Mapped[str] = mapped_column(String(2048), default="[]")
     provider_message_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class RuntimeModelRouteRecord(Base):
+    __tablename__ = "runtime_model_route"
+
+    role_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(64))
+    product: Mapped[str] = mapped_column(String(64))
+    model: Mapped[str] = mapped_column(String(128))
+    control_mode: Mapped[str] = mapped_column(String(32), default="editable")
+    detail: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class RuntimeFreshnessPolicyRecord(Base):
+    __tablename__ = "runtime_freshness_policy"
+
+    policy_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    fresh_max_seconds: Mapped[int] = mapped_column(Integer, default=30)
+    aging_max_seconds: Mapped[int] = mapped_column(Integer, default=180)
+    stale_max_seconds: Mapped[int] = mapped_column(Integer, default=900)
+    degraded_max_seconds: Mapped[int] = mapped_column(Integer, default=3600)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class RuntimeAuditEventRecord(Base):
+    __tablename__ = "runtime_audit_event"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    category: Mapped[str] = mapped_column(String(64), index=True)
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    target_key: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
+    detail: Mapped[str] = mapped_column(String(2048))
+    payload_json: Mapped[str] = mapped_column(String(8192), default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 

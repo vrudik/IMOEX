@@ -15,6 +15,17 @@ alembic upgrade head
 uvicorn apps.api.main:app --reload
 ```
 
+Stable local preview helpers:
+
+```powershell
+.\scripts\run_preview.ps1
+.\scripts\start_preview.ps1
+.\scripts\stop_preview.ps1
+```
+
+`run_preview.ps1` keeps the server in the current terminal.
+`start_preview.ps1` starts the preview in the background and returns metadata immediately.
+
 ## User surfaces
 
 The primary user-facing interface is now:
@@ -55,6 +66,9 @@ python -m apps.worker.runner notify-telegram-alerts --dry-run
 python -m apps.worker.runner run-schedule-loop --iterations 2 --sleep-seconds 0 --dry-run
 .\scripts\smoke_local.ps1
 .\scripts\run_integration.ps1
+.\scripts\run_preview.ps1
+.\scripts\start_preview.ps1
+.\scripts\stop_preview.ps1
 .\scripts\run_scheduler_once.ps1
 .\scripts\run_scheduler_loop.ps1 --iterations 2 --sleep-seconds 0 --dry-run
 .\scripts\register_windows_scheduler_task.ps1

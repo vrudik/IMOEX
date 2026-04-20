@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from html import escape
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
@@ -13,13 +14,22 @@ from libs.bootstrap.container import get_app_container
 from libs.dashboard.contracts import (
     DashboardQualityPair,
     DashboardSnapshot,
+    DecisionTimelineItem,
     DeliveryHistoryWorkspaceSnapshot,
+    HorizonComparisonSnapshot,
+    InstrumentMarketSnapshot,
     JournalWorkspaceSnapshot,
+    RuntimeControlSnapshot,
+    RuntimeFreshnessPolicyUpdate,
+    RuntimeModelRouteUpdate,
+    SignalChangeSummary,
+    WatchlistEntry,
+    WatchlistEntryCreate,
     WorkspaceActionItem,
     WorkspaceSignalSnapshot,
     WorkspaceSnapshot,
 )
-from libs.domain.contracts import JournalEntryKind, SignalStatus
+from libs.domain.contracts import JournalEntryKind, SignalStatus, SignalWorkflowState
 from libs.notifications.contracts import TelegramNotificationSendRequest, TelegramNotificationSendResult
 from libs.preferences.contracts import (
     NotificationDeliveryActivityAction,
@@ -40,6 +50,7 @@ router = APIRouter(tags=["dashboard"])
 
 LANGUAGE_COOKIE = "imoex_lang"
 SUPPORTED_LANGUAGES = {"ru", "en"}
+MOSCOW_TIMEZONE = ZoneInfo("Europe/Moscow")
 
 
 def _ensure_dashboard_enabled() -> None:
@@ -82,6 +93,14 @@ def _page_hint(page_key: str, language: str) -> str:
         "signal": {
             "ru": "Смотрите hero-блок сигнала, потом анатомию решения, хронологию и Telegram-сводку справа.",
             "en": "Read the signal hero first, then the decision anatomy, timeline, and Telegram brief on the side.",
+        },
+        "council": {
+            "ru": "\u0418\u0434\u0438\u0442\u0435 \u0441\u043b\u0435\u0432\u0430 \u043d\u0430\u043f\u0440\u0430\u0432\u043e: \u0441\u043d\u0430\u0447\u0430\u043b\u0430 \u0432\u0432\u043e\u0434\u043d\u044b\u0435 \u0434\u0430\u043d\u043d\u044b\u0435 \u0438 \u0440\u043e\u043b\u0438 \u0441\u043e\u0432\u0435\u0442\u0430, \u043f\u043e\u0442\u043e\u043c \u0441\u043a\u0435\u043f\u0442\u0438\u043a \u0438 \u0430\u0440\u0431\u0438\u0442\u0440, \u0430 \u0432 \u043a\u043e\u043d\u0446\u0435 \u0438\u0442\u043e\u0433\u043e\u0432\u044b\u0435 score \u0438 \u0442\u0435\u043a\u0443\u0449\u0438\u0439 runtime.",
+            "en": "Read left to right: start with the inputs and council roles, then the skeptic and arbiter, and finish with the final scores and current runtime.",
+        },
+        "runtime": {
+            "ru": "Сначала проверьте маршрутизацию ролей и SLA по актуальности, затем просмотрите журнал изменений runtime и последние технические решения.",
+            "en": "Start with role routing and freshness SLAs, then review the runtime audit trail and the latest technical decisions.",
         },
     }
     page_hints = hints.get(page_key, hints["workspace"])
@@ -142,6 +161,8 @@ def _localize_html(html: str, language: str) -> str:
         (">Open journal JSON</a>", ">Открыть JSON журнала</a>"),
         (">Open workspace</a>", ">Открыть рабочее пространство</a>"),
         ("<h2>Filters</h2>", "<h2>Фильтры</h2>"),
+        ("<h2>Decision log</h2>", "<h2>Журнал решений</h2>"),
+        ("What the user decided, why the current call exists, and what needs to change next.", "Что пользователь решил, почему текущий вывод выглядит именно так и что должно измениться дальше."),
         ("<h2>Journal tape</h2>", "<h2>Лента журнала</h2>"),
         ("<h2>Current signal lane</h2>", "<h2>Текущая лента сигналов</h2>"),
         ("<h1>Audit trail for Telegram delivery</h1>", "<h1>Журнал доставки в Telegram</h1>"),
@@ -245,6 +266,9 @@ def _localize_html(html: str, language: str) -> str:
         ("<span>Priority</span>", "<span>Приоритет</span>"),
         ("<span>Freshness</span>", "<span>Актуальность</span>"),
         ("<span>Expiry risk</span>", "<span>Риск экспирации</span>"),
+        ("<span>Decision</span>", "<span>Решение</span>"),
+        ("<span>Why this is the current call</span>", "<span>Почему сейчас именно такой вывод</span>"),
+        ("<span>What should change next</span>", "<span>Что должно измениться дальше</span>"),
         ("<h3>Why now</h3>", "<h3>Почему сейчас</h3>"),
         ("<h3>Pushback</h3>", "<h3>Сдерживающие факторы</h3>"),
         ("<h3>Invalidation</h3>", "<h3>Что отменяет сценарий</h3>"),
@@ -271,6 +295,9 @@ def _localize_html(html: str, language: str) -> str:
         ("Suppress delivery during quiet hours", "Подавлять доставку в тихие часы"),
         ("Preview still works, sends are paused unless overridden.", "Предпросмотр работает, а отправка стоит на паузе, если её не переопределить."),
         ("No related signals in the current filter window.", "В текущем окне фильтра связанных сигналов нет."),
+        ("No decision cards available for the current filter window.", "В текущем окне фильтра карточек решений пока нет."),
+        ("Latest note: none yet | updated ", "Последняя заметка: пока нет | обновлено "),
+        ("Latest note: ", "Последняя заметка: "),
         ("No related signals available right now.", "Сейчас связанных сигналов нет."),
         ("Signal is still active; no resolution record yet.", "Сигнал всё ещё активен; записи о разрешении пока нет."),
         ("Resolved at ", "Разрешён в "),
@@ -337,6 +364,27 @@ def _localize_html(html: str, language: str) -> str:
     )
     for source, target in replacements:
         html = html.replace(source, target)
+    html = html.replace("<span>Status</span>", "<span>\u0421\u0442\u0430\u0442\u0443\u0441</span>")
+    html = html.replace("<strong>Confidence</strong>", "<strong>\u0423\u0432\u0435\u0440\u0435\u043d\u043d\u043e\u0441\u0442\u044c</strong>")
+    html = html.replace("<span>Contract state</span>", "<span>\u0421\u043e\u0441\u0442\u043e\u044f\u043d\u0438\u0435 \u043a\u043e\u043d\u0442\u0440\u0430\u043a\u0442\u0430</span>")
+    html = html.replace("<span>Evaluation</span>", "<span>\u041e\u0446\u0435\u043d\u043a\u0430</span>")
+    html = html.replace("Subscribed roots", "\u041f\u043e\u0434\u043f\u0438\u0441\u0430\u043d\u043d\u044b\u0435 \u0441\u0435\u0440\u0438\u0438")
+    html = html.replace("Subscribed horizons", "\u041f\u043e\u0434\u043f\u0438\u0441\u0430\u043d\u043d\u044b\u0435 \u0433\u043e\u0440\u0438\u0437\u043e\u043d\u0442\u044b")
+    html = html.replace("Telegram events", "\u0421\u043e\u0431\u044b\u0442\u0438\u044f Telegram")
+    html = html.replace("Digest limit", "\u041b\u0438\u043c\u0438\u0442 \u0434\u0430\u0439\u0434\u0436\u0435\u0441\u0442\u0430")
+    html = html.replace("Min priority", "\u041c\u0438\u043d. \u043f\u0440\u0438\u043e\u0440\u0438\u0442\u0435\u0442")
+    html = html.replace("Quiet hours start", "\u041d\u0430\u0447\u0430\u043b\u043e \u0442\u0438\u0445\u0438\u0445 \u0447\u0430\u0441\u043e\u0432")
+    html = html.replace("Quiet hours end", "\u041a\u043e\u043d\u0435\u0446 \u0442\u0438\u0445\u0438\u0445 \u0447\u0430\u0441\u043e\u0432")
+    html = html.replace("Quiet-hours policy", "\u041f\u043e\u043b\u0438\u0442\u0438\u043a\u0430 \u0442\u0438\u0445\u0438\u0445 \u0447\u0430\u0441\u043e\u0432")
+    html = html.replace("suppress sends", "\u043f\u043e\u0434\u0430\u0432\u043b\u044f\u0442\u044c \u043e\u0442\u043f\u0440\u0430\u0432\u043a\u0443")
+    html = html.replace("allow sends", "\u0440\u0430\u0437\u0440\u0435\u0448\u0430\u0442\u044c \u043e\u0442\u043f\u0440\u0430\u0432\u043a\u0443")
+    html = html.replace("No journal entries yet.", "\u0417\u0430\u043f\u0438\u0441\u0435\u0439 \u0432 \u0436\u0443\u0440\u043d\u0430\u043b\u0435 \u043f\u043e\u043a\u0430 \u043d\u0435\u0442.")
+    html = html.replace("| roll ", " | \u0440\u043e\u043b\u043b ")
+    html = re.sub(
+        r">Next ([^<]+)</p>",
+        lambda match: ">" + "\u0421\u043b\u0435\u0434\u0443\u044e\u0449\u0438\u0439 " + match.group(1) + "</p>",
+        html,
+    )
     html = html.replace("<h2>Models and data feeds</h2>", "<h2>Модели и источники данных</h2>")
     html = html.replace(
         "Visible role routing and the live price-source ownership for this root.",
@@ -344,6 +392,7 @@ def _localize_html(html: str, language: str) -> str:
     )
     html = html.replace("<label>LLM runtime</label>", "<label>LLM-стек</label>")
     html = html.replace("<label>LLM owner</label>", "<label>Владелец LLM</label>")
+    html = html.replace("<label>Data mode</label>", "<label>Режим данных</label>")
     html = html.replace("<label>Latest market data</label>", "<label>Последние рыночные данные</label>")
     html = html.replace("<h3>Role routing</h3>", "<h3>Ролевая маршрутизация</h3>")
     html = html.replace("<h3>Market-data feeds</h3>", "<h3>Потоки рыночных данных</h3>")
@@ -361,11 +410,35 @@ def _localize_html(html: str, language: str) -> str:
     html = html.replace("Flow / liquidity analyst", "Аналитик потока и ликвидности")
     html = html.replace("OI / roll analyst", "Аналитик OI и ролла")
     html = html.replace("Macro-event analyst", "Аналитик макро-событий")
-    html = html.replace("Broker market-data API", "Брокерский market-data API")
-    html = html.replace("Exchange reference API", "Биржевой reference API")
-    html = html.replace("Secondary market-data API", "Вторичный market-data API")
-    html = html.replace("Shadow market-data API", "Теневой market-data API")
+    html = html.replace("Broker market-data API", "Брокерский API рыночных данных")
+    html = html.replace("Exchange reference API", "Биржевой справочный API")
+    html = html.replace("Secondary market-data API", "Вторичный API рыночных данных")
+    html = html.replace("Shadow market-data API", "Теневой API рыночных данных")
     html = html.replace("Latest market data", "Последние рыночные данные")
+    html = html.replace("Data mode", "Режим данных")
+    html = html.replace("Live", "Живой поток")
+    html = html.replace("Snapshot", "Снимок")
+    html = html.replace("Degraded feed", "Деградировавший источник")
+    html = html.replace(
+        "At least one fresh market-data API is healthy for this root.",
+        "Для этой серии есть хотя бы один свежий и здоровый рыночный API.",
+    )
+    html = html.replace(
+        "Healthy reference data is available, but live broker feeds are not fully active.",
+        "Справочные данные доступны, но live-брокерские источники работают не полностью.",
+    )
+    html = html.replace(
+        "Primary price source is degraded or unavailable.",
+        "Основной источник цен деградировал или недоступен.",
+    )
+    html = html.replace(
+        "Reference truth for calendar, contract metadata and baseline bars.",
+        "Базовый биржевой источник для календаря, метаданных контрактов и эталонных баров.",
+    )
+    html = html.replace(
+        "Finam adapter is available but `FINAM_SECRET_TOKEN` or `FINAM_JWT_TOKEN` is not configured.",
+        "Адаптер Finam доступен, но `FINAM_SECRET_TOKEN` или `FINAM_JWT_TOKEN` не настроен.",
+    )
     html = html.replace("Skeptic", "Скептик")
     html = html.replace("Arbiter", "Арбитр")
     html = html.replace("Broker market-data API", "Брокерский API рыночных данных")
@@ -374,6 +447,59 @@ def _localize_html(html: str, language: str) -> str:
     html = html.replace("Shadow market-data API", "Теневой API рыночных данных")
     html = html.replace("Macro-event calendar", "Календарь макро-событий")
     html = html.replace(" &middot; last ", " &middot; обновлено ")
+    html = html.replace("Navigation", "Навигация")
+    html = html.replace("Move around the workspace", "Переходы")
+    html = html.replace(
+        "Jump between the main pages for the current root and signal.",
+        "Переходите между основными страницами для текущей серии и сигнала.",
+    )
+    html = html.replace("Current root", "Текущая серия")
+    html = html.replace("Switch instrument", "Инструмент")
+    html = html.replace("Current instrument", "Текущий инструмент")
+    html = html.replace("Workspace", "Рабочее пространство")
+    html = html.replace("Operations", "Операционный дашборд")
+    html = html.replace("Journal", "Журнал")
+    html = html.replace("Preferences", "Настройки")
+    html = html.replace("Delivery history", "История доставок")
+    html = html.replace("Signal detail", "Детали сигнала")
+    html = html.replace("Days To Expiry", "Дней до экспирации")
+    html = html.replace("Until contract expiry", "До экспирации контракта")
+    html = html.replace("Price Source", "Источник цены")
+    html = html.replace("Updated ", "Обновлено ")
+    html = html.replace("No market-data feed is attached yet.", "Источник рыночных данных пока не подключен.")
+    html = html.replace("<span>Workflow</span>", "<span>\u0421\u0442\u0430\u0442\u0443\u0441 \u0440\u0430\u0431\u043e\u0442\u044b</span>")
+    html = html.replace("watching", "\u043d\u0430\u0431\u043b\u044e\u0434\u0430\u044e")
+    html = html.replace("reviewing", "\u043f\u0440\u043e\u0432\u0435\u0440\u044f\u044e")
+    html = html.replace("ignored", "\u0438\u0433\u043d\u043e\u0440\u0438\u0440\u0443\u044e")
+    html = html.replace("escalated", "\u044d\u0441\u043a\u0430\u043b\u0438\u0440\u0443\u044e")
+    html = html.replace("Pick a signal first", "\u0421\u043d\u0430\u0447\u0430\u043b\u0430 \u0432\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u0438\u0433\u043d\u0430\u043b")
+    html = html.replace(
+        "Select a signal to set how you want to handle it.",
+        "\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u0438\u0433\u043d\u0430\u043b, \u0447\u0442\u043e\u0431\u044b \u0437\u0430\u0434\u0430\u0442\u044c, \u043a\u0430\u043a \u0432\u044b \u0445\u043e\u0442\u0438\u0442\u0435 \u0441 \u043d\u0438\u043c \u0440\u0430\u0431\u043e\u0442\u0430\u0442\u044c.",
+    )
+    html = html.replace(
+        "Keep this setup in view and wait for stronger confirmation.",
+        "\u0414\u0435\u0440\u0436\u0438\u0442\u0435 \u044d\u0442\u043e\u0442 \u0441\u0435\u0442\u0430\u043f \u0432 \u043f\u043e\u043b\u0435 \u0437\u0440\u0435\u043d\u0438\u044f \u0438 \u0436\u0434\u0438\u0442\u0435 \u0431\u043e\u043b\u0435\u0435 \u0441\u0438\u043b\u044c\u043d\u043e\u0433\u043e \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u044f.",
+    )
+    html = html.replace(
+        "Manually verify the setup before taking action.",
+        "\u041f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435 \u0441\u0435\u0442\u0430\u043f \u0432\u0440\u0443\u0447\u043d\u0443\u044e \u043f\u0435\u0440\u0435\u0434 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435\u043c.",
+    )
+    html = html.replace(
+        "This signal is deprioritized until the context changes.",
+        "\u042d\u0442\u043e\u0442 \u0441\u0438\u0433\u043d\u0430\u043b \u0441\u043d\u044f\u0442 \u0441 \u043f\u0440\u0438\u043e\u0440\u0438\u0442\u0435\u0442\u0430, \u043f\u043e\u043a\u0430 \u043a\u043e\u043d\u0442\u0435\u043a\u0441\u0442 \u043d\u0435 \u0438\u0437\u043c\u0435\u043d\u0438\u0442\u0441\u044f.",
+    )
+    html = html.replace(
+        "This signal needs a higher-attention review right now.",
+        "\u042d\u0442\u043e\u0442 \u0441\u0438\u0433\u043d\u0430\u043b \u043f\u0440\u043e\u0441\u0438\u0442 \u043f\u043e\u0432\u044b\u0448\u0435\u043d\u043d\u043e\u0433\u043e \u0432\u043d\u0438\u043c\u0430\u043d\u0438\u044f \u043f\u0440\u044f\u043c\u043e \u0441\u0435\u0439\u0447\u0430\u0441.",
+    )
+    html = html.replace("Updating workflow...", "\u041e\u0431\u043d\u043e\u0432\u043b\u044f\u0435\u043c \u0441\u0442\u0430\u0442\u0443\u0441...")
+    html = html.replace("Workflow update failed.", "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043e\u0431\u043d\u043e\u0432\u0438\u0442\u044c \u0441\u0442\u0430\u0442\u0443\u0441.")
+    html = html.replace(
+        "Workflow updated. Refreshing...",
+        "\u0421\u0442\u0430\u0442\u0443\u0441 \u043e\u0431\u043d\u043e\u0432\u043b\u0451\u043d. \u041e\u0431\u043d\u043e\u0432\u043b\u044f\u0435\u043c \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0443...",
+    )
+    html = html.replace("workflow ", "\u0441\u0442\u0430\u0442\u0443\u0441 ")
     regex_replacements = (
         (r">confidence ", ">уверенность "),
         (r">skeptic ", ">скепсис "),
@@ -453,6 +579,43 @@ def _localize_html(html: str, language: str) -> str:
     )
     for pattern, target in regex_replacements:
         html = re.sub(pattern, target, html)
+    html = html.replace(
+        "<label>Reference sync</label>",
+        "<label>\u0421\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0430\u0446\u0438\u044f \u0441\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a\u0430</label>",
+    )
+    html = html.replace(
+        "<label>Latest reference sync</label>",
+        "<label>\u041f\u043e\u0441\u043b\u0435\u0434\u043d\u044f\u044f \u0441\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0430\u0446\u0438\u044f \u0441\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a\u0430</label>",
+    )
+    html = html.replace("Latest reference sync", "\u041f\u043e\u0441\u043b\u0435\u0434\u043d\u044f\u044f \u0441\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0430\u0446\u0438\u044f \u0441\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a\u0430")
+    html = html.replace("Reference sync", "\u0421\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0430\u0446\u0438\u044f \u0441\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a\u0430")
+    html = html.replace("Bundled fallback", "\u0412\u0441\u0442\u0440\u043e\u0435\u043d\u043d\u044b\u0439 \u0441\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a")
+    html = html.replace("Fresh", "\u0421\u0432\u0435\u0436\u043e")
+    html = html.replace("Stale", "\u0423\u0441\u0442\u0430\u0440\u0435\u043b\u043e")
+    html = html.replace("Fallback", "\u0420\u0435\u0437\u0435\u0440\u0432")
+    html = html.replace(
+        "Using bundled contract metadata until MOEX ISS sync succeeds.",
+        "\u0418\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u044e\u0442\u0441\u044f \u0432\u0441\u0442\u0440\u043e\u0435\u043d\u043d\u044b\u0435 \u043c\u0435\u0442\u0430\u0434\u0430\u043d\u043d\u044b\u0435 \u043a\u043e\u043d\u0442\u0440\u0430\u043a\u0442\u043e\u0432, \u043f\u043e\u043a\u0430 \u0441\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0430\u0446\u0438\u044f \u0441 MOEX ISS \u043d\u0435 \u043f\u0440\u043e\u0448\u043b\u0430 \u0443\u0441\u043f\u0435\u0448\u043d\u043e.",
+    )
+    html = html.replace(
+        "Reference metadata is synced from MOEX ISS.",
+        "\u0421\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a \u043a\u043e\u043d\u0442\u0440\u0430\u043a\u0442\u043e\u0432 \u0441\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0438\u0440\u043e\u0432\u0430\u043d \u0438\u0437 MOEX ISS.",
+    )
+    html = html.replace(
+        "Last MOEX ISS sync is older than the target interval; using the latest saved snapshot.",
+        "\u041f\u043e\u0441\u043b\u0435\u0434\u043d\u044f\u044f \u0441\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0430\u0446\u0438\u044f MOEX ISS \u0441\u0442\u0430\u0440\u0448\u0435 \u0446\u0435\u043b\u0435\u0432\u043e\u0433\u043e \u0438\u043d\u0442\u0435\u0440\u0432\u0430\u043b\u0430; \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0435\u0442\u0441\u044f \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0439 \u0441\u043e\u0445\u0440\u0430\u043d\u0451\u043d\u043d\u044b\u0439 snapshot.",
+    )
+    html = html.replace("Decision flow", "\u041a\u0430\u043a \u044d\u0442\u043e \u0440\u0430\u0431\u043e\u0442\u0430\u0435\u0442")
+    html = html.replace(
+        "Temporary fixed mapping until configurable role routing is added.",
+        "\u041f\u043e\u043a\u0430 \u0440\u043e\u043b\u044c \u0436\u0451\u0441\u0442\u043a\u043e \u0437\u0430\u043a\u0440\u0435\u043f\u043b\u0435\u043d\u0430 \u0437\u0430 \u044d\u0442\u043e\u0439 \u043c\u043e\u0434\u0435\u043b\u044c\u044e, \u043f\u043e\u043a\u0430 \u043d\u0435 \u043f\u043e\u044f\u0432\u0438\u043b\u0430\u0441\u044c \u0443\u043f\u0440\u0430\u0432\u043b\u044f\u0435\u043c\u0430\u044f \u043c\u0430\u0440\u0448\u0440\u0443\u0442\u0438\u0437\u0430\u0446\u0438\u044f \u0440\u043e\u043b\u0435\u0439.",
+    )
+    html = html.replace("No detail available.", "\u041f\u043e\u043a\u0430 \u043d\u0435\u0442 \u0434\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u044b\u0445 \u0434\u0435\u0442\u0430\u043b\u0435\u0439.")
+    html = html.replace("No model roles configured yet.", "\u0420\u043e\u043b\u0438 \u043c\u043e\u0434\u0435\u043b\u0435\u0439 \u043f\u043e\u043a\u0430 \u043d\u0435 \u043d\u0430\u0441\u0442\u0440\u043e\u0435\u043d\u044b.")
+    html = html.replace(
+        "No market-data feeds are attached to this root yet.",
+        "\u0414\u043b\u044f \u044d\u0442\u043e\u0439 \u0441\u0435\u0440\u0438\u0438 \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438 \u0440\u044b\u043d\u043e\u0447\u043d\u044b\u0445 \u0434\u0430\u043d\u043d\u044b\u0445 \u043f\u043e\u043a\u0430 \u043d\u0435 \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u044b.",
+    )
     return html
 
 
@@ -564,12 +727,45 @@ def _decorate_html_page(html: str, *, language: str, page_key: str) -> str:
       window.__imoexRefreshPage = async (nextUrl) => {{
         await swapPage(nextUrl || window.location.href);
       }};
+      document.addEventListener("click", async (event) => {{
+        const link = event.target.closest("a[data-swap-link]");
+        if (!link || event.defaultPrevented || event.button !== 0) {{
+          return;
+        }}
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || link.target) {{
+          return;
+        }}
+        event.preventDefault();
+        await swapPage(link.href);
+      }});
       if (select) {{
         select.value = "{language}";
         select.addEventListener("change", async () => {{
           document.cookie = "{LANGUAGE_COOKIE}=" + encodeURIComponent(select.value) + "; path=/; max-age=31536000; SameSite=Lax";
           const nextUrl = new URL(window.location.href);
           nextUrl.searchParams.set("lang", select.value);
+          await swapPage(nextUrl.toString());
+        }});
+      }}
+      const rootSwitch = document.querySelector("[data-root-switch]");
+      if (rootSwitch) {{
+        rootSwitch.addEventListener("change", async () => {{
+          const nextRoot = rootSwitch.value;
+          if (!nextRoot) {{
+            return;
+          }}
+          const nextUrl = new URL(window.location.href);
+          const pageKey = rootSwitch.dataset.pageKey || "";
+          const fallbackPath = rootSwitch.dataset.fallbackPath || "/workspace";
+          nextUrl.searchParams.delete("signal_id");
+          if (pageKey === "signal") {{
+            nextUrl.pathname = fallbackPath;
+            nextUrl.search = "";
+          }}
+          nextUrl.searchParams.set("root", nextRoot);
+          if (pageKey === "delivery-history") {{
+            nextUrl.searchParams.set("activity_root_scope", nextRoot);
+          }}
           await swapPage(nextUrl.toString());
         }});
       }}
@@ -913,6 +1109,52 @@ async def get_workspace_snapshot(
     )
 
 
+@router.get("/api/v1/workspace/compare", response_model=HorizonComparisonSnapshot | None)
+async def get_workspace_compare_snapshot(root: str) -> HorizonComparisonSnapshot | None:
+    _ensure_dashboard_enabled()
+    return get_app_container().dashboard_service.build_horizon_comparison_snapshot(root=root)
+
+
+@router.get("/api/v1/workspace/market-preview", response_model=InstrumentMarketSnapshot | None)
+async def get_workspace_market_preview(root: str) -> InstrumentMarketSnapshot | None:
+    _ensure_dashboard_enabled()
+    return get_app_container().dashboard_service.build_root_market_snapshot(root=root)
+
+
+@router.get("/api/v1/workspace/watchlist", response_model=list[WatchlistEntry])
+async def get_workspace_watchlist() -> list[WatchlistEntry]:
+    _ensure_dashboard_enabled()
+    return get_app_container().dashboard_service.build_workspace_snapshot().watchlist
+
+
+@router.post("/api/v1/workspace/watchlist", response_model=list[WatchlistEntry])
+async def add_workspace_watchlist_entry(payload: WatchlistEntryCreate) -> list[WatchlistEntry]:
+    _ensure_dashboard_enabled()
+    return get_app_container().dashboard_service.add_watchlist_entry(
+        root_code=payload.root_code,
+        signal_id=payload.signal_id,
+        note=payload.note,
+    )
+
+
+@router.delete("/api/v1/workspace/watchlist/{watch_key}", response_model=list[WatchlistEntry])
+async def delete_workspace_watchlist_entry(watch_key: str) -> list[WatchlistEntry]:
+    _ensure_dashboard_enabled()
+    return get_app_container().dashboard_service.remove_watchlist_entry(watch_key)
+
+
+@router.get("/api/v1/workspace/signals/{signal_id}/diff", response_model=SignalChangeSummary | None)
+async def get_workspace_signal_diff(signal_id: str) -> SignalChangeSummary | None:
+    _ensure_dashboard_enabled()
+    return get_app_container().dashboard_service.build_signal_diff(signal_id=signal_id)
+
+
+@router.get("/api/v1/workspace/signals/{signal_id}/decision-log", response_model=list[DecisionTimelineItem])
+async def get_workspace_signal_decision_log(signal_id: str) -> list[DecisionTimelineItem]:
+    _ensure_dashboard_enabled()
+    return get_app_container().dashboard_service.build_decision_log(signal_id=signal_id)
+
+
 @router.get("/api/v1/workspace/preferences", response_model=NotificationPreferenceWorkspaceSnapshot)
 async def get_workspace_preferences_snapshot(
     activity_root_scope: str | None = None,
@@ -937,6 +1179,45 @@ async def update_workspace_preferences(payload: NotificationPreferenceUpdate) ->
     container = get_app_container()
     container.preference_service.update_preferences(payload)
     return _build_preference_workspace_snapshot()
+
+
+@router.get("/api/v1/runtime/control-panel", response_model=RuntimeControlSnapshot)
+async def get_runtime_control_snapshot() -> RuntimeControlSnapshot:
+    _ensure_dashboard_enabled()
+    return get_app_container().runtime_control_service.get_snapshot()
+
+
+@router.post("/api/v1/runtime/control-panel/model-route", response_model=RuntimeControlSnapshot)
+async def update_runtime_model_route(payload: RuntimeModelRouteUpdate) -> RuntimeControlSnapshot:
+    _ensure_dashboard_enabled()
+    return get_app_container().runtime_control_service.update_model_route(payload)
+
+
+@router.post("/api/v1/runtime/control-panel/model-route/reset", response_model=RuntimeControlSnapshot)
+async def reset_runtime_model_routes() -> RuntimeControlSnapshot:
+    _ensure_dashboard_enabled()
+    return get_app_container().runtime_control_service.reset_model_routes()
+
+
+@router.post("/api/v1/runtime/control-panel/freshness-policy", response_model=RuntimeControlSnapshot)
+async def update_runtime_freshness_policy(payload: RuntimeFreshnessPolicyUpdate) -> RuntimeControlSnapshot:
+    _ensure_dashboard_enabled()
+    return get_app_container().runtime_control_service.update_freshness_policy(payload)
+
+
+@router.get("/workspace/runtime", response_class=HTMLResponse)
+async def get_runtime_control_page(request: Request, root: str | None = None) -> HTMLResponse:
+    _ensure_dashboard_enabled()
+    language = _resolve_language(request)
+    dashboard_snapshot = get_app_container().dashboard_service.build_snapshot(root=root)
+    runtime_snapshot = get_app_container().runtime_control_service.get_snapshot()
+    return HTMLResponse(
+        _decorate_html_page(
+            _render_runtime_control_page(runtime_snapshot, dashboard_snapshot=dashboard_snapshot, language=language),
+            language=language,
+            page_key="runtime",
+        )
+    )
 
 
 @router.post("/api/v1/workspace/delivery/send-now", response_model=TelegramNotificationSendResult)
@@ -981,12 +1262,27 @@ async def get_workspace_page(
         activity_page=activity_page,
         activity_page_size=activity_page_size,
     )
-    return HTMLResponse(_decorate_html_page(_render_workspace(snapshot), language=language, page_key="workspace"))
+    return HTMLResponse(
+        _decorate_html_page(_render_workspace(snapshot, language=language), language=language, page_key="workspace")
+    )
+
+
+@router.get("/workspace/council", response_class=HTMLResponse)
+async def get_workspace_council_page(
+    request: Request,
+    root: str | None = None,
+    signal_id: str | None = None,
+) -> HTMLResponse:
+    _ensure_dashboard_enabled()
+    language = _resolve_language(request)
+    snapshot = _build_workspace_snapshot(root=root, signal_id=signal_id)
+    return HTMLResponse(_decorate_html_page(_render_council_page(snapshot, language=language), language=language, page_key="council"))
 
 
 @router.get("/workspace/preferences", response_class=HTMLResponse)
 async def get_workspace_preferences_page(
     request: Request,
+    root: str | None = None,
     activity_root_scope: str | None = None,
     activity_event_kind: NotificationEventKind | None = None,
     activity_status: str | None = None,
@@ -1002,7 +1298,13 @@ async def get_workspace_preferences_page(
         activity_page=activity_page,
         activity_page_size=activity_page_size,
     )
-    return HTMLResponse(_decorate_html_page(_render_workspace_preferences(snapshot), language=language, page_key="preferences"))
+    return HTMLResponse(
+        _decorate_html_page(
+            _render_workspace_preferences(snapshot, root_context=root),
+            language=language,
+            page_key="preferences",
+        )
+    )
 
 
 @router.get("/api/v1/workspace/delivery-history", response_model=DeliveryHistoryWorkspaceSnapshot)
@@ -1138,7 +1440,9 @@ async def get_workspace_signal_page(request: Request, signal_id: str) -> HTMLRes
     _ensure_dashboard_enabled()
     language = _resolve_language(request)
     snapshot = _build_signal_workspace_snapshot(signal_id)
-    return HTMLResponse(_decorate_html_page(_render_signal_workspace(snapshot), language=language, page_key="signal"))
+    return HTMLResponse(
+        _decorate_html_page(_render_signal_workspace(snapshot, language=language), language=language, page_key="signal")
+    )
 
 
 @router.get("/api/v1/dashboard", response_model=DashboardSnapshot)
@@ -1152,10 +1456,14 @@ async def get_dashboard_page(request: Request, root: str | None = None) -> HTMLR
     _ensure_dashboard_enabled()
     language = _resolve_language(request)
     snapshot = get_app_container().dashboard_service.build_snapshot(root=root)
-    return HTMLResponse(_decorate_html_page(_render_dashboard(snapshot), language=language, page_key="dashboard"))
+    return HTMLResponse(
+        _decorate_html_page(_render_dashboard(snapshot, language=language), language=language, page_key="dashboard")
+    )
 
 
-def _render_dashboard(snapshot: DashboardSnapshot) -> str:
+def _render_dashboard(snapshot: DashboardSnapshot, *, language: str) -> str:
+    sidebar = _render_page_sidebar("dashboard", root=snapshot.selected_root, roots=snapshot.roots)
+    sidebar_styles = _render_page_sidebar_styles("1240px")
     root_links = "".join(
         (
             f'<a class="root-pill{" is-active" if item.root_code == snapshot.selected_root else ""}" '
@@ -1179,13 +1487,17 @@ def _render_dashboard(snapshot: DashboardSnapshot) -> str:
     spotlight = "".join(_render_signal_card(item) for item in snapshot.spotlight_signals) or '<p class="empty">No active signals yet.</p>'
     recent = "".join(_render_signal_row(item) for item in snapshot.recent_signals) or '<p class="empty">No recent signals yet.</p>'
     quality = "".join(_render_quality_pair(item) for item in snapshot.quality_pairs)
-    control_panel = _render_control_panel(snapshot.control_panel)
-
     session_block = ""
     if snapshot.root_details is not None:
         root = snapshot.root_details.root
         session = snapshot.root_details.session
         continuous = snapshot.root_details.continuous_series
+        market_data_context = _render_market_data_context(snapshot.control_panel)
+        expiry_summary = _format_expiry_countdown(
+            continuous.days_to_expiry,
+            continuous.expiry_date,
+            language=language,
+        )
         session_block = (
             '<section class="panel spotlight">'
             '<div class="panel-head"><h2>Root Control Room</h2>'
@@ -1198,13 +1510,16 @@ def _render_dashboard(snapshot: DashboardSnapshot) -> str:
             f'<div><label>Rule Set</label><strong>{escape(session.effective_rule_set)}</strong></div>'
             f'<div><label>Active Contract</label><strong>{escape(continuous.active_contract)}</strong></div>'
             f'<div><label>Next Contract</label><strong>{escape(continuous.next_contract)}</strong></div>'
+            f'<div><label>Days To Expiry</label><strong>{escape(expiry_summary)}</strong></div>'
             f'<div><label>Days To Last Trade</label><strong>{continuous.days_to_last_trade}</strong></div>'
             f'<div><label>Next Share</label><strong>{continuous.next_contract_share:.0%}</strong></div>'
+            f"{market_data_context}"
             "</div>"
             "</section>"
         )
 
     payload = escape(json.dumps(snapshot.model_dump(mode="json"), ensure_ascii=False))
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1407,6 +1722,102 @@ def _render_dashboard(snapshot: DashboardSnapshot) -> str:
       background: rgba(17, 107, 106, 0.09);
       color: var(--teal);
     }}
+    .workflow-chip {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: rgba(25, 58, 82, 0.08);
+      color: var(--navy);
+    }}
+    .workflow-chip.tone-review {{
+      background: rgba(182, 109, 31, 0.14);
+      color: var(--amber);
+    }}
+    .workflow-chip.tone-ignore {{
+      background: rgba(94, 107, 115, 0.14);
+      color: var(--muted);
+    }}
+    .workflow-chip.tone-escalate {{
+      background: rgba(182, 75, 61, 0.14);
+      color: var(--coral);
+    }}
+    .workflow-panel {{
+      display: grid;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.62);
+      margin: 14px 0;
+    }}
+    .workflow-meta {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }}
+    .workflow-meta span {{
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 11px;
+    }}
+    .workflow-summary {{
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }}
+    .workflow-actions {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }}
+    .workflow-button {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.84);
+      color: var(--ink);
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }}
+    .workflow-button:disabled {{
+      opacity: 0.55;
+      cursor: not-allowed;
+    }}
+    .workflow-button.is-active {{
+      border-color: transparent;
+      color: #fff8ef;
+    }}
+    .workflow-button.tone-watch.is-active {{
+      background: var(--navy);
+    }}
+    .workflow-button.tone-review.is-active {{
+      background: var(--amber);
+    }}
+    .workflow-button.tone-ignore.is-active {{
+      background: var(--muted);
+    }}
+    .workflow-button.tone-escalate.is-active {{
+      background: var(--coral);
+    }}
+    .workflow-button.tone-ready.is-active {{
+      background: var(--teal);
+    }}
+    .workflow-button.tone-resolved.is-active {{
+      background: rgba(23, 56, 79, 0.72);
+    }}
     .signal-summary, .metric-list p, .signal-row small, .empty {{
       color: var(--muted);
       line-height: 1.45;
@@ -1430,20 +1841,30 @@ def _render_dashboard(snapshot: DashboardSnapshot) -> str:
       border-radius: 18px;
       border: 1px solid var(--line);
       background: rgba(255, 255, 255, 0.62);
+      display: grid;
+      gap: 8px;
+      align-content: start;
     }}
     .metric-list strong {{ display: block; margin-bottom: 4px; }}
-    .spotlight-grid {{
+    .spotlight-grid,
+    .control-summary-grid {{
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
       gap: 14px;
     }}
-    .spotlight-grid div {{
+    .spotlight-grid div,
+    .control-summary-card {{
       padding: 14px 16px;
       border-radius: 18px;
       background: rgba(255, 255, 255, 0.66);
       border: 1px solid var(--line);
+      display: grid;
+      gap: 8px;
+      align-content: start;
+      min-height: 108px;
     }}
-    .spotlight-grid label {{
+    .spotlight-grid label,
+    .control-summary-card label {{
       display: block;
       color: var(--muted);
       font-size: 12px;
@@ -1451,8 +1872,24 @@ def _render_dashboard(snapshot: DashboardSnapshot) -> str:
       letter-spacing: 0.08em;
       margin-bottom: 8px;
     }}
-    .spotlight-grid strong {{
+    .spotlight-grid strong,
+    .control-summary-card strong {{
+      display: block;
       font-size: 18px;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }}
+    .control-summary-card small {{
+      color: var(--muted);
+      line-height: 1.45;
+    }}
+    .control-summary-card.is-wide {{
+      grid-column: span 2;
+    }}
+    @media (max-width: 760px) {{
+      .control-summary-card.is-wide {{
+        grid-column: span 1;
+      }}
     }}
     pre {{
       margin: 0;
@@ -1467,9 +1904,12 @@ def _render_dashboard(snapshot: DashboardSnapshot) -> str:
       .shell {{ width: min(100% - 18px, 1240px); }}
       .hero {{ padding: 22px; }}
     }}
+    {sidebar_styles}
   </style>
 </head>
 <body>
+  <div class="page-shell">
+  {sidebar}
   <main class="shell">
     <section class="hero">
       <span class="eyebrow">IMOEX Signals · Dashboard</span>
@@ -1530,12 +1970,6 @@ def _render_dashboard(snapshot: DashboardSnapshot) -> str:
         </section>
         <section class="panel">
           <div class="panel-head">
-            <h2>Models and data feeds</h2>
-          </div>
-          {control_panel}
-        </section>
-        <section class="panel">
-          <div class="panel-head">
             <h2>Source Quality</h2>
             <a class="ghost-link" href="/api/v1/quality/summary?provider_a=moex&provider_b=finam">Open quality API</a>
           </div>
@@ -1550,28 +1984,447 @@ def _render_dashboard(snapshot: DashboardSnapshot) -> str:
       </div>
     </section>
   </main>
+  </div>
 </body>
 </html>"""
 
 
-def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
+def _render_runtime_control_page(
+    snapshot: RuntimeControlSnapshot,
+    *,
+    dashboard_snapshot: DashboardSnapshot,
+    language: str,
+) -> str:
+    sidebar = _render_page_sidebar("runtime", root=dashboard_snapshot.selected_root, roots=dashboard_snapshot.roots)
+    sidebar_styles = _render_page_sidebar_styles("1320px")
+    panel = dashboard_snapshot.control_panel
+    confidence = dashboard_snapshot.system_confidence
+    is_ru = language == "ru"
+    copy = {
+        "eyebrow": "Runtime control | Operator workflow" if not is_ru else "Управление runtime | Операторский сценарий",
+        "title": "Runtime control panel" if not is_ru else "Пульт управления runtime",
+        "intro": (
+            "Edit role routing, adjust freshness SLAs, and keep an audit trail of every runtime change."
+            if not is_ru
+            else "Меняйте маршрутизацию ролей, корректируйте SLA по актуальности и держите под рукой журнал всех изменений runtime."
+        ),
+        "open_json": "Open runtime JSON" if not is_ru else "Открыть JSON runtime",
+        "open_dashboard": "Open operations dashboard" if not is_ru else "Открыть ops-дашборд",
+        "open_workspace": "Open workspace" if not is_ru else "Открыть рабочее пространство",
+        "summary": "Current runtime summary" if not is_ru else "Текущая сводка runtime",
+        "routes": "Editable role routing" if not is_ru else "Редактируемая маршрутизация ролей",
+        "freshness": "Freshness policy" if not is_ru else "Политика актуальности",
+        "audit": "Audit trail" if not is_ru else "Журнал изменений",
+        "save": "Save route" if not is_ru else "Сохранить маршрут",
+        "reset": "Reset routes to defaults" if not is_ru else "Сбросить маршруты к умолчанию",
+        "save_policy": "Save freshness policy" if not is_ru else "Сохранить политику",
+        "status_idle": "Runtime control is ready." if not is_ru else "Пульт runtime готов к работе.",
+        "status_saving": "Saving runtime change..." if not is_ru else "Сохраняем изменение runtime...",
+        "status_saved": "Runtime control updated. Refreshing..." if not is_ru else "Runtime обновлён. Перезагружаем страницу...",
+        "status_failed": "Runtime update failed." if not is_ru else "Не удалось обновить runtime.",
+    }
+    reference_line = (
+        f"{_control_panel_reference_sync_label(panel.reference_sync.status)} · "
+        f"{_control_panel_reference_sync_source(panel.reference_sync.source)}"
+    )
+    summary_cards = (
+        f'<article><span>{"Selected root" if not is_ru else "Выбранная серия"}</span>'
+        f'<strong>{escape(dashboard_snapshot.selected_root)}</strong>'
+        f'<p class="muted">{escape(confidence.label)} · score {confidence.score}</p></article>'
+        f'<article><span>{"Data mode" if not is_ru else "Режим данных"}</span>'
+        f'<strong>{escape(_control_panel_data_mode_label(panel.data_mode))}</strong>'
+        f'<p class="muted">{escape(panel.data_mode_detail or "")}</p></article>'
+        f'<article><span>{"Reference sync" if not is_ru else "Справочник"}</span>'
+        f'<strong>{escape(reference_line)}</strong>'
+        f'<p class="muted">{escape(_format_timestamp(panel.reference_sync.last_sync_at))}</p></article>'
+        f'<article><span>{"Generated at" if not is_ru else "Снимок на"}</span>'
+        f'<strong>{escape(_format_timestamp(snapshot.generated_at))}</strong>'
+        f'<p class="muted">{escape(_format_timestamp(panel.latest_market_data_at))} · market data</p></article>'
+    )
+    route_cards = "".join(
+        (
+            '<article class="route-card">'
+            f'<div class="route-head"><div><strong>{escape(item.role_label)}</strong><p class="muted">{escape(item.role_key)}</p></div>'
+            f'<span class="badge">{escape(item.control_mode)}</span></div>'
+            f'<form class="route-form" data-runtime-route-form>'
+            f'<input type="hidden" name="role_key" value="{escape(item.role_key)}">'
+            '<div class="field-grid">'
+            f'<label><span>{"Owner" if not is_ru else "Владелец"}</span><input name="owner" value="{escape(item.owner)}" required></label>'
+            f'<label><span>{"Product" if not is_ru else "Продукт"}</span><input name="product" value="{escape(item.product)}" required></label>'
+            f'<label><span>{"Model" if not is_ru else "Модель"}</span><input name="model" value="{escape(item.model)}" required></label>'
+            f'<label><span>{"Control mode" if not is_ru else "Режим управления"}</span>'
+            f'<select name="control_mode"><option value="editable"{" selected" if item.control_mode == "editable" else ""}>editable</option>'
+            f'<option value="fixed"{" selected" if item.control_mode == "fixed" else ""}>fixed</option></select></label>'
+            "</div>"
+            f'<label class="detail-field"><span>{"Detail" if not is_ru else "Пояснение"}</span><textarea name="detail" rows="2">{escape(item.detail or "")}</textarea></label>'
+            f'<button class="button primary" type="submit">{escape(copy["save"])}</button>'
+            "</form>"
+            "</article>"
+        )
+        for item in snapshot.model_routes
+    ) or f'<p class="empty">{"No model routes configured yet." if not is_ru else "Маршруты ролей пока не настроены."}</p>'
+    freshness = snapshot.freshness_policy
+    audit_cards = "".join(
+        (
+            '<article class="audit-card">'
+            f'<div class="audit-head"><strong>{escape(item.detail)}</strong><span>{escape(item.action)}</span></div>'
+            f'<p class="muted">{escape(item.category)}'
+            f'{" · " + escape(item.target_key) if item.target_key else ""} | {escape(_format_timestamp(item.created_at))}</p>'
+            f'<pre>{escape(json.dumps(item.payload, ensure_ascii=False, indent=2))}</pre>'
+            "</article>"
+        )
+        for item in snapshot.audit_trail
+    ) or f'<p class="empty">{"No runtime audit events yet." if not is_ru else "В журнале runtime пока нет событий."}</p>'
+    payload = escape(json.dumps(snapshot.model_dump(mode="json"), ensure_ascii=False))
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{escape(copy["title"])}</title>
+  <style>
+    :root {{
+      --bg: #f5efe5;
+      --paper: rgba(255, 250, 242, 0.92);
+      --ink: #18222b;
+      --muted: #5b6871;
+      --line: rgba(24, 34, 43, 0.1);
+      --navy: #17384f;
+      --teal: #116866;
+      --amber: #ba7021;
+      --red: #b44a3d;
+      --shadow: 0 18px 46px rgba(24, 34, 43, 0.11);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(23, 56, 79, 0.12), transparent 25%),
+        radial-gradient(circle at right, rgba(17, 104, 102, 0.16), transparent 22%),
+        linear-gradient(180deg, #fbf7f0, var(--bg));
+    }}
+    a {{ color: inherit; text-decoration: none; }}
+    .shell {{ width: 100%; margin: 0; display: grid; gap: 16px; }}
+    .hero, .panel {{
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      box-shadow: var(--shadow);
+      padding: 24px;
+      backdrop-filter: blur(12px);
+    }}
+    .hero {{
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.95fr);
+      gap: 18px;
+    }}
+    .eyebrow {{
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(23, 56, 79, 0.08);
+      color: var(--navy);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 12px;
+    }}
+    h1 {{
+      margin: 14px 0 10px;
+      font-family: Georgia, "Palatino Linotype", serif;
+      font-size: clamp(34px, 5vw, 56px);
+      line-height: 0.98;
+      max-width: 11ch;
+    }}
+    h2 {{
+      margin: 0;
+      font-family: Georgia, "Palatino Linotype", serif;
+      font-size: 22px;
+    }}
+    .muted, .empty, pre {{ color: var(--muted); line-height: 1.55; }}
+    .hero-actions {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }}
+    .button {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 11px 15px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.68);
+      color: var(--ink);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }}
+    .button.primary {{
+      background: var(--navy);
+      border-color: transparent;
+      color: #fbf7f0;
+    }}
+    .summary-grid, .route-grid, .audit-grid, .field-grid {{
+      display: grid;
+      gap: 14px;
+    }}
+    .summary-grid {{
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    }}
+    .summary-grid article, .route-card, .audit-card {{
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.68);
+      padding: 18px;
+    }}
+    .summary-grid span, .field-grid span, .detail-field span {{
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 11px;
+    }}
+    .route-grid {{
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    }}
+    .route-head, .audit-head, .panel-head {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 14px;
+    }}
+    .badge {{
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: rgba(17, 104, 102, 0.1);
+      color: var(--teal);
+      font-size: 12px;
+      font-weight: 700;
+    }}
+    .route-form {{
+      display: grid;
+      gap: 12px;
+    }}
+    .field-grid {{
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }}
+    label {{
+      display: grid;
+      gap: 6px;
+      font-weight: 600;
+    }}
+    input, select, textarea {{
+      width: 100%;
+      padding: 11px 12px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.88);
+      color: var(--ink);
+      font: inherit;
+    }}
+    textarea {{
+      resize: vertical;
+      min-height: 84px;
+    }}
+    .detail-field {{
+      grid-column: 1 / -1;
+    }}
+    .policy-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin-top: 14px;
+    }}
+    .status {{
+      min-height: 24px;
+      font-weight: 600;
+      color: var(--teal);
+    }}
+    .status[data-tone="error"] {{
+      color: var(--red);
+    }}
+    pre {{
+      margin: 0;
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(24, 34, 43, 0.04);
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }}
+    .panel-note {{
+      margin: 0 0 14px;
+      color: var(--muted);
+      line-height: 1.55;
+    }}
+    @media (max-width: 980px) {{
+      .hero {{
+        grid-template-columns: 1fr;
+      }}
+      .field-grid {{
+        grid-template-columns: 1fr;
+      }}
+    }}
+    {sidebar_styles}
+  </style>
+</head>
+<body>
+  <div class="page-shell">
+  {sidebar}
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <span class="eyebrow">{escape(copy["eyebrow"])}</span>
+        <h1>{escape(copy["title"])}</h1>
+        <p class="muted">{escape(copy["intro"])}</p>
+        <div class="hero-actions">
+          <a class="button primary" href="/api/v1/runtime/control-panel" data-swap-link>{escape(copy["open_json"])}</a>
+          <a class="button" href="/dashboard?root={escape(dashboard_snapshot.selected_root)}" data-swap-link>{escape(copy["open_dashboard"])}</a>
+          <a class="button" href="/workspace?root={escape(dashboard_snapshot.selected_root)}" data-swap-link>{escape(copy["open_workspace"])}</a>
+        </div>
+      </div>
+      <aside class="panel" style="padding:18px;">
+        <div class="panel-head"><h2>{escape(copy["summary"])}</h2></div>
+        <div class="summary-grid">{summary_cards}</div>
+      </aside>
+    </section>
+    <section class="panel">
+      <div class="panel-head">
+        <h2>{escape(copy["routes"])}</h2>
+        <button class="button" type="button" data-runtime-reset>{escape(copy["reset"])}</button>
+      </div>
+      <p class="panel-note">{"Roles can be edited one by one and each save writes to the runtime audit trail." if not is_ru else "Роли редактируются по одной, и каждое сохранение попадает в журнал runtime."}</p>
+      <div class="route-grid">{route_cards}</div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>{escape(copy["freshness"])}</h2></div>
+      <p class="panel-note">{"Tune how the app classifies market data as fresh, aging, stale, or degraded." if not is_ru else "Настройте, как приложение относит рыночные данные к fresh, aging, stale и degraded."}</p>
+      <form data-runtime-policy-form>
+        <div class="policy-grid">
+          <label><span>fresh</span><input type="number" min="1" name="fresh_max_seconds" value="{freshness.fresh_max_seconds}" required></label>
+          <label><span>aging</span><input type="number" min="1" name="aging_max_seconds" value="{freshness.aging_max_seconds}" required></label>
+          <label><span>stale</span><input type="number" min="1" name="stale_max_seconds" value="{freshness.stale_max_seconds}" required></label>
+          <label><span>degraded</span><input type="number" min="1" name="degraded_max_seconds" value="{freshness.degraded_max_seconds}" required></label>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:14px;">
+          <button class="button primary" type="submit">{escape(copy["save_policy"])}</button>
+          <div class="status" data-runtime-status>{escape(copy["status_idle"])}</div>
+        </div>
+      </form>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>{escape(copy["audit"])}</h2></div>
+      <p class="panel-note">{"Each runtime write is visible here with the structured payload that changed." if not is_ru else "Здесь видна каждая запись в runtime вместе со структурированным payload изменённых данных."}</p>
+      <div class="audit-grid">{audit_cards}</div>
+    </section>
+    <script id="runtime-control-data" type="application/json">{payload}</script>
+  </main>
+  </div>
+  <script>
+    (() => {{
+      const status = document.querySelector("[data-runtime-status]");
+      const setStatus = (message, tone = "ok") => {{
+        if (!status) {{
+          return;
+        }}
+        status.textContent = message;
+        status.dataset.tone = tone === "error" ? "error" : "ok";
+      }};
+      const postJson = async (url, payload) => {{
+        const response = await fetch(url, {{
+          method: "POST",
+          credentials: "same-origin",
+          headers: {{
+            "Content-Type": "application/json",
+            "X-Requested-With": "imoex-ui",
+          }},
+          body: JSON.stringify(payload),
+        }});
+        if (!response.ok) {{
+          throw new Error(await response.text());
+        }}
+        return await response.json();
+      }};
+      document.querySelectorAll("[data-runtime-route-form]").forEach((form) => {{
+        form.addEventListener("submit", async (event) => {{
+          event.preventDefault();
+          const formData = new FormData(form);
+          const payload = Object.fromEntries(formData.entries());
+          setStatus({json.dumps(copy["status_saving"], ensure_ascii=False)});
+          try {{
+            await postJson("/api/v1/runtime/control-panel/model-route", payload);
+            setStatus({json.dumps(copy["status_saved"], ensure_ascii=False)});
+            await window.__imoexRefreshPage();
+          }} catch {{
+            setStatus({json.dumps(copy["status_failed"], ensure_ascii=False)}, "error");
+          }}
+        }});
+      }});
+      const resetButton = document.querySelector("[data-runtime-reset]");
+      if (resetButton) {{
+        resetButton.addEventListener("click", async () => {{
+          setStatus({json.dumps(copy["status_saving"], ensure_ascii=False)});
+          try {{
+            await postJson("/api/v1/runtime/control-panel/model-route/reset", {{}});
+            setStatus({json.dumps(copy["status_saved"], ensure_ascii=False)});
+            await window.__imoexRefreshPage();
+          }} catch {{
+            setStatus({json.dumps(copy["status_failed"], ensure_ascii=False)}, "error");
+          }}
+        }});
+      }}
+      const policyForm = document.querySelector("[data-runtime-policy-form]");
+      if (policyForm) {{
+        policyForm.addEventListener("submit", async (event) => {{
+          event.preventDefault();
+          const formData = new FormData(policyForm);
+          const payload = Object.fromEntries(
+            Array.from(formData.entries()).map(([key, value]) => [key, Number(value)])
+          );
+          setStatus({json.dumps(copy["status_saving"], ensure_ascii=False)});
+          try {{
+            await postJson("/api/v1/runtime/control-panel/freshness-policy", payload);
+            setStatus({json.dumps(copy["status_saved"], ensure_ascii=False)});
+            await window.__imoexRefreshPage();
+          }} catch {{
+            setStatus({json.dumps(copy["status_failed"], ensure_ascii=False)}, "error");
+          }}
+        }});
+      }}
+    }})();
+  </script>
+</body>
+</html>"""
+
+
+def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
+    sidebar = _render_page_sidebar(
+        "workspace",
+        root=snapshot.selected_root,
+        roots=snapshot.roots,
+        signal_id=snapshot.focus_signal.signal_id if snapshot.focus_signal is not None else None,
+    )
+    sidebar_styles = _render_page_sidebar_styles("1320px")
     focus = snapshot.focus_signal
     root_details = snapshot.root_details
     focus_visual = snapshot.focus_visual
     root_links = "".join(
-        (
-            f'<a class="rail-card tone-{escape(item.tone)}{" is-active" if item.root_code == snapshot.selected_root else ""}" '
-            f'href="/workspace?root={escape(item.root_code)}">'
-            f"<strong>{escape(item.root_code)}</strong>"
-            f"<span>{escape(item.base_asset)}</span>"
-            f"<small>{escape(item.headline)}</small>"
-            f"<em>{item.active_signals} active | roll {item.next_contract_share:.0%}</em>"
-            "</a>"
-        )
+        _render_root_pulse_card(item, selected_root=snapshot.selected_root, language=language)
         for item in snapshot.pulses
     )
     signal_lane = "".join(
-        _render_workspace_signal_tile(item, snapshot.selected_signal_id) for item in snapshot.signal_lane
+        _render_workspace_signal_tile(item, snapshot.selected_signal_id, language=language)
+        for item in snapshot.signal_lane
     ) or '<p class="empty">No signals available for the selected root yet.</p>'
     actions = "".join(_render_action_item(item) for item in snapshot.action_items)
     visual_bars = _render_metric_bars(focus_visual.metric_bars if focus_visual is not None else [], compact=True)
@@ -1583,26 +2436,36 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
 
     focus_header = "No focus signal yet"
     focus_summary = "Select a root or wait for the next recalculation cycle."
-    focus_badge = "watch mode"
+    focus_badge = "scan mode"
     confidence = "n/a"
     skeptic = "n/a"
+    workflow_label = "watching"
     if focus is not None:
         focus_header = f"{focus.root} | {focus.contract} | {focus.horizon.value}"
         focus_summary = focus.summary
         focus_badge = f"{focus.direction_final.value} | {focus.status.value}"
         confidence = f"{focus.confidence_final:.2f}"
         skeptic = f"{focus.skeptic_score:.2f}"
+        workflow_label = _workflow_state_label(focus.workflow_state)
 
     session_band = ""
     if root_details is not None:
+        market_data_context = _render_market_data_context(snapshot.control_panel)
+        expiry_summary = _format_expiry_countdown(
+            root_details.continuous_series.days_to_expiry,
+            root_details.continuous_series.expiry_date,
+            language=language,
+        )
         session_band = (
             '<section class="panel band">'
             "<h2>Context band</h2>"
             '<div class="band-grid">'
             f'<article><span>Session</span><strong>{escape(root_details.session.session_type.value)}</strong><p>Trading day {escape(root_details.session.trading_day.isoformat())}</p></article>'
             f'<article><span>Active contract</span><strong>{escape(root_details.continuous_series.active_contract)}</strong><p>Next {escape(root_details.continuous_series.next_contract)}</p></article>'
+            f'<article><span>Days To Expiry</span><strong>{escape(expiry_summary)}</strong><p>Until contract expiry</p></article>'
             f'<article><span>Roll risk</span><strong>{root_details.continuous_series.next_contract_share:.0%}</strong><p>{escape(root_details.continuous_series.roll_state)}</p></article>'
             f'<article><span>Universe</span><strong>{escape(root_details.root.universe_status.value)}</strong><p>Liquidity rank {root_details.root.liquidity_rank}</p></article>'
+            f"{market_data_context}"
             "</div>"
             "</section>"
         )
@@ -1628,13 +2491,115 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
         pagination=snapshot.delivery_activity_pagination,
     )
     quality = "".join(_render_quality_pair(item) for item in snapshot.quality_pairs)
-    control_panel = _render_control_panel(snapshot.control_panel)
     payload = escape(json.dumps(snapshot.model_dump(mode="json"), ensure_ascii=False))
     selected_signal_id = escape(snapshot.selected_signal_id or "")
     form_disabled = "disabled" if focus is None else ""
+    workflow_panel = _render_workflow_panel(focus, status_id="workspace-workflow-status")
     primary_label = "This browser workspace"
     if snapshot.telegram_delivery_ready:
         primary_label = "Browser workspace + Telegram brief"
+    trust_ribbon = _render_trust_ribbon(snapshot.trust_ribbon)
+    watchlist = _render_watchlist(snapshot.watchlist)
+    comparison = _render_horizon_comparison(snapshot.comparison)
+    diff_block = _render_signal_diff(snapshot.focus_signal_diff)
+    confidence_block = _render_confidence_decomposition(snapshot.focus_confidence)
+    decision_preview = _render_decision_timeline(snapshot.decision_log_preview, title="Decision log preview")
+    review_bundle = _render_review_bundle(snapshot.review_bundle)
+    market_panel = _render_market_snapshot(snapshot.market_snapshot, language=language)
+    root_preview_messages = json.dumps(
+        {
+            "loading": "Загружаем мини-график..." if language == "ru" else "Loading preview...",
+            "unavailable": "Мини-просмотр недоступен." if language == "ru" else "Preview is unavailable.",
+            "pick": "Выберите таймфрейм" if language == "ru" else "Pick a timeframe",
+            "updated": "Обновлено" if language == "ru" else "Updated",
+            "last": "Последняя" if language == "ru" else "Last",
+            "open": "Открытие" if language == "ru" else "Open",
+            "change": "Изменение" if language == "ru" else "Change",
+            "range": "Диапазон" if language == "ru" else "Range",
+        },
+        ensure_ascii=False,
+    )
+    root_preview_timeframes = json.dumps(
+        {
+            "1D": "День" if language == "ru" else "Day",
+            "1W": "Неделя" if language == "ru" else "Week",
+            "1M": "Месяц" if language == "ru" else "Month",
+        },
+        ensure_ascii=False,
+    )
+    signal_preview_messages = json.dumps(
+        {
+            "loading": "Загружаем сигнал..." if language == "ru" else "Loading signal...",
+            "unavailable": (
+                "Мини-просмотр сигнала недоступен."
+                if language == "ru"
+                else "Signal preview is unavailable."
+            ),
+            "updated": "Обновлено" if language == "ru" else "Updated",
+            "confidence": "Уверенность" if language == "ru" else "Confidence",
+            "skeptic": "Скептик" if language == "ru" else "Skeptic",
+            "priority": "Приоритет" if language == "ru" else "Priority",
+            "workflow": "Workflow",
+            "price": "Цена" if language == "ru" else "Price",
+            "diff": "Что изменилось" if language == "ru" else "What changed",
+            "timeline": "Последнее событие" if language == "ru" else "Latest event",
+            "none": "пока нет" if language == "ru" else "none yet",
+        },
+        ensure_ascii=False,
+    )
+    compare_copy = {
+        "title": "Compare mode",
+        "subtitle": (
+            "Закрепите две серии и два сигнала, чтобы сравнивать инструменты и сетапы бок о бок."
+            if language == "ru"
+            else "Pin two root series and two signal previews to compare instruments and setups side by side."
+        ),
+        "status_empty": "Сравнение пока пустое" if language == "ru" else "Compare board is empty",
+        "clear_all": "Сбросить все" if language == "ru" else "Reset all",
+        "root_slot": "Серия" if language == "ru" else "Root series",
+        "signal_slot": "Сигнал" if language == "ru" else "Signal preview",
+        "root_section_title": "Серия vs серия" if language == "ru" else "Root vs root",
+        "root_section_note": (
+            "Закрепите два инструмента из Root lane и переключайте таймфрейм прямо на доске."
+            if language == "ru"
+            else "Pin two instruments from Root lane and change their timeframe directly on the board."
+        ),
+        "signal_section_title": "Сигнал vs сигнал" if language == "ru" else "Signal vs signal",
+        "signal_section_note": (
+            "Держите рядом два сетапа и сравнивайте confidence, diff и последнее событие."
+            if language == "ru"
+            else "Keep two setups side by side and compare confidence, diff, and latest event."
+        ),
+        "empty_root": (
+            "Закрепите mini-preview из Root lane."
+            if language == "ru"
+            else "Pin a mini-preview from Root lane."
+        ),
+        "empty_signal": (
+            "Закрепите mini-preview из Signal lane."
+            if language == "ru"
+            else "Pin a mini-preview from Signal lane."
+        ),
+        "slot_a": "A",
+        "slot_b": "B",
+        "loading": "Загрузка..." if language == "ru" else "Loading...",
+        "clear": "Убрать" if language == "ru" else "Clear",
+        "focus": "В фокус" if language == "ru" else "Focus",
+        "open": "Открыть" if language == "ru" else "Open",
+        "confidence": "Уверенность" if language == "ru" else "Confidence",
+        "skeptic": "Скептик" if language == "ru" else "Skeptic",
+        "priority": "Приоритет" if language == "ru" else "Priority",
+        "workflow": "Workflow",
+        "price": "Цена" if language == "ru" else "Price",
+        "diff": "Что изменилось" if language == "ru" else "What changed",
+        "timeline": "Последнее событие" if language == "ru" else "Latest event",
+        "last": "Последняя" if language == "ru" else "Last",
+        "open_label": "Открытие" if language == "ru" else "Open",
+        "change": "Изменение" if language == "ru" else "Change",
+        "range": "Диапазон" if language == "ru" else "Range",
+        "updated": "Обновлено" if language == "ru" else "Updated",
+    }
+    compare_messages = json.dumps(compare_copy, ensure_ascii=False)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -1768,8 +2733,13 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
       grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.92fr);
       gap: 16px;
       margin-top: 16px;
+      align-items: start;
     }}
-    .stack {{ display: grid; gap: 16px; }}
+    .stack {{
+      display: grid;
+      gap: 16px;
+      align-content: start;
+    }}
     .panel {{ padding: 22px; }}
     .panel-head {{
       display: flex;
@@ -1786,22 +2756,127 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
     }}
     .rail-card {{
       display: grid;
-      gap: 6px;
+      gap: 12px;
       padding: 16px;
       border-radius: 22px;
       border: 1px solid var(--line);
       background: rgba(255, 255, 255, 0.62);
       transition: transform 140ms ease, border-color 140ms ease;
+      position: relative;
     }}
     .rail-card:hover {{ transform: translateY(-2px); }}
     .rail-card.is-active {{
       border-color: rgba(25, 58, 82, 0.35);
       background: linear-gradient(145deg, rgba(25, 58, 82, 0.12), rgba(255, 255, 255, 0.72));
     }}
+    .rail-card-link {{
+      display: grid;
+      gap: 6px;
+    }}
     .rail-card strong {{ font-size: 24px; }}
     .rail-card span {{ color: var(--muted); font-size: 14px; }}
     .rail-card small {{ line-height: 1.45; min-height: 44px; }}
     .rail-card em {{ font-style: normal; color: var(--navy); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }}
+    .rail-card-footer {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }}
+    .rail-card-tabs {{
+      display: inline-flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }}
+    .rail-preview-button {{
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.84);
+      color: var(--ink);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      padding: 7px 10px;
+      cursor: pointer;
+      text-transform: uppercase;
+    }}
+    .rail-preview-button.is-active {{
+      background: var(--navy);
+      color: #fff8ef;
+      border-color: transparent;
+    }}
+    .rail-open-link {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.78);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }}
+    .rail-preview-popover {{
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      right: 0;
+      z-index: 8;
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+      border-radius: 18px;
+      border: 1px solid rgba(25, 58, 82, 0.16);
+      background: rgba(255, 251, 245, 0.97);
+      box-shadow: 0 18px 36px rgba(15, 36, 48, 0.16);
+      backdrop-filter: blur(16px);
+    }}
+    .rail-preview-popover[hidden] {{
+      display: none;
+    }}
+    .rail-preview-head {{
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: baseline;
+    }}
+    .rail-preview-head strong {{
+      font-size: 15px;
+    }}
+    .rail-preview-head small {{
+      color: var(--muted);
+      min-height: 0;
+    }}
+    .rail-preview-chart {{
+      min-height: 96px;
+    }}
+    .rail-preview-chart svg {{
+      width: 100%;
+      height: 96px;
+      display: block;
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(15, 108, 103, 0.06), rgba(255, 255, 255, 0.78));
+    }}
+    .rail-preview-chart .empty {{
+      min-height: 96px;
+      display: grid;
+      place-items: center;
+      padding: 10px;
+      text-align: center;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.74);
+      border: 1px dashed var(--line);
+    }}
+    .rail-preview-meta {{
+      display: grid;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }}
     .signal-lane, .action-list, .journal-list, .metric-list {{
       display: grid;
       gap: 12px;
@@ -1815,10 +2890,280 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
         border-radius: 18px;
         border: 1px solid var(--line);
       background: rgba(255, 255, 255, 0.68);
+      display: grid;
+      gap: 8px;
+      align-content: start;
     }}
     .signal-tile.is-focus {{
       border-color: rgba(15, 108, 103, 0.34);
       box-shadow: inset 0 0 0 1px rgba(15, 108, 103, 0.14);
+    }}
+    .signal-tile {{
+      position: relative;
+    }}
+    .signal-tile-link {{
+      display: grid;
+      gap: 10px;
+    }}
+    .signal-tile-footer {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }}
+    .signal-preview-tabs {{
+      display: inline-flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }}
+    .signal-preview-button {{
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.84);
+      color: var(--ink);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      padding: 7px 10px;
+      cursor: pointer;
+      text-transform: uppercase;
+    }}
+    .signal-preview-button.is-active {{
+      background: var(--teal);
+      color: #fff8ef;
+      border-color: transparent;
+    }}
+    .signal-preview-popover {{
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      right: 0;
+      z-index: 8;
+      display: grid;
+      gap: 12px;
+      padding: 14px;
+      border-radius: 18px;
+      border: 1px solid rgba(15, 108, 103, 0.16);
+      background: rgba(255, 251, 245, 0.98);
+      box-shadow: 0 18px 36px rgba(15, 36, 48, 0.16);
+      backdrop-filter: blur(16px);
+    }}
+    .signal-preview-popover[hidden] {{
+      display: none;
+    }}
+    .signal-preview-head {{
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: baseline;
+    }}
+    .signal-preview-head strong {{
+      font-size: 15px;
+    }}
+    .signal-preview-head small {{
+      color: var(--muted);
+      min-height: 0;
+    }}
+    .signal-preview-chart {{
+      min-height: 96px;
+    }}
+    .signal-preview-chart svg {{
+      width: 100%;
+      height: 96px;
+      display: block;
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(15, 108, 103, 0.06), rgba(255, 255, 255, 0.78));
+    }}
+    .signal-preview-chart .empty {{
+      min-height: 96px;
+      display: grid;
+      place-items: center;
+      padding: 10px;
+      text-align: center;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.74);
+      border: 1px dashed var(--line);
+    }}
+    .signal-preview-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 8px;
+    }}
+    .signal-preview-grid article {{
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.74);
+      display: grid;
+      gap: 4px;
+    }}
+    .signal-preview-grid span {{
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }}
+    .signal-preview-summary {{
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }}
+    .signal-preview-summary strong {{
+      color: var(--ink);
+      font-size: 14px;
+    }}
+    .signal-preview-actions {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }}
+    .preview-pin-button {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.82);
+      color: var(--ink);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }}
+    .preview-pin-button.is-active {{
+      background: rgba(25, 58, 82, 0.12);
+      color: var(--navy);
+      border-color: rgba(25, 58, 82, 0.3);
+    }}
+    .compare-board {{
+      display: grid;
+      gap: 16px;
+    }}
+    .compare-sections {{
+      display: grid;
+      gap: 18px;
+    }}
+    .compare-section {{
+      display: grid;
+      gap: 12px;
+    }}
+    .compare-toolbar {{
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+      align-items: center;
+    }}
+    .compare-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+    }}
+    .compare-card {{
+      padding: 16px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.68);
+      display: grid;
+      gap: 12px;
+      align-content: start;
+      min-height: 280px;
+    }}
+    .compare-card-head {{
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }}
+    .compare-card-head strong {{
+      display: block;
+      font-size: 16px;
+      margin-bottom: 4px;
+    }}
+    .compare-card-head p {{
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 13px;
+    }}
+    .compare-card-actions {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }}
+    .compare-tabs {{
+      display: inline-flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }}
+    .compare-chart {{
+      min-height: 120px;
+    }}
+    .compare-chart svg {{
+      width: 100%;
+      height: 120px;
+      display: block;
+      border-radius: 16px;
+      background: linear-gradient(180deg, rgba(15, 108, 103, 0.06), rgba(255, 255, 255, 0.78));
+    }}
+    .compare-chart .empty {{
+      min-height: 120px;
+      display: grid;
+      place-items: center;
+      padding: 10px;
+      text-align: center;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.74);
+      border: 1px dashed var(--line);
+    }}
+    .compare-meta {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 8px;
+    }}
+    .compare-meta article {{
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.74);
+      display: grid;
+      gap: 4px;
+    }}
+    .compare-meta span {{
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }}
+    .compare-summary {{
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }}
+    .compare-summary strong {{
+      color: var(--ink);
+      font-size: 14px;
+    }}
+    .compare-empty {{
+      min-height: 160px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 16px;
+      border-radius: 16px;
+      border: 1px dashed var(--line);
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.72);
     }}
     .signal-top, .metric-row {{
       display: flex;
@@ -1849,7 +3194,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
     }}
     .focus-grid {{
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
       gap: 12px;
     }}
     .focus-grid span, .metric-list span, .band-grid span {{
@@ -1865,7 +3210,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
     }}
     .split {{
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 12px;
     }}
     .split article {{
@@ -1873,6 +3218,9 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
       border-radius: 18px;
       border: 1px solid var(--line);
       background: rgba(255, 255, 255, 0.68);
+      display: grid;
+      gap: 10px;
+      align-content: start;
     }}
     .split ul {{
       margin: 0;
@@ -1920,6 +3268,42 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
       border-radius: 18px;
       border: 1px solid var(--line);
       background: rgba(255, 255, 255, 0.68);
+    }}
+    .control-summary-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 12px;
+    }}
+    .control-summary-card {{
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.72);
+      display: grid;
+      gap: 8px;
+      align-content: start;
+      min-height: 110px;
+    }}
+    .control-summary-card label {{
+      display: block;
+      margin: 0;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 11px;
+    }}
+    .control-summary-card strong {{
+      display: block;
+      font-size: 22px;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }}
+    .control-summary-card small {{
+      color: var(--muted);
+      line-height: 1.45;
+    }}
+    .control-summary-card.is-wide {{
+      grid-column: span 2;
     }}
     .metric-bar {{
       padding: 12px 14px;
@@ -1987,10 +3371,22 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
       }}
       .shell {{ width: min(100% - 16px, 1320px); }}
       .hero {{ padding: 18px; }}
+      .control-summary-card.is-wide {{
+        grid-column: span 1;
+      }}
+      .rail-preview-popover {{
+        position: static;
+      }}
+      .signal-preview-popover {{
+        position: static;
+      }}
     }}
+    {sidebar_styles}
   </style>
 </head>
 <body>
+  <div class="page-shell">
+  {sidebar}
   <main class="shell">
     <section class="hero">
       <div class="hero-copy">
@@ -2017,6 +3413,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
         <div class="hero-kpis">
           <article><span>Primary surface</span><strong>{escape(primary_label)}</strong></article>
           <article><span>Bias</span><strong>{escape(focus_badge)}</strong></article>
+          <article><span>Workflow</span><strong>{escape(workflow_label)}</strong></article>
           <article><span>Confidence</span><strong>{escape(confidence)}</strong></article>
           <article><span>Skeptic</span><strong>{escape(skeptic)}</strong></article>
         </div>
@@ -2026,6 +3423,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
         </div>
       </aside>
     </section>
+    {trust_ribbon}
     <section class="panel">
       <div class="panel-head">
         <h2>Root lane</h2>
@@ -2034,6 +3432,56 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
       <div class="rail">{root_links}</div>
     </section>
     {session_band}
+    {market_panel}
+    <section class="panel compare-board" data-compare-board>
+      <div class="panel-head">
+        <div>
+          <h2>{escape(compare_copy["title"])}</h2>
+          <p>{escape(compare_copy["subtitle"])}</p>
+        </div>
+        <div class="compare-toolbar">
+          <span class="filter-chip is-active" data-compare-status>{escape(compare_copy["status_empty"])}</span>
+          <button class="button" type="button" data-compare-clear-all>{escape(compare_copy["clear_all"])}</button>
+        </div>
+      </div>
+      <div class="compare-sections">
+        <section class="compare-section" data-compare-root-section data-compare-root>
+          <div class="panel-head">
+            <div>
+              <h3>{escape(compare_copy["root_section_title"])}</h3>
+              <p>{escape(compare_copy["root_section_note"])}</p>
+            </div>
+          </div>
+          <div class="compare-grid">
+            <article class="compare-card" data-compare-root-slot="a"></article>
+            <article class="compare-card" data-compare-root-slot="b"></article>
+          </div>
+        </section>
+        <section class="compare-section" data-compare-signal-section data-compare-signal>
+          <div class="panel-head">
+            <div>
+              <h3>{escape(compare_copy["signal_section_title"])}</h3>
+              <p>{escape(compare_copy["signal_section_note"])}</p>
+            </div>
+          </div>
+          <div class="compare-grid">
+            <article class="compare-card" data-compare-signal-slot="a"></article>
+            <article class="compare-card" data-compare-signal-slot="b"></article>
+          </div>
+        </section>
+      </div>
+    </section>
+    <section class="layout">
+      <div class="stack">
+        {watchlist}
+        {comparison}
+      </div>
+      <div class="stack">
+        {diff_block}
+        {confidence_block}
+        {review_bundle}
+      </div>
+    </section>
     <section class="layout">
       <div class="stack">
         <section class="panel">
@@ -2062,6 +3510,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
               <article><span>Roll risk</span><strong>{f"{focus.roll_risk:.2f}" if focus is not None else "n/a"}</strong></article>
               <article><span>Expiry risk</span><strong>{f"{focus.expiry_risk:.2f}" if focus is not None else "n/a"}</strong></article>
             </div>
+            {workflow_panel}
             <div class="split">
               <article>
                 <h3>Why now</h3>
@@ -2106,6 +3555,8 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
               <option value="risk_note">Risk note</option>
               <option value="execution_note">Execution note</option>
               <option value="post_mortem">Post-mortem</option>
+              <option value="invalidation_breach">Invalidation breach</option>
+              <option value="data_anomaly">Data anomaly</option>
             </select>
             <input type="text" name="title" placeholder="Short title" {form_disabled}>
             <textarea name="note" placeholder="Write what changed, why it matters, and what you will watch next." {form_disabled}></textarea>
@@ -2113,6 +3564,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
             <div class="status" id="journal-status"></div>
           </form>
         </section>
+        {decision_preview}
       </div>
       <div class="stack">
         <section class="panel">
@@ -2155,13 +3607,6 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
             <article><span>Resolved signals</span><strong>{snapshot.evaluation.resolved_signals}</strong><p class="muted">Brier {_format_optional(snapshot.evaluation.brier_score)} | log loss {_format_optional(snapshot.evaluation.log_loss)}</p></article>
             <article><span>Platform</span><strong>{escape(snapshot.admin_health.status)}</strong><p class="muted">DB {escape(snapshot.admin_health.database_status)} | active {snapshot.admin_health.active_signals}</p></article>
           </div>
-        </section>
-        <section class="panel">
-          <div class="panel-head">
-            <h2>Models and data feeds</h2>
-            <p>Visible role routing and the live price-source ownership for this root.</p>
-          </div>
-          {control_panel}
         </section>
         <section class="panel">
           <div class="panel-head">
@@ -2223,6 +3668,936 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
         }}
         if (journalStatus) {{
           journalStatus.textContent = "Saved. Reloading...";
+        }}
+        const url = new URL(window.location.href);
+        url.searchParams.set("signal_id", signalId);
+        await window.__imoexRefreshPage(url.toString());
+      }});
+    }}
+    const rootPreviewMessages = {root_preview_messages};
+    const rootPreviewTimeframes = {root_preview_timeframes};
+    const rootPreviewCache = new Map();
+    const rootPreviewButtons = document.querySelectorAll("[data-root-preview-button]");
+    const formatPreviewPrice = (value) => {{
+      if (typeof value !== "number" || Number.isNaN(value)) {{
+        return "n/a";
+      }}
+      if (Math.abs(value) >= 1000) {{
+        return value.toLocaleString("en-US", {{ minimumFractionDigits: 2, maximumFractionDigits: 2 }}).replace(/,/g, " ");
+      }}
+      return value.toFixed(2);
+    }};
+    const formatPreviewPct = (value) => {{
+      if (typeof value !== "number" || Number.isNaN(value)) {{
+        return "n/a";
+      }}
+      return `${{value >= 0 ? "+" : ""}}${{(value * 100).toFixed(2)}}%`;
+    }};
+    const formatPreviewTime = (value) => {{
+      if (!value) {{
+        return "n/a";
+      }}
+      try {{
+        const stamp = new Date(value);
+        if (Number.isNaN(stamp.getTime())) {{
+          return "n/a";
+        }}
+        return `${{stamp.toLocaleString("sv-SE", {{
+          timeZone: "Europe/Moscow",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }})}} MSK`;
+      }} catch (_error) {{
+        return "n/a";
+      }}
+    }};
+    const escapePreviewText = (value) => String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+    const previewExcerpt = (value, maxLength = 160) => {{
+      const text = String(value ?? "");
+      if (text.length <= maxLength) {{
+        return text;
+      }}
+      return `${{text.slice(0, Math.max(0, maxLength - 3)).trimEnd()}}...`;
+    }};
+    const resolvePreviewSeries = (snapshot, timeframe) => {{
+      if (!snapshot) {{
+        return null;
+      }}
+      if (timeframe === "1W") {{
+        return snapshot.weekly;
+      }}
+      if (timeframe === "1M") {{
+        return snapshot.monthly;
+      }}
+      return snapshot.daily;
+    }};
+    const renderRootPreviewChart = (series) => {{
+      if (!series || !Array.isArray(series.points) || series.points.length === 0) {{
+        return `<div class="empty">${{rootPreviewMessages.unavailable}}</div>`;
+      }}
+      const width = 248;
+      const height = 96;
+      const lows = series.points.map((point) => typeof point.low === "number" ? point.low : point.value);
+      const highs = series.points.map((point) => typeof point.high === "number" ? point.high : point.value);
+      const low = Math.min(...lows);
+      const high = Math.max(...highs);
+      const span = Math.max(high - low, 0.0001);
+      const bodyWidth = Math.max(6, Math.min(16, width / Math.max(series.points.length * 1.9, 1)));
+      const mapPriceY = (value) => height - (((value - low) / span) * (height - 16)) - 8;
+      const candles = series.points.map((point, index) => {{
+        const x = series.points.length === 1 ? width / 2 : (index / (series.points.length - 1)) * width;
+        const openValue = typeof point.open === "number" ? point.open : point.value;
+        const closeValue = typeof point.close === "number" ? point.close : point.value;
+        const highValue = typeof point.high === "number" ? point.high : Math.max(openValue, closeValue);
+        const lowValue = typeof point.low === "number" ? point.low : Math.min(openValue, closeValue);
+        const openY = mapPriceY(openValue);
+        const closeY = mapPriceY(closeValue);
+        const highY = mapPriceY(highValue);
+        const lowY = mapPriceY(lowValue);
+        const bodyTop = Math.min(openY, closeY);
+        const bodyHeight = Math.max(Math.abs(closeY - openY), 3);
+        const tone = closeValue >= openValue ? "#2f7e57" : "#b44a3d";
+        return `<line x1="${{x.toFixed(1)}}" y1="${{highY.toFixed(1)}}" x2="${{x.toFixed(1)}}" y2="${{lowY.toFixed(1)}}" stroke="${{tone}}" stroke-width="1.8" stroke-linecap="round"></line><rect x="${{(x - (bodyWidth / 2)).toFixed(1)}}" y="${{bodyTop.toFixed(1)}}" width="${{bodyWidth.toFixed(1)}}" height="${{bodyHeight.toFixed(1)}}" rx="2" fill="${{tone}}" fill-opacity="0.92"></rect>`;
+      }}).join("");
+      return `<svg viewBox="0 0 248 96" preserveAspectRatio="none"><line x1="0" y1="${{mapPriceY(series.open_price).toFixed(1)}}" x2="248" y2="${{mapPriceY(series.open_price).toFixed(1)}}" stroke="rgba(21,32,42,0.08)" stroke-width="1" stroke-dasharray="4 4"></line>${{candles}}</svg>`;
+    }};
+    const setRootPreviewContent = (rootCode, timeframe, snapshot) => {{
+      const card = document.querySelector(`[data-root-preview-card][data-root-code="${{rootCode}}"]`);
+      if (!card) {{
+        return;
+      }}
+      const popover = card.querySelector("[data-root-preview-popover]");
+      const labelNode = card.querySelector("[data-root-preview-label]");
+      const updatedNode = card.querySelector("[data-root-preview-updated]");
+      const chartNode = card.querySelector("[data-root-preview-chart]");
+      const metaNode = card.querySelector("[data-root-preview-meta]");
+      const series = resolvePreviewSeries(snapshot, timeframe);
+      if (!popover || !labelNode || !updatedNode || !chartNode || !metaNode || !series) {{
+        return;
+      }}
+      for (const button of card.querySelectorAll("[data-root-preview-button]")) {{
+        button.classList.toggle("is-active", button.dataset.timeframe === timeframe);
+      }}
+      labelNode.textContent = `${{rootPreviewTimeframes[timeframe] || timeframe}} · ${{timeframe}}`;
+      updatedNode.textContent = `${{rootPreviewMessages.updated}} ${{
+        formatPreviewTime(snapshot.as_of)
+      }} | ${{
+        snapshot.status || "n/a"
+      }}`;
+      chartNode.innerHTML = renderRootPreviewChart(series);
+      metaNode.innerHTML = `<span>${{rootPreviewMessages.last}} ${{
+        formatPreviewPrice(snapshot.current_price)
+      }}${{
+        snapshot.unit ? ` ${{snapshot.unit}}` : ""
+      }}</span><span>${{rootPreviewMessages.open}} ${{
+        formatPreviewPrice(series.open_price)
+      }} | ${{rootPreviewMessages.change}} ${{
+        formatPreviewPct(series.change_pct)
+      }}</span><span>${{rootPreviewMessages.range}} ${{
+        formatPreviewPrice(series.low_price)
+      }} - ${{
+        formatPreviewPrice(series.high_price)
+      }}</span>`;
+      for (const pinButton of card.querySelectorAll("[data-pin-root-preview]")) {{
+        pinButton.dataset.timeframe = timeframe;
+      }}
+      syncRootPinButtons();
+      popover.hidden = false;
+    }};
+    const setRootPreviewMessage = (rootCode, timeframe, message) => {{
+      const card = document.querySelector(`[data-root-preview-card][data-root-code="${{rootCode}}"]`);
+      if (!card) {{
+        return;
+      }}
+      const popover = card.querySelector("[data-root-preview-popover]");
+      const labelNode = card.querySelector("[data-root-preview-label]");
+      const updatedNode = card.querySelector("[data-root-preview-updated]");
+      const chartNode = card.querySelector("[data-root-preview-chart]");
+      const metaNode = card.querySelector("[data-root-preview-meta]");
+      if (!popover || !labelNode || !updatedNode || !chartNode || !metaNode) {{
+        return;
+      }}
+      for (const button of card.querySelectorAll("[data-root-preview-button]")) {{
+        button.classList.toggle("is-active", button.dataset.timeframe === timeframe);
+      }}
+      labelNode.textContent = `${{rootPreviewTimeframes[timeframe] || timeframe}} · ${{timeframe}}`;
+      updatedNode.textContent = message;
+      chartNode.innerHTML = `<div class="empty">${{message}}</div>`;
+      metaNode.textContent = rootPreviewMessages.pick;
+      for (const pinButton of card.querySelectorAll("[data-pin-root-preview]")) {{
+        pinButton.dataset.timeframe = timeframe;
+      }}
+      syncRootPinButtons();
+      popover.hidden = false;
+    }};
+    const hideRootPreviews = (keepRootCode = null) => {{
+      for (const popover of document.querySelectorAll("[data-root-preview-popover]")) {{
+        if (keepRootCode && popover.dataset.rootCode === keepRootCode) {{
+          continue;
+        }}
+        popover.hidden = true;
+      }}
+    }};
+    const fetchRootPreviewSnapshot = async (rootCode) => {{
+      if (rootPreviewCache.has(rootCode)) {{
+        return rootPreviewCache.get(rootCode);
+      }}
+      const response = await fetch(`/api/v1/workspace/market-preview?root=${{encodeURIComponent(rootCode)}}`);
+      if (!response.ok) {{
+        throw new Error("preview request failed");
+      }}
+      const payload = await response.json();
+      if (!payload) {{
+        throw new Error("preview payload missing");
+      }}
+      rootPreviewCache.set(rootCode, payload);
+      return payload;
+    }};
+    const openRootPreview = async (rootCode, timeframe) => {{
+      hideRootPreviews(rootCode);
+      if (rootPreviewCache.has(rootCode)) {{
+        setRootPreviewContent(rootCode, timeframe, rootPreviewCache.get(rootCode));
+        return;
+      }}
+      setRootPreviewMessage(rootCode, timeframe, rootPreviewMessages.loading);
+      try {{
+        const payload = await fetchRootPreviewSnapshot(rootCode);
+        setRootPreviewContent(rootCode, timeframe, payload);
+      }} catch (_error) {{
+        setRootPreviewMessage(rootCode, timeframe, rootPreviewMessages.unavailable);
+      }}
+    }};
+    for (const button of rootPreviewButtons) {{
+      button.addEventListener("click", async (event) => {{
+        event.preventDefault();
+        event.stopPropagation();
+        const rootCode = button.dataset.rootCode;
+        const timeframe = button.dataset.timeframe || "1D";
+        if (!rootCode) {{
+          return;
+        }}
+        const card = document.querySelector(`[data-root-preview-card][data-root-code="${{rootCode}}"]`);
+        const popover = card ? card.querySelector("[data-root-preview-popover]") : null;
+        const alreadyOpen = popover && !popover.hidden && button.classList.contains("is-active");
+        if (alreadyOpen) {{
+          popover.hidden = true;
+          return;
+        }}
+        await openRootPreview(rootCode, timeframe);
+      }});
+    }}
+    const signalPreviewMessages = {signal_preview_messages};
+    const signalPreviewCache = new Map();
+    const signalPreviewButtons = document.querySelectorAll("[data-signal-preview-button]");
+    const compareMessages = {compare_messages};
+    const compareStorageKey = "imoex-workspace-compare-state";
+    const compareSlots = ["a", "b"];
+    const compareBoard = document.querySelector("[data-compare-board]");
+    const compareRootNodes = {{
+      a: document.querySelector('[data-compare-root-slot="a"]'),
+      b: document.querySelector('[data-compare-root-slot="b"]'),
+    }};
+    const compareSignalNodes = {{
+      a: document.querySelector('[data-compare-signal-slot="a"]'),
+      b: document.querySelector('[data-compare-signal-slot="b"]'),
+    }};
+    const compareStatusNode = document.querySelector("[data-compare-status]");
+    const compareClearAllButton = document.querySelector("[data-compare-clear-all]");
+    const compareState = {{
+      roots: {{ a: null, b: null }},
+      signals: {{ a: null, b: null }},
+    }};
+    const setSignalPreviewMessage = (signalId, timeframe, message) => {{
+      const card = document.querySelector(`[data-signal-preview-card][data-signal-id="${{signalId}}"]`);
+      if (!card) {{
+        return;
+      }}
+      const popover = card.querySelector("[data-signal-preview-popover]");
+      const labelNode = card.querySelector("[data-signal-preview-label]");
+      const updatedNode = card.querySelector("[data-signal-preview-updated]");
+      const chartNode = card.querySelector("[data-signal-preview-chart]");
+      const gridNode = card.querySelector("[data-signal-preview-grid]");
+      const summaryNode = card.querySelector("[data-signal-preview-summary]");
+      if (!popover || !labelNode || !updatedNode || !chartNode || !gridNode || !summaryNode) {{
+        return;
+      }}
+      for (const button of card.querySelectorAll("[data-signal-preview-button]")) {{
+        button.classList.toggle("is-active", button.dataset.timeframe === timeframe);
+      }}
+      labelNode.textContent = `${{rootPreviewTimeframes[timeframe] || timeframe}} · ${{timeframe}}`;
+      updatedNode.textContent = message;
+      chartNode.innerHTML = `<div class="empty">${{escapePreviewText(message)}}</div>`;
+      gridNode.innerHTML = "";
+      summaryNode.textContent = signalPreviewMessages.unavailable;
+      for (const pinButton of card.querySelectorAll("[data-pin-signal-preview]")) {{
+        pinButton.dataset.timeframe = timeframe;
+      }}
+      syncSignalPinButtons();
+      popover.hidden = false;
+    }};
+    const setSignalPreviewContent = (signalId, timeframe, snapshot) => {{
+      const card = document.querySelector(`[data-signal-preview-card][data-signal-id="${{signalId}}"]`);
+      if (!card) {{
+        return;
+      }}
+      const popover = card.querySelector("[data-signal-preview-popover]");
+      const labelNode = card.querySelector("[data-signal-preview-label]");
+      const updatedNode = card.querySelector("[data-signal-preview-updated]");
+      const chartNode = card.querySelector("[data-signal-preview-chart]");
+      const gridNode = card.querySelector("[data-signal-preview-grid]");
+      const summaryNode = card.querySelector("[data-signal-preview-summary]");
+      if (!popover || !labelNode || !updatedNode || !chartNode || !gridNode || !summaryNode) {{
+        return;
+      }}
+      const signal = snapshot && snapshot.signal ? snapshot.signal : null;
+      const marketSnapshot = snapshot && snapshot.market_snapshot ? snapshot.market_snapshot : null;
+      const series = resolvePreviewSeries(marketSnapshot, timeframe);
+      const diffSummary = snapshot && snapshot.signal_diff && snapshot.signal_diff.summary
+        ? snapshot.signal_diff.summary
+        : signalPreviewMessages.none;
+      const latestEvent = snapshot && Array.isArray(snapshot.decision_log) && snapshot.decision_log.length > 0
+        ? `${{snapshot.decision_log[0].title}} | ${{previewExcerpt(snapshot.decision_log[0].detail, 120)}}`
+        : signalPreviewMessages.none;
+      for (const button of card.querySelectorAll("[data-signal-preview-button]")) {{
+        button.classList.toggle("is-active", button.dataset.timeframe === timeframe);
+      }}
+      labelNode.textContent = `${{rootPreviewTimeframes[timeframe] || timeframe}} · ${{timeframe}}`;
+      updatedNode.textContent = marketSnapshot
+        ? `${{signalPreviewMessages.updated}} ${{formatPreviewTime(marketSnapshot.as_of)}}`
+        : signalPreviewMessages.unavailable;
+      chartNode.innerHTML = series
+        ? renderRootPreviewChart(series)
+        : `<div class="empty">${{escapePreviewText(signalPreviewMessages.unavailable)}}</div>`;
+      gridNode.innerHTML = [
+        `<article><span>${{escapePreviewText(signalPreviewMessages.confidence)}}</span><strong>${{signal && typeof signal.confidence_final === "number" ? signal.confidence_final.toFixed(2) : "n/a"}}</strong></article>`,
+        `<article><span>${{escapePreviewText(signalPreviewMessages.skeptic)}}</span><strong>${{signal && typeof signal.skeptic_score === "number" ? signal.skeptic_score.toFixed(2) : "n/a"}}</strong></article>`,
+        `<article><span>${{escapePreviewText(signalPreviewMessages.priority)}}</span><strong>${{signal && signal.priority_score !== undefined ? escapePreviewText(signal.priority_score) : "n/a"}}</strong></article>`,
+        `<article><span>${{escapePreviewText(signalPreviewMessages.price)}}</span><strong>${{marketSnapshot ? `${{formatPreviewPrice(marketSnapshot.current_price)}}${{marketSnapshot.unit ? ` ${{escapePreviewText(marketSnapshot.unit)}}` : ""}}` : "n/a"}}</strong></article>`,
+      ].join("");
+      summaryNode.innerHTML = `<strong>${{
+        escapePreviewText(signal ? `${{signal.direction_final}} | ${{signal.horizon}} | ${{signal.workflow_state}}` : signalPreviewMessages.none)
+      }}</strong><p>${{
+        escapePreviewText(previewExcerpt(signal && signal.summary ? signal.summary : signalPreviewMessages.none, 180))
+      }}</p><p><strong>${{escapePreviewText(signalPreviewMessages.diff)}}:</strong> ${{
+        escapePreviewText(previewExcerpt(diffSummary, 180))
+      }}</p><p><strong>${{escapePreviewText(signalPreviewMessages.timeline)}}:</strong> ${{
+        escapePreviewText(latestEvent)
+      }}</p>`;
+      for (const pinButton of card.querySelectorAll("[data-pin-signal-preview]")) {{
+        pinButton.dataset.timeframe = timeframe;
+      }}
+      syncSignalPinButtons();
+      popover.hidden = false;
+    }};
+    const hideSignalPreviews = (keepSignalId = null) => {{
+      for (const popover of document.querySelectorAll("[data-signal-preview-popover]")) {{
+        if (keepSignalId && popover.dataset.signalId === keepSignalId) {{
+          continue;
+        }}
+        popover.hidden = true;
+      }}
+    }};
+    const fetchSignalPreviewSnapshot = async (signalId) => {{
+      if (signalPreviewCache.has(signalId)) {{
+        return signalPreviewCache.get(signalId);
+      }}
+      const response = await fetch(`/api/v1/workspace/signals/${{encodeURIComponent(signalId)}}`);
+      if (!response.ok) {{
+        throw new Error("signal preview request failed");
+      }}
+      const payload = await response.json();
+      if (!payload) {{
+        throw new Error("signal preview payload missing");
+      }}
+      signalPreviewCache.set(signalId, payload);
+      return payload;
+    }};
+    const openSignalPreview = async (signalId, timeframe) => {{
+      hideSignalPreviews(signalId);
+      if (signalPreviewCache.has(signalId)) {{
+        setSignalPreviewContent(signalId, timeframe, signalPreviewCache.get(signalId));
+        return;
+      }}
+      setSignalPreviewMessage(signalId, timeframe, signalPreviewMessages.loading);
+      try {{
+        const payload = await fetchSignalPreviewSnapshot(signalId);
+        setSignalPreviewContent(signalId, timeframe, payload);
+      }} catch (_error) {{
+        setSignalPreviewMessage(signalId, timeframe, signalPreviewMessages.unavailable);
+      }}
+    }};
+    for (const button of signalPreviewButtons) {{
+      button.addEventListener("click", async (event) => {{
+        event.preventDefault();
+        event.stopPropagation();
+        const signalId = button.dataset.signalId;
+        const timeframe = button.dataset.timeframe || "1D";
+        if (!signalId) {{
+          return;
+        }}
+        const card = document.querySelector(`[data-signal-preview-card][data-signal-id="${{signalId}}"]`);
+        const popover = card ? card.querySelector("[data-signal-preview-popover]") : null;
+        const alreadyOpen = popover && !popover.hidden && button.classList.contains("is-active");
+        if (alreadyOpen) {{
+          popover.hidden = true;
+          return;
+        }}
+        await openSignalPreview(signalId, timeframe);
+      }});
+    }}
+    const normalizeCompareTimeframe = (value) => rootPreviewTimeframes[value] ? value : "1D";
+    const normalizeCompareSlot = (value) => compareSlots.includes(String(value || "").toLowerCase())
+      ? String(value).toLowerCase()
+      : "a";
+    const slotTitle = (kind, slot) => `${{kind === "root" ? compareMessages.root_slot : compareMessages.signal_slot}} ${{slot.toUpperCase()}}`;
+    const serializeCompareCollection = (collection, idKey) => {{
+      const payload = {{}};
+      for (const slot of compareSlots) {{
+        const entry = collection[slot];
+        payload[slot] = entry
+          ? {{
+              [idKey]: entry[idKey],
+              timeframe: normalizeCompareTimeframe(entry.timeframe),
+            }}
+          : null;
+      }}
+      return payload;
+    }};
+    const readCompareCollection = (parsedCollection, legacyEntry, idKey) => {{
+      const collection = {{ a: null, b: null }};
+      if (parsedCollection && typeof parsedCollection === "object") {{
+        for (const slot of compareSlots) {{
+          const entry = parsedCollection[slot];
+          if (entry && entry[idKey]) {{
+            collection[slot] = {{
+              [idKey]: String(entry[idKey]),
+              timeframe: normalizeCompareTimeframe(entry.timeframe),
+              unavailable: false,
+            }};
+          }}
+        }}
+      }} else if (legacyEntry && legacyEntry[idKey]) {{
+        collection.a = {{
+          [idKey]: String(legacyEntry[idKey]),
+          timeframe: normalizeCompareTimeframe(legacyEntry.timeframe),
+          unavailable: false,
+        }};
+      }}
+      return collection;
+    }};
+    const persistCompareState = () => {{
+      try {{
+        const payload = {{
+          roots: serializeCompareCollection(compareState.roots, "rootCode"),
+          signals: serializeCompareCollection(compareState.signals, "signalId"),
+        }};
+        window.localStorage.setItem(compareStorageKey, JSON.stringify(payload));
+      }} catch (_error) {{
+      }}
+    }};
+    const restoreCompareState = () => {{
+      try {{
+        const raw = window.localStorage.getItem(compareStorageKey);
+        if (!raw) {{
+          return;
+        }}
+        const parsed = JSON.parse(raw);
+        const restoredRoots = readCompareCollection(parsed && parsed.roots, parsed && parsed.root, "rootCode");
+        const restoredSignals = readCompareCollection(parsed && parsed.signals, parsed && parsed.signal, "signalId");
+        for (const slot of compareSlots) {{
+          compareState.roots[slot] = restoredRoots[slot];
+          compareState.signals[slot] = restoredSignals[slot];
+        }}
+      }} catch (_error) {{
+      }}
+    }};
+    const syncRootPinButtons = () => {{
+      for (const button of document.querySelectorAll("[data-pin-root-preview]")) {{
+        const slot = normalizeCompareSlot(button.dataset.compareSlot);
+        const timeframe = normalizeCompareTimeframe(button.dataset.timeframe);
+        const entry = compareState.roots[slot];
+        const isActive = Boolean(
+          entry
+          && entry.rootCode === button.dataset.rootCode
+          && entry.timeframe === timeframe
+        );
+        button.classList.toggle("is-active", isActive);
+        button.setAttribute("aria-pressed", isActive ? "true" : "false");
+      }}
+    }};
+    const syncSignalPinButtons = () => {{
+      for (const button of document.querySelectorAll("[data-pin-signal-preview]")) {{
+        const slot = normalizeCompareSlot(button.dataset.compareSlot);
+        const timeframe = normalizeCompareTimeframe(button.dataset.timeframe);
+        const entry = compareState.signals[slot];
+        const isActive = Boolean(
+          entry
+          && entry.signalId === button.dataset.signalId
+          && entry.timeframe === timeframe
+        );
+        button.classList.toggle("is-active", isActive);
+        button.setAttribute("aria-pressed", isActive ? "true" : "false");
+      }}
+    }};
+    const buildCompareTabs = (kind, slot, activeTimeframe) => {{
+      const buttonClass = kind === "root" ? "rail-preview-button" : "signal-preview-button";
+      return ["1D", "1W", "1M"].map((timeframe) => {{
+        const activeClass = timeframe === activeTimeframe ? " is-active" : "";
+        return `<button class="${{buttonClass}}${{activeClass}}" type="button" data-compare-timeframe data-compare-kind="${{kind}}" data-compare-slot="${{slot}}" data-timeframe="${{timeframe}}">${{timeframe}}</button>`;
+      }}).join("");
+    }};
+    const renderCompareStatus = () => {{
+      if (!compareStatusNode) {{
+        return;
+      }}
+      const rootCount = compareSlots.filter((slot) => Boolean(compareState.roots[slot])).length;
+      const signalCount = compareSlots.filter((slot) => Boolean(compareState.signals[slot])).length;
+      compareStatusNode.textContent = rootCount === 0 && signalCount === 0
+        ? compareMessages.status_empty
+        : `${{compareMessages.root_slot}}: ${{rootCount}}/2 | ${{compareMessages.signal_slot}}: ${{signalCount}}/2`;
+      return;
+      const parts = [];
+      if (compareState.root) {{
+        parts.push(`${{compareMessages.root_slot}}: ${{compareState.root.rootCode}} · ${{compareState.root.timeframe}}`);
+      }}
+      if (compareState.signal) {{
+        const cachedSignal = signalPreviewCache.get(compareState.signal.signalId);
+        const signalLabel = cachedSignal && cachedSignal.signal
+          ? `${{cachedSignal.signal.root}} · ${{cachedSignal.signal.horizon}}`
+          : compareState.signal.signalId;
+        parts.push(`${{compareMessages.signal_slot}}: ${{signalLabel}} · ${{compareState.signal.timeframe}}`);
+      }}
+      compareStatusNode.textContent = parts.length ? parts.join(" | ") : compareMessages.status_empty;
+    }};
+    const renderCompareRootCard = (slot) => {{
+      const node = compareRootNodes[slot];
+      if (!node) {{
+        return;
+      }}
+      {{
+      const entry = compareState.roots[slot];
+      const label = slotTitle("root", slot);
+      if (!entry) {{
+        node.innerHTML = `<div class="compare-card-head"><div><strong>${{escapePreviewText(label)}}</strong><p>${{escapePreviewText(compareMessages.empty_root)}}</p></div></div><div class="compare-empty">${{escapePreviewText(compareMessages.empty_root)}}</div>`;
+        return;
+      }}
+      const snapshot = rootPreviewCache.get(entry.rootCode);
+      const actions = `<div class="compare-card-actions"><button class="preview-pin-button" type="button" data-compare-clear-kind="root" data-compare-slot="${{slot}}">${{escapePreviewText(compareMessages.clear)}}</button><a class="rail-open-link" href="/workspace?root=${{encodeURIComponent(entry.rootCode)}}">${{escapePreviewText(compareMessages.open)}}</a></div>`;
+      if (!snapshot) {{
+        const statusText = entry.unavailable ? rootPreviewMessages.unavailable : compareMessages.loading;
+        node.innerHTML = `<div class="compare-card-head"><div><strong>${{escapePreviewText(label)}}</strong><p>${{escapePreviewText(entry.rootCode)}}</p></div>${{actions}}</div><div class="compare-tabs">${{buildCompareTabs("root", slot, entry.timeframe)}}</div><div class="compare-empty">${{escapePreviewText(statusText)}}</div>`;
+        return;
+      }}
+      const series = resolvePreviewSeries(snapshot, entry.timeframe);
+      const subtitle = `${{compareMessages.updated}} ${{formatPreviewTime(snapshot.as_of)}} | ${{snapshot.status || "n/a"}}`;
+      node.innerHTML = `<div class="compare-card-head"><div><strong>${{escapePreviewText(label)}} · ${{escapePreviewText(snapshot.root_code || entry.rootCode)}}</strong><p>${{escapePreviewText(subtitle)}}</p></div>${{actions}}</div><div class="compare-tabs">${{buildCompareTabs("root", slot, entry.timeframe)}}</div><div class="compare-chart">${{series ? renderRootPreviewChart(series) : `<div class="empty">${{escapePreviewText(rootPreviewMessages.unavailable)}}</div>`}}</div><div class="compare-meta"><article><span>${{escapePreviewText(compareMessages.last)}}</span><strong>${{formatPreviewPrice(snapshot.current_price)}}${{snapshot.unit ? ` ${{escapePreviewText(snapshot.unit)}}` : ""}}</strong></article><article><span>${{escapePreviewText(compareMessages.open_label)}}</span><strong>${{series ? formatPreviewPrice(series.open_price) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.change)}}</span><strong>${{series ? formatPreviewPct(series.change_pct) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.range)}}</span><strong>${{series ? `${{formatPreviewPrice(series.low_price)}} - ${{formatPreviewPrice(series.high_price)}}` : "n/a"}}</strong></article></div><div class="compare-summary"><strong>${{escapePreviewText(snapshot.contract || entry.rootCode)}}</strong><p>${{escapePreviewText(snapshot.source_note || snapshot.status_detail || compareMessages.root_slot)}}</p></div>`;
+      return;
+      }}
+      if (!compareState.root) {{
+        compareRootNode.innerHTML = `<div class="compare-card-head"><div><strong>${{escapePreviewText(compareMessages.root_slot)}}</strong><p>${{escapePreviewText(compareMessages.empty_root)}}</p></div></div><div class="compare-empty">${{escapePreviewText(compareMessages.empty_root)}}</div>`;
+        return;
+      }}
+      const entry = compareState.root;
+      const snapshot = rootPreviewCache.get(entry.rootCode);
+      const actions = `<div class="compare-card-actions"><button class="preview-pin-button" type="button" data-compare-clear="root">${{escapePreviewText(compareMessages.clear)}}</button><a class="rail-open-link" href="/workspace?root=${{encodeURIComponent(entry.rootCode)}}">${{escapePreviewText(compareMessages.open)}}</a></div>`;
+      if (!snapshot) {{
+        const statusText = entry.unavailable ? rootPreviewMessages.unavailable : compareMessages.loading;
+        compareRootNode.innerHTML = `<div class="compare-card-head"><div><strong>${{escapePreviewText(entry.rootCode)}}</strong><p>${{escapePreviewText(compareMessages.root_slot)}}</p></div>${{actions}}</div><div class="compare-tabs">${{buildCompareTabs("root", "root-code", entry.rootCode, entry.timeframe)}}</div><div class="compare-empty">${{escapePreviewText(statusText)}}</div>`;
+        return;
+      }}
+      const series = resolvePreviewSeries(snapshot, entry.timeframe);
+      const subtitle = `${{compareMessages.updated}} ${{formatPreviewTime(snapshot.as_of)}} | ${{snapshot.status || "n/a"}}`;
+      compareRootNode.innerHTML = `<div class="compare-card-head"><div><strong>${{escapePreviewText(snapshot.root_code || entry.rootCode)}} · ${{escapePreviewText(rootPreviewTimeframes[entry.timeframe] || entry.timeframe)}}</strong><p>${{escapePreviewText(subtitle)}}</p></div>${{actions}}</div><div class="compare-tabs">${{buildCompareTabs("root", "root-code", entry.rootCode, entry.timeframe)}}</div><div class="compare-chart">${{series ? renderRootPreviewChart(series) : `<div class="empty">${{escapePreviewText(rootPreviewMessages.unavailable)}}</div>`}}</div><div class="compare-meta"><article><span>${{escapePreviewText(compareMessages.last)}}</span><strong>${{formatPreviewPrice(snapshot.current_price)}}${{snapshot.unit ? ` ${{escapePreviewText(snapshot.unit)}}` : ""}}</strong></article><article><span>${{escapePreviewText(compareMessages.open_label)}}</span><strong>${{series ? formatPreviewPrice(series.open_price) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.change)}}</span><strong>${{series ? formatPreviewPct(series.change_pct) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.range)}}</span><strong>${{series ? `${{formatPreviewPrice(series.low_price)}} - ${{formatPreviewPrice(series.high_price)}}` : "n/a"}}</strong></article></div><div class="compare-summary"><strong>${{escapePreviewText(snapshot.contract || entry.rootCode)}}</strong><p>${{escapePreviewText(snapshot.source_note || snapshot.status_detail || compareMessages.root_slot)}}</p></div>`;
+    }};
+    const renderCompareSignalCard = (slot) => {{
+      const node = compareSignalNodes[slot];
+      if (!node) {{
+        return;
+      }}
+      {{
+      const entry = compareState.signals[slot];
+      const label = slotTitle("signal", slot);
+      if (!entry) {{
+        node.innerHTML = `<div class="compare-card-head"><div><strong>${{escapePreviewText(label)}}</strong><p>${{escapePreviewText(compareMessages.empty_signal)}}</p></div></div><div class="compare-empty">${{escapePreviewText(compareMessages.empty_signal)}}</div>`;
+        return;
+      }}
+      const snapshot = signalPreviewCache.get(entry.signalId);
+      const actions = `<div class="compare-card-actions"><button class="preview-pin-button" type="button" data-compare-clear-kind="signal" data-compare-slot="${{slot}}">${{escapePreviewText(compareMessages.clear)}}</button><a class="rail-open-link" href="/workspace/signals/${{encodeURIComponent(entry.signalId)}}">${{escapePreviewText(compareMessages.open)}}</a></div>`;
+      if (!snapshot) {{
+        const statusText = entry.unavailable ? signalPreviewMessages.unavailable : compareMessages.loading;
+        node.innerHTML = `<div class="compare-card-head"><div><strong>${{escapePreviewText(label)}}</strong><p>${{escapePreviewText(entry.signalId)}}</p></div>${{actions}}</div><div class="compare-tabs">${{buildCompareTabs("signal", slot, entry.timeframe)}}</div><div class="compare-empty">${{escapePreviewText(statusText)}}</div>`;
+        return;
+      }}
+      const signal = snapshot.signal || null;
+      const marketSnapshot = snapshot.market_snapshot || null;
+      const series = resolvePreviewSeries(marketSnapshot, entry.timeframe);
+      const diffSummary = snapshot.signal_diff && snapshot.signal_diff.summary ? snapshot.signal_diff.summary : signalPreviewMessages.none;
+      const latestEvent = Array.isArray(snapshot.decision_log) && snapshot.decision_log.length > 0
+        ? `${{snapshot.decision_log[0].title}} | ${{previewExcerpt(snapshot.decision_log[0].detail, 120)}}`
+        : signalPreviewMessages.none;
+      const subtitle = signal
+        ? `${{signal.direction_final}} | ${{signal.horizon}} | ${{signal.workflow_state}}`
+        : compareMessages.signal_slot;
+      node.innerHTML = `<div class="compare-card-head"><div><strong>${{escapePreviewText(label)}} · ${{escapePreviewText(signal ? `${{signal.root}} | ${{signal.contract}}` : entry.signalId)}}</strong><p>${{escapePreviewText(subtitle)}}</p></div>${{actions}}</div><div class="compare-tabs">${{buildCompareTabs("signal", slot, entry.timeframe)}}</div><div class="compare-chart">${{series ? renderRootPreviewChart(series) : `<div class="empty">${{escapePreviewText(signalPreviewMessages.unavailable)}}</div>`}}</div><div class="compare-meta"><article><span>${{escapePreviewText(compareMessages.confidence)}}</span><strong>${{signal && typeof signal.confidence_final === "number" ? signal.confidence_final.toFixed(2) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.skeptic)}}</span><strong>${{signal && typeof signal.skeptic_score === "number" ? signal.skeptic_score.toFixed(2) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.priority)}}</span><strong>${{signal && signal.priority_score !== undefined ? escapePreviewText(signal.priority_score) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.price)}}</span><strong>${{marketSnapshot ? `${{formatPreviewPrice(marketSnapshot.current_price)}}${{marketSnapshot.unit ? ` ${{escapePreviewText(marketSnapshot.unit)}}` : ""}}` : "n/a"}}</strong></article></div><div class="compare-summary"><strong>${{escapePreviewText(previewExcerpt(signal && signal.summary ? signal.summary : signalPreviewMessages.none, 180))}}</strong><p><strong>${{escapePreviewText(compareMessages.diff)}}:</strong> ${{escapePreviewText(previewExcerpt(diffSummary, 180))}}</p><p><strong>${{escapePreviewText(compareMessages.timeline)}}:</strong> ${{escapePreviewText(latestEvent)}}</p></div>`;
+      return;
+      }}
+      if (!compareState.signal) {{
+        compareSignalNode.innerHTML = `<div class="compare-card-head"><div><strong>${{escapePreviewText(compareMessages.signal_slot)}}</strong><p>${{escapePreviewText(compareMessages.empty_signal)}}</p></div></div><div class="compare-empty">${{escapePreviewText(compareMessages.empty_signal)}}</div>`;
+        return;
+      }}
+      const entry = compareState.signal;
+      const snapshot = signalPreviewCache.get(entry.signalId);
+      const actions = `<div class="compare-card-actions"><button class="preview-pin-button" type="button" data-compare-clear="signal">${{escapePreviewText(compareMessages.clear)}}</button><a class="rail-open-link" href="/workspace/signals/${{encodeURIComponent(entry.signalId)}}">${{escapePreviewText(compareMessages.open)}}</a></div>`;
+      if (!snapshot) {{
+        const statusText = entry.unavailable ? signalPreviewMessages.unavailable : compareMessages.loading;
+        compareSignalNode.innerHTML = `<div class="compare-card-head"><div><strong>${{escapePreviewText(entry.signalId)}}</strong><p>${{escapePreviewText(compareMessages.signal_slot)}}</p></div>${{actions}}</div><div class="compare-tabs">${{buildCompareTabs("signal", "signal-id", entry.signalId, entry.timeframe)}}</div><div class="compare-empty">${{escapePreviewText(statusText)}}</div>`;
+        return;
+      }}
+      const signal = snapshot.signal || null;
+      const marketSnapshot = snapshot.market_snapshot || null;
+      const series = resolvePreviewSeries(marketSnapshot, entry.timeframe);
+      const diffSummary = snapshot.signal_diff && snapshot.signal_diff.summary ? snapshot.signal_diff.summary : signalPreviewMessages.none;
+      const latestEvent = Array.isArray(snapshot.decision_log) && snapshot.decision_log.length > 0
+        ? `${{snapshot.decision_log[0].title}} | ${{previewExcerpt(snapshot.decision_log[0].detail, 120)}}`
+        : signalPreviewMessages.none;
+      const subtitle = signal
+        ? `${{signal.direction_final}} | ${{signal.horizon}} | ${{signal.workflow_state}}`
+        : compareMessages.signal_slot;
+      compareSignalNode.innerHTML = `<div class="compare-card-head"><div><strong>${{escapePreviewText(signal ? `${{signal.root}} | ${{signal.contract}}` : entry.signalId)}}</strong><p>${{escapePreviewText(subtitle)}}</p></div>${{actions}}</div><div class="compare-tabs">${{buildCompareTabs("signal", "signal-id", entry.signalId, entry.timeframe)}}</div><div class="compare-chart">${{series ? renderRootPreviewChart(series) : `<div class="empty">${{escapePreviewText(signalPreviewMessages.unavailable)}}</div>`}}</div><div class="compare-meta"><article><span>${{escapePreviewText(compareMessages.confidence)}}</span><strong>${{signal && typeof signal.confidence_final === "number" ? signal.confidence_final.toFixed(2) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.skeptic)}}</span><strong>${{signal && typeof signal.skeptic_score === "number" ? signal.skeptic_score.toFixed(2) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.priority)}}</span><strong>${{signal && signal.priority_score !== undefined ? escapePreviewText(signal.priority_score) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.price)}}</span><strong>${{marketSnapshot ? `${{formatPreviewPrice(marketSnapshot.current_price)}}${{marketSnapshot.unit ? ` ${{escapePreviewText(marketSnapshot.unit)}}` : ""}}` : "n/a"}}</strong></article></div><div class="compare-summary"><strong>${{escapePreviewText(previewExcerpt(signal && signal.summary ? signal.summary : signalPreviewMessages.none, 180))}}</strong><p><strong>${{escapePreviewText(compareMessages.diff)}}:</strong> ${{escapePreviewText(previewExcerpt(diffSummary, 180))}}</p><p><strong>${{escapePreviewText(compareMessages.timeline)}}:</strong> ${{escapePreviewText(latestEvent)}}</p></div>`;
+    }};
+    const renderCompareBoard = () => {{
+      renderCompareStatus();
+      for (const slot of compareSlots) {{
+        renderCompareRootCard(slot);
+        renderCompareSignalCard(slot);
+      }}
+      syncRootPinButtons();
+      syncSignalPinButtons();
+      return;
+    }};
+    const pinRootPreview = async (rootCode, timeframe, slot) => {{
+      const resolvedSlot = normalizeCompareSlot(slot);
+      const resolvedTimeframe = normalizeCompareTimeframe(timeframe);
+      const current = compareState.roots[resolvedSlot];
+      if (current && current.rootCode === rootCode && current.timeframe === resolvedTimeframe) {{
+        compareState.roots[resolvedSlot] = null;
+        persistCompareState();
+        renderCompareBoard();
+        return;
+      }}
+      compareState.roots[resolvedSlot] = {{
+        rootCode,
+        timeframe: resolvedTimeframe,
+        unavailable: false,
+      }};
+      persistCompareState();
+      renderCompareBoard();
+      try {{
+        await fetchRootPreviewSnapshot(rootCode);
+        if (
+          compareState.roots[resolvedSlot]
+          && compareState.roots[resolvedSlot].rootCode === rootCode
+          && compareState.roots[resolvedSlot].timeframe === resolvedTimeframe
+        ) {{
+          compareState.roots[resolvedSlot].unavailable = false;
+        }}
+      }} catch (_error) {{
+        if (
+          compareState.roots[resolvedSlot]
+          && compareState.roots[resolvedSlot].rootCode === rootCode
+          && compareState.roots[resolvedSlot].timeframe === resolvedTimeframe
+        ) {{
+          compareState.roots[resolvedSlot].unavailable = true;
+        }}
+      }}
+      renderCompareBoard();
+      return;
+    }};
+    const pinSignalPreview = async (signalId, timeframe, slot) => {{
+      const resolvedSlot = normalizeCompareSlot(slot);
+      const resolvedTimeframe = normalizeCompareTimeframe(timeframe);
+      const current = compareState.signals[resolvedSlot];
+      if (current && current.signalId === signalId && current.timeframe === resolvedTimeframe) {{
+        compareState.signals[resolvedSlot] = null;
+        persistCompareState();
+        renderCompareBoard();
+        return;
+      }}
+      compareState.signals[resolvedSlot] = {{
+        signalId,
+        timeframe: resolvedTimeframe,
+        unavailable: false,
+      }};
+      persistCompareState();
+      renderCompareBoard();
+      try {{
+        await fetchSignalPreviewSnapshot(signalId);
+        if (
+          compareState.signals[resolvedSlot]
+          && compareState.signals[resolvedSlot].signalId === signalId
+          && compareState.signals[resolvedSlot].timeframe === resolvedTimeframe
+        ) {{
+          compareState.signals[resolvedSlot].unavailable = false;
+        }}
+      }} catch (_error) {{
+        if (
+          compareState.signals[resolvedSlot]
+          && compareState.signals[resolvedSlot].signalId === signalId
+          && compareState.signals[resolvedSlot].timeframe === resolvedTimeframe
+        ) {{
+          compareState.signals[resolvedSlot].unavailable = true;
+        }}
+      }}
+      renderCompareBoard();
+      return;
+    }};
+    for (const button of document.querySelectorAll("[data-pin-root-preview]")) {{
+      button.addEventListener("click", async (event) => {{
+        event.preventDefault();
+        event.stopPropagation();
+        const rootCode = button.dataset.rootCode;
+        const timeframe = button.dataset.timeframe || "1D";
+        const slot = button.dataset.compareSlot || "a";
+        if (!rootCode) {{
+          return;
+        }}
+        await pinRootPreview(rootCode, timeframe, slot);
+      }});
+    }}
+    for (const button of document.querySelectorAll("[data-pin-signal-preview]")) {{
+      button.addEventListener("click", async (event) => {{
+        event.preventDefault();
+        event.stopPropagation();
+        const signalId = button.dataset.signalId;
+        const timeframe = button.dataset.timeframe || "1D";
+        const slot = button.dataset.compareSlot || "a";
+        if (!signalId) {{
+          return;
+        }}
+        await pinSignalPreview(signalId, timeframe, slot);
+      }});
+    }}
+    if (compareBoard) {{
+      compareBoard.addEventListener("click", async (event) => {{
+        const clearButtonNext = event.target.closest("[data-compare-clear-kind]");
+        if (clearButtonNext) {{
+          event.preventDefault();
+          const kind = clearButtonNext.dataset.compareClearKind;
+          const slot = normalizeCompareSlot(clearButtonNext.dataset.compareSlot);
+          if (kind === "root") {{
+            compareState.roots[slot] = null;
+          }}
+          if (kind === "signal") {{
+            compareState.signals[slot] = null;
+          }}
+          persistCompareState();
+          renderCompareBoard();
+          return;
+        }}
+        const timeframeButtonNext = event.target.closest("[data-compare-timeframe]");
+        if (timeframeButtonNext) {{
+          event.preventDefault();
+          const kind = timeframeButtonNext.dataset.compareKind;
+          const slot = normalizeCompareSlot(timeframeButtonNext.dataset.compareSlot);
+          const timeframe = normalizeCompareTimeframe(timeframeButtonNext.dataset.timeframe);
+          if (kind === "root" && compareState.roots[slot]) {{
+            compareState.roots[slot].timeframe = timeframe;
+            compareState.roots[slot].unavailable = false;
+            persistCompareState();
+            renderCompareBoard();
+            try {{
+              await fetchRootPreviewSnapshot(compareState.roots[slot].rootCode);
+            }} catch (_error) {{
+              if (compareState.roots[slot]) {{
+                compareState.roots[slot].unavailable = true;
+              }}
+            }}
+            renderCompareBoard();
+            return;
+          }}
+          if (kind === "signal" && compareState.signals[slot]) {{
+            compareState.signals[slot].timeframe = timeframe;
+            compareState.signals[slot].unavailable = false;
+            persistCompareState();
+            renderCompareBoard();
+            try {{
+              await fetchSignalPreviewSnapshot(compareState.signals[slot].signalId);
+            }} catch (_error) {{
+              if (compareState.signals[slot]) {{
+                compareState.signals[slot].unavailable = true;
+              }}
+            }}
+            renderCompareBoard();
+            return;
+          }}
+        }}
+        const clearButton = event.target.closest("[data-compare-clear]");
+        if (clearButton) {{
+          event.preventDefault();
+          const slot = clearButton.dataset.compareClear;
+          if (slot === "root") {{
+            compareState.root = null;
+          }}
+          if (slot === "signal") {{
+            compareState.signal = null;
+          }}
+          persistCompareState();
+          renderCompareBoard();
+          return;
+        }}
+        const rootTimeframeButton = event.target.closest("[data-compare-root-timeframe]");
+        if (rootTimeframeButton && compareState.root) {{
+          event.preventDefault();
+          compareState.root.timeframe = normalizeCompareTimeframe(rootTimeframeButton.dataset.timeframe);
+          compareState.root.unavailable = false;
+          persistCompareState();
+          renderCompareBoard();
+          try {{
+            await fetchRootPreviewSnapshot(compareState.root.rootCode);
+          }} catch (_error) {{
+            compareState.root.unavailable = true;
+          }}
+          renderCompareBoard();
+          return;
+        }}
+        const signalTimeframeButton = event.target.closest("[data-compare-signal-timeframe]");
+        if (signalTimeframeButton && compareState.signal) {{
+          event.preventDefault();
+          compareState.signal.timeframe = normalizeCompareTimeframe(signalTimeframeButton.dataset.timeframe);
+          compareState.signal.unavailable = false;
+          persistCompareState();
+          renderCompareBoard();
+          try {{
+            await fetchSignalPreviewSnapshot(compareState.signal.signalId);
+          }} catch (_error) {{
+            compareState.signal.unavailable = true;
+          }}
+          renderCompareBoard();
+        }}
+      }});
+    }}
+    if (compareClearAllButton) {{
+      compareClearAllButton.addEventListener("click", (event) => {{
+        event.preventDefault();
+        for (const slot of compareSlots) {{
+          compareState.roots[slot] = null;
+          compareState.signals[slot] = null;
+        }}
+        persistCompareState();
+        renderCompareBoard();
+        return;
+        compareState.root = null;
+        compareState.signal = null;
+        persistCompareState();
+        renderCompareBoard();
+      }});
+    }}
+    restoreCompareState();
+    renderCompareBoard();
+    for (const slot of compareSlots) {{
+      if (compareState.roots[slot]) {{
+        void fetchRootPreviewSnapshot(compareState.roots[slot].rootCode)
+          .then(() => {{
+            if (compareState.roots[slot]) {{
+              compareState.roots[slot].unavailable = false;
+            }}
+            renderCompareBoard();
+          }})
+          .catch(() => {{
+            if (compareState.roots[slot]) {{
+              compareState.roots[slot].unavailable = true;
+            }}
+            renderCompareBoard();
+          }});
+      }}
+      if (compareState.signals[slot]) {{
+        void fetchSignalPreviewSnapshot(compareState.signals[slot].signalId)
+          .then(() => {{
+            if (compareState.signals[slot]) {{
+              compareState.signals[slot].unavailable = false;
+            }}
+            renderCompareBoard();
+          }})
+          .catch(() => {{
+            if (compareState.signals[slot]) {{
+              compareState.signals[slot].unavailable = true;
+            }}
+            renderCompareBoard();
+          }});
+      }}
+    }}
+    if (compareState.root) {{
+      void fetchRootPreviewSnapshot(compareState.root.rootCode)
+        .then(() => {{
+          if (compareState.root) {{
+            compareState.root.unavailable = false;
+          }}
+          renderCompareBoard();
+        }})
+        .catch(() => {{
+          if (compareState.root) {{
+            compareState.root.unavailable = true;
+          }}
+          renderCompareBoard();
+        }});
+    }}
+    if (compareState.signal) {{
+      void fetchSignalPreviewSnapshot(compareState.signal.signalId)
+        .then(() => {{
+          if (compareState.signal) {{
+            compareState.signal.unavailable = false;
+          }}
+          renderCompareBoard();
+        }})
+        .catch(() => {{
+          if (compareState.signal) {{
+            compareState.signal.unavailable = true;
+          }}
+          renderCompareBoard();
+        }});
+    }}
+    document.addEventListener("click", (event) => {{
+      if (!event.target.closest("[data-root-preview-card]")) {{
+        hideRootPreviews();
+      }}
+      if (!event.target.closest("[data-signal-preview-card]")) {{
+        hideSignalPreviews();
+      }}
+    }});
+    const workflowStatus = document.getElementById("workspace-workflow-status");
+    const workflowButtons = document.querySelectorAll(".workflow-button[data-signal-id]");
+    for (const button of workflowButtons) {{
+      button.addEventListener("click", async () => {{
+        const signalId = button.dataset.signalId;
+        const workflowState = button.dataset.workflowState;
+        if (!signalId || !workflowState) {{
+          return;
+        }}
+        if (workflowStatus) {{
+          workflowStatus.textContent = "Updating workflow...";
+        }}
+        const response = await fetch(`/api/v1/signals/${{signalId}}/workflow-state`, {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{ workflow_state: workflowState }}),
+        }});
+        if (!response.ok) {{
+          if (workflowStatus) {{
+            workflowStatus.textContent = "Workflow update failed.";
+          }}
+          return;
+        }}
+        if (workflowStatus) {{
+          workflowStatus.textContent = "Workflow updated. Refreshing...";
         }}
         const url = new URL(window.location.href);
         url.searchParams.set("signal_id", signalId);
@@ -2322,11 +4697,478 @@ def _render_workspace(snapshot: WorkspaceSnapshot) -> str:
       }});
     }}
   </script>
+  </main>
+  </div>
+</body>
+</html>"""
+
+
+def _council_role_blueprint(role_key: str, language: str) -> dict[str, str]:
+    blueprints = {
+        "trend_vol": {
+            "ru": {
+                "title": "Аналитик тренда и волатильности",
+                "inputs": "Смотрит на наклон тренда, режим волатильности, пробойные признаки и устойчивость движения по горизонту.",
+                "output": "Даёт первичное направление сценария и решает, есть ли здесь преимущество или рынок пока в режиме no-edge.",
+                "purpose": "Помогает понять, стоит ли идея на структуре движения цены или рынок пока слишком шумный.",
+            },
+            "en": {
+                "title": "Trend / volatility analyst",
+                "inputs": "Looks at trend slope, volatility regime, breakout features, and horizon-level stability.",
+                "output": "Produces the first directional read and decides whether the setup has edge or is still near no-edge.",
+                "purpose": "Shows whether the idea is supported by price structure or the market is still too noisy.",
+            },
+        },
+        "flow_liquidity": {
+            "ru": {
+                "title": "Аналитик потока и ликвидности",
+                "inputs": "Смотрит на ликвидность, качество потока, прокси стакана и риск проскальзывания.",
+                "output": "Оценивает, можно ли доверять движению и не искажается ли оно тонким рынком.",
+                "purpose": "Отделяет живое движение от ситуации, где цена идёт без достаточного подтверждения ликвидностью.",
+            },
+            "en": {
+                "title": "Flow / liquidity analyst",
+                "inputs": "Looks at liquidity, flow quality, order-book proxies, and slippage risk.",
+                "output": "Judges whether the move is trustworthy or distorted by thin participation.",
+                "purpose": "Separates real movement from fragile moves that can disappear on poor liquidity.",
+            },
+        },
+        "oi_roll": {
+            "ru": {
+                "title": "Аналитик OI и ролла",
+                "inputs": "Смотрит на долю следующего контракта, состояние ролла, близость экспирации и прокси открытого интереса.",
+                "output": "Оценивает, насколько переход между контрактами может испортить текущий сигнал.",
+                "purpose": "Не даёт воспринимать технический сигнал как чистый, когда цену уже заметно двигает ролл или экспирация.",
+            },
+            "en": {
+                "title": "OI / roll analyst",
+                "inputs": "Looks at next-contract share, roll state, time to expiry, and open-interest proxies.",
+                "output": "Measures how much contract transition can distort the current signal.",
+                "purpose": "Prevents a clean-looking technical setup from ignoring roll and expiry pressure.",
+            },
+        },
+        "macro_event": {
+            "ru": {
+                "title": "Аналитик макро-событий",
+                "inputs": "Смотрит на календарь событий, макро-режим и близость новостей, которые могут резко сменить контекст.",
+                "output": "Даёт поправку на событийный риск и предупреждает, когда хороший сетап слишком зависим от календаря.",
+                "purpose": "Нужен, чтобы было видно: рынок может быть прав по технике, но не пережить ближайшее событие.",
+            },
+            "en": {
+                "title": "Macro-event analyst",
+                "inputs": "Looks at the event calendar, macro regime, and proximity of news that can flip the context fast.",
+                "output": "Adds the event-risk overlay and warns when a good setup is too dependent on timing.",
+                "purpose": "Makes it clear that technical structure can still fail when the event calendar is too close.",
+            },
+        },
+        "skeptic": {
+            "ru": {
+                "title": "Скептик",
+                "inputs": "Собирает выводы аналитиков, ищет противоречия, проверяет риск ролла, экспирации и слабые места тезиса.",
+                "output": "Даёт verdict и score доверия: насколько совет вообще готов пропустить идею дальше.",
+                "purpose": "Это предохранитель. Скептик нужен не чтобы подтвердить идею, а чтобы найти причину её не брать.",
+            },
+            "en": {
+                "title": "Skeptic",
+                "inputs": "Collects analyst outputs, looks for contradictions, and checks roll, expiry, and thesis weaknesses.",
+                "output": "Produces the approval verdict and score that decides whether the setup can move forward.",
+                "purpose": "This is the safety brake: the skeptic is there to find reasons not to take the idea.",
+            },
+        },
+        "arbiter": {
+            "ru": {
+                "title": "Арбитр",
+                "inputs": "Берёт все голоса совета, результат скептика и текущие риски исполнения.",
+                "output": "Формирует итоговое направление, уверенность, приоритет и короткое человеческое summary.",
+                "purpose": "Это финальный перевод сложной внутренней логики в один понятный вывод для пользователя.",
+            },
+            "en": {
+                "title": "Arbiter",
+                "inputs": "Takes every council output, the skeptic result, and the current execution risks.",
+                "output": "Produces the final direction, confidence, priority, and short human-readable summary.",
+                "purpose": "Turns the internal debate into one clear decision the user can act on.",
+            },
+        },
+    }
+    fallback = {
+        "ru": {
+            "title": "Участник совета",
+            "inputs": "Использует свою часть рыночного контекста и текущее состояние сигнала.",
+            "output": "Возвращает промежуточное заключение по сценарию.",
+            "purpose": "Нужен, чтобы итоговое решение не строилось на одном признаке.",
+        },
+        "en": {
+            "title": "Council participant",
+            "inputs": "Uses its slice of market context and the current signal state.",
+            "output": "Returns an intermediate opinion on the setup.",
+            "purpose": "Keeps the final decision from depending on one feature only.",
+        },
+    }
+    return blueprints.get(role_key, fallback)["ru" if language == "ru" else "en"]
+
+
+def _render_council_page(snapshot: WorkspaceSnapshot, *, language: str) -> str:
+    focus = snapshot.focus_signal
+    root_details = snapshot.root_details
+    panel = snapshot.control_panel
+    primary_feed = _primary_market_feed(panel)
+    control_panel = _render_control_panel(panel)
+    sidebar = _render_page_sidebar(
+        "council",
+        root=snapshot.selected_root,
+        roots=snapshot.roots,
+        signal_id=focus.signal_id if focus is not None else snapshot.selected_signal_id,
+    )
+    sidebar_styles = _render_page_sidebar_styles("1380px")
+    is_ru = language == "ru"
+
+    copy = {
+        "title": "Как принимается решение" if is_ru else "How the decision is made",
+        "eyebrow": "Совет сигналов | Прозрачность" if is_ru else "Signal council | Explainability",
+        "hero_title": (
+            f"Как совет принимает решение по {snapshot.selected_root}"
+            if is_ru
+            else f"How the council decides for {snapshot.selected_root}"
+        ),
+        "hero_intro": (
+            "Здесь по шагам показано, какие вводные получает каждый участник совета, почему итоговое решение выглядит именно так и как читать score простым человеческим языком."
+            if is_ru
+            else "This page shows what each council participant receives as input, why the final call looks this way, and how to read the scores in plain language."
+        ),
+        "open_json": "Открыть JSON рабочего пространства" if is_ru else "Open workspace JSON",
+        "open_workspace": "Открыть рабочее пространство" if is_ru else "Open workspace",
+        "open_dashboard": "Открыть дашборд" if is_ru else "Open dashboard",
+        "runtime": "Текущий runtime" if is_ru else "Current runtime",
+        "data_mode": "Режим данных" if is_ru else "Data mode",
+        "price_source": "Источник цены" if is_ru else "Price source",
+        "reference": "Справочник контрактов" if is_ru else "Contract reference",
+        "latest_market": "Последние рыночные данные" if is_ru else "Latest market data",
+        "latest_reference": "Последняя синхронизация справочника" if is_ru else "Latest reference sync",
+        "inputs_title": "Какие вводные получает совет" if is_ru else "What enters the council",
+        "inputs_note": (
+            "До спора моделей в совет попадает единый пакет данных о рынке, контракте и текущем сигнале."
+            if is_ru
+            else "Before models disagree with each other, the council gets one shared packet of market, contract, and signal context."
+        ),
+        "flow_title": "Блок-схема решения" if is_ru else "Decision flow",
+        "flow_note": (
+            "Упрощённый путь от исходных данных до финального решения, которое видит пользователь."
+            if is_ru
+            else "A simplified path from raw inputs to the final decision the user sees."
+        ),
+        "roles_title": "Кто участвует в совете" if is_ru else "Who sits on the council",
+        "roles_note": (
+            "У каждой роли свой срез рынка. Ниже видно, что каждая роль берёт на вход и что возвращает на выход."
+            if is_ru
+            else "Every role sees a different slice of the market. Below you can see what each role takes in and what it returns."
+        ),
+        "looks_at": "Смотрит на" if is_ru else "Looks at",
+        "produces": "Возвращает" if is_ru else "Produces",
+        "purpose": "Зачем нужен" if is_ru else "Why it matters",
+        "fixed": "Сейчас роль жёстко закреплена за этой моделью." if is_ru else "This role is currently fixed to this model.",
+        "dynamic": "Роль выбирается динамически." if is_ru else "This role is routed dynamically.",
+        "decision_title": "Почему итог сейчас такой" if is_ru else "Why the current output looks like this",
+        "decision_note": (
+            "Это краткая человеческая расшифровка того, почему арбитр оставил именно такой вывод на поверхности продукта."
+            if is_ru
+            else "This is the short human explanation for why the arbiter left this exact output on the product surface."
+        ),
+        "why_now": "Почему сейчас" if is_ru else "Why now",
+        "pushback": "Что сдерживает" if is_ru else "What is holding it back",
+        "invalidation": "Что отменяет сценарий" if is_ru else "What would break it",
+        "score_title": "Как читать итоговые score" if is_ru else "How to read the final scores",
+        "score_note": (
+            "Ключевые score вынесены отдельно, чтобы решение было прозрачным даже для нетехнического пользователя."
+            if is_ru
+            else "Key scores are separated out so the decision stays transparent even for a non-technical user."
+        ),
+        "runtime_title": "Текущий стек моделей и источников" if is_ru else "Current model and data stack",
+        "runtime_note": (
+            "Здесь уже полный runtime: какие модели закреплены за ролями и чьи данные реально используются."
+            if is_ru
+            else "This is the full runtime: which models own the roles and whose data is actually being used."
+        ),
+    }
+
+    direction_labels = {
+        "bullish": "Бычий" if is_ru else "Bullish",
+        "bearish": "Медвежий" if is_ru else "Bearish",
+        "no_edge": "Без преимущества" if is_ru else "No edge",
+        "neutral": "Нейтральный" if is_ru else "Neutral",
+    }
+    status_labels = {
+        "active": "Активен" if is_ru else "Active",
+        "resolved": "Разрешён" if is_ru else "Resolved",
+        "invalidated": "Инвалидирован" if is_ru else "Invalidated",
+    }
+    workflow_labels = {
+        SignalWorkflowState.WATCHING: "Наблюдаю" if is_ru else "Watching",
+        SignalWorkflowState.VALIDATING: "Проверяю" if is_ru else "Validating",
+        SignalWorkflowState.READY: "Готов" if is_ru else "Ready",
+        SignalWorkflowState.IGNORED: "Игнорирую" if is_ru else "Ignored",
+        SignalWorkflowState.ESCALATE: "Эскалирую" if is_ru else "Escalated",
+        SignalWorkflowState.RESOLVED: "Завершено" if is_ru else "Resolved",
+    }
+
+    focus_header = (
+        f"{focus.root} | {focus.contract} | {focus.horizon.value}"
+        if focus is not None
+        else ("Сигнала в фокусе пока нет" if is_ru else "No focus signal yet")
+    )
+    focus_summary = (
+        focus.summary
+        if focus is not None
+        else (
+            "Выберите серию или дождитесь следующего пересчёта, чтобы увидеть живую анатомию решения."
+            if is_ru
+            else "Pick a root or wait for the next recalculation cycle to see the live decision anatomy."
+        )
+    )
+    final_call = (
+        f"{direction_labels.get(focus.direction_final.value, focus.direction_final.value)} · {status_labels.get(focus.status.value, focus.status.value)}"
+        if focus is not None
+        else "n/a"
+    )
+    workflow_state = workflow_labels.get(focus.workflow_state, _workflow_state_label(focus.workflow_state)) if focus is not None else "n/a"
+
+    session_name = root_details.session.session_type.value if root_details is not None else "n/a"
+    trading_day = root_details.session.trading_day.isoformat() if root_details is not None else "n/a"
+    active_contract = root_details.continuous_series.active_contract if root_details is not None else "n/a"
+    next_contract = root_details.continuous_series.next_contract if root_details is not None else "n/a"
+    days_to_expiry = str(root_details.continuous_series.days_to_expiry) if root_details is not None else "n/a"
+    expiry_date = (
+        _format_calendar_date(root_details.continuous_series.expiry_date, language=language)
+        if root_details is not None
+        else "n/a"
+    )
+    roll_share = f"{root_details.continuous_series.next_contract_share:.0%}" if root_details is not None else "n/a"
+    price_source = primary_feed.owner if primary_feed is not None else "n/a"
+    data_mode = _control_panel_data_mode_label(panel.data_mode)
+    reference_state = f"{_control_panel_reference_sync_label(panel.reference_sync.status)} · {_control_panel_reference_sync_source(panel.reference_sync.source)}"
+    contract_context = (
+        f"{next_contract} · экспирация {days_to_expiry} дн. до {expiry_date} · ролл {roll_share}"
+        if is_ru
+        else f"{next_contract} · expiry in {days_to_expiry}d ({expiry_date}) · roll {roll_share}"
+    )
+
+    role_cards = []
+    for item in panel.model_roles:
+        blueprint = _council_role_blueprint(item.role_key, language)
+        role_cards.append(
+            '<article class="role-card">'
+            f'<strong>{escape(blueprint["title"])}</strong>'
+            f'<p class="role-runtime">{escape(item.product)} · {escape(item.model)} · {escape(item.owner)}</p>'
+            '<div class="role-facts">'
+            f'<div><span>{escape(copy["looks_at"])}</span><p>{escape(blueprint["inputs"])}</p></div>'
+            f'<div><span>{escape(copy["produces"])}</span><p>{escape(blueprint["output"])}</p></div>'
+            f'<div><span>{escape(copy["purpose"])}</span><p>{escape(blueprint["purpose"])}</p></div>'
+            "</div>"
+            f'<small>{escape(copy["fixed"] if item.control_mode == "fixed" else copy["dynamic"])}</small>'
+            "</article>"
+        )
+
+    why_now_items = "".join(f"<li>{escape(item)}</li>" for item in (focus.drivers if focus is not None else [])) or f"<li>{escape('Драйверы пока не зафиксированы.' if is_ru else 'No drivers are recorded yet.')}</li>"
+    pushback_items = "".join(f"<li>{escape(item)}</li>" for item in (focus.objections if focus is not None else [])) or f"<li>{escape('Сдерживающие факторы пока не зафиксированы.' if is_ru else 'No pushback is recorded yet.')}</li>"
+    invalidation_items = "".join(f"<li>{escape(item)}</li>" for item in (focus.invalidation_conditions if focus is not None else [])) or f"<li>{escape('?????????????? ???????????? ???????? ???? ??????????????????????????.' if is_ru else 'No invalidation conditions are recorded yet.')}</li>"
+    disagreement_map = _render_confidence_decomposition(snapshot.focus_confidence)
+    counterfactual_prompt = (
+        "?????? ?????????????????? ???????????????? ?? no-trade, ?? ?????????? ???????? ???????????????????? ?????????????? ???????????????????????"
+        if is_ru
+        else "What would make this a no-trade, and what single observation would upgrade conviction?"
+    )
+    counterfactual_note = (
+        ("???????????????????? ????????????????: " if is_ru else "No-trade trigger: ")
+        + escape(
+            focus.invalidation_conditions[0]
+            if focus is not None and focus.invalidation_conditions
+            else (
+                "?????? ?????????????? ?????????????????? ???????????????? ?????? ???????????????????? ?????????? ????????????."
+                if is_ru
+                else "If the key driver breaks or data freshness degrades materially."
+            )
+        )
+        + "<br>"
+        + (("?????????????? conviction: ") if is_ru else "Conviction upgrade: ")
+        + escape(
+            focus.drivers[0]
+            if focus is not None and focus.drivers
+            else "A fresh confirming move from the same direction across higher horizons."
+        )
+    )
+    session_guidance = _render_review_bundle(snapshot.review_bundle)
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{escape(copy["title"])}</title>
+  <style>
+    :root {{ --bg:#f6f1e7; --paper:rgba(255,250,241,.9); --ink:#17222c; --muted:#5e6b73; --line:rgba(23,34,44,.1); --navy:#193a52; --teal:#0f6c67; --amber:#b66d1f; --coral:#b64b3d; --mint:#2f7d5b; --shadow:0 18px 46px rgba(23,34,44,.11); }}
+    * {{ box-sizing:border-box; }}
+    body {{ margin:0; min-height:100vh; color:var(--ink); font-family:"Segoe UI","Trebuchet MS",sans-serif; background:radial-gradient(circle at top left,rgba(182,109,31,.17),transparent 26%),radial-gradient(circle at top right,rgba(15,108,103,.18),transparent 24%),linear-gradient(180deg,#fbf7f0,var(--bg)); }}
+    a {{ color:inherit; text-decoration:none; }}
+    .shell {{ width:min(1380px,calc(100% - 28px)); margin:18px auto 36px; }}
+    .hero,.panel {{ background:var(--paper); border:1px solid var(--line); border-radius:30px; box-shadow:var(--shadow); backdrop-filter:blur(14px); }}
+    .hero {{ display:grid; grid-template-columns:minmax(0,1.45fr) minmax(320px,.95fr); gap:18px; padding:24px; }}
+    .eyebrow {{ display:inline-flex; gap:8px; align-items:center; padding:8px 12px; border-radius:999px; background:rgba(25,58,82,.08); color:var(--navy); text-transform:uppercase; letter-spacing:.08em; font-size:12px; }}
+    h1 {{ margin:14px 0 10px; font-family:Georgia,"Palatino Linotype",serif; font-size:clamp(34px,5vw,58px); line-height:.98; max-width:11ch; }}
+    h2 {{ margin:0; font-family:Georgia,"Palatino Linotype",serif; font-size:24px; }}
+    h3 {{ margin:0 0 10px; font-size:16px; }}
+    .muted,.panel-note,.input-card p,.score-card p,.role-facts p,.why-card ul,.control-summary-card small,.role-card small {{ color:var(--muted); line-height:1.6; }}
+    .hero-actions {{ display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }}
+    .button {{ display:inline-flex; align-items:center; justify-content:center; padding:12px 16px; border-radius:14px; border:1px solid var(--line); background:rgba(255,255,255,.62); font-weight:600; }}
+    .button.primary {{ background:var(--navy); border-color:transparent; color:#fdf8f0; }}
+    .hero-side {{ padding:18px; border-radius:24px; background:linear-gradient(160deg,rgba(25,58,82,.96),rgba(15,108,103,.88)); color:#f5efe6; display:grid; gap:12px; }}
+    .hero-side p,.hero-side small {{ color:rgba(245,239,230,.84); line-height:1.55; }}
+    .hero-stats,.input-grid,.score-grid,.control-summary-grid,.why-grid,.role-grid,.metric-list {{ display:grid; gap:14px; }}
+    .hero-stats {{ grid-template-columns:repeat(2,minmax(0,1fr)); }}
+    .hero-stats article,.input-card,.score-card,.role-card,.why-card,.control-summary-card,.flow-node,.metric-list article {{ padding:16px 18px; border-radius:20px; border:1px solid var(--line); background:rgba(255,255,255,.7); display:grid; gap:8px; align-content:start; }}
+    .hero-stats article {{ background:rgba(255,255,255,.1); }}
+    .hero-stats span,.input-card span,.score-card span,.flow-node span,.role-facts span,.control-summary-card label {{ display:block; margin-bottom:8px; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }}
+    .hero-side .hero-stats span {{ color:rgba(245,239,230,.74); }}
+    .input-grid,.score-grid,.control-summary-grid,.metric-list {{ grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); }}
+    .role-grid {{ grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); }}
+    .why-grid {{ grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); }}
+    .input-card,.score-card,.control-summary-card {{
+      min-height: 168px;
+      padding: 18px 20px;
+      grid-template-rows:auto auto 1fr;
+    }}
+    .input-card strong,.score-card strong,.control-summary-card strong,.flow-node strong,.role-card strong {{
+      font-size:clamp(1.3rem, 1.65vw, 1.72rem);
+      line-height:1.18;
+      word-break:normal;
+      overflow-wrap:break-word;
+      hyphens:auto;
+      text-wrap:pretty;
+    }}
+    .metric-list article {{
+      min-height: 0;
+    }}
+    .metric-list article strong,.metric-list article p {{
+      word-break:normal;
+      overflow-wrap:break-word;
+      hyphens:auto;
+      text-wrap:pretty;
+    }}
+    .input-card p,.score-card p,.role-facts p,.why-card li,.flow-node p,.role-card small,.control-summary-card small {{
+      word-break:normal;
+      overflow-wrap:break-word;
+      hyphens:auto;
+      text-wrap:pretty;
+    }}
+    .panel {{ padding:22px; margin-top:16px; }}
+    .panel-head {{ display:flex; flex-wrap:wrap; justify-content:space-between; gap:12px; align-items:baseline; margin-bottom:16px; }}
+    .flow-strip {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; align-items:stretch; }}
+    .flow-node {{ min-height:0; grid-template-rows:auto auto 1fr; }}
+    .flow-arrow {{ display:none; }}
+    .role-runtime {{ margin:0; color:var(--navy); font-weight:600; }}
+    .role-facts {{ display:grid; gap:10px; }}
+    .why-card ul {{ margin:0; padding-left:18px; }}
+    .control-summary-card.is-wide {{
+      grid-column:span 2;
+      min-height: 0;
+    }}
+    .tone-positive strong {{ color:var(--mint); }} .tone-warning strong {{ color:var(--amber); }} .tone-negative strong {{ color:var(--coral); }}
+    @media (max-width:1180px) {{
+      .hero {{ grid-template-columns:1fr; }}
+      .hero-stats {{ grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); }}
+    }}
+    @media (max-width:760px) {{
+      .control-summary-card.is-wide {{ grid-column:span 1; }}
+      .shell {{ width:min(100% - 18px,1380px); }}
+      .hero {{ padding:22px; }}
+      .hero-stats,
+      .input-grid,
+      .score-grid,
+      .control-summary-grid,
+      .why-grid,
+      .role-grid,
+      .metric-list,
+      .flow-strip {{ grid-template-columns:1fr; }}
+      .flow-node {{ min-height:0; }}
+    }}
+    {sidebar_styles}
+  </style>
+</head>
+<body>
+  <div class="page-shell">
+  {sidebar}
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <span class="eyebrow">{escape(copy["eyebrow"])}</span>
+        <h1>{escape(copy["hero_title"])}</h1>
+        <p class="muted">{escape(copy["hero_intro"])}</p>
+        <div class="hero-actions">
+          <a class="button primary" href="/api/v1/workspace?root={escape(snapshot.selected_root)}">{escape(copy["open_json"])}</a>
+          <a class="button" href="/workspace?root={escape(snapshot.selected_root)}">{escape(copy["open_workspace"])}</a>
+          <a class="button" href="/dashboard?root={escape(snapshot.selected_root)}">{escape(copy["open_dashboard"])}</a>
+        </div>
+      </div>
+      <aside class="hero-side">
+        <div><strong>{escape(focus_header)}</strong><p>{escape(focus_summary)}</p></div>
+        <div class="hero-stats">
+          <article><span>{escape(copy["runtime"])}</span><strong>{escape(panel.llm_product)} · {escape(panel.llm_model)}</strong></article>
+          <article><span>{escape(copy["data_mode"])}</span><strong>{escape(data_mode)}</strong></article>
+          <article><span>{escape(copy["price_source"])}</span><strong>{escape(price_source)}</strong></article>
+          <article><span>{escape(copy["reference"])}</span><strong>{escape(reference_state)}</strong></article>
+          <article><span>{escape(copy["latest_market"])}</span><strong>{escape(_format_timestamp(panel.latest_market_data_at))}</strong></article>
+          <article><span>{escape(copy["latest_reference"])}</span><strong>{escape(_format_timestamp(panel.reference_sync.last_sync_at))}</strong></article>
+        </div>
+      </aside>
+    </section>
+    <section class="panel"><div class="panel-head"><h2>{escape(copy["inputs_title"])}</h2></div><p class="panel-note">{escape(copy["inputs_note"])}</p><div class="input-grid"><article class="input-card"><span>{"Рыночный контекст" if is_ru else "Market context"}</span><strong>{escape(session_name)}</strong><p>{escape(snapshot.selected_root)} · {escape(trading_day)}</p></article><article class="input-card"><span>{"Контракт и экспирация" if is_ru else "Contract and expiry"}</span><strong>{escape(active_contract)}</strong><p>{escape(contract_context)}</p></article><article class="input-card"><span>{"Сигнал в фокусе" if is_ru else "Signal in focus"}</span><strong>{escape(final_call)}</strong><p>{escape(focus_header)} · {escape(workflow_state)}</p></article><article class="input-card"><span>{"Источники и синхронизация" if is_ru else "Sources and sync"}</span><strong>{escape(price_source)}</strong><p>{escape(data_mode)} · {escape(reference_state)}</p></article></div></section>
+    <section class="panel">
+      <div class="panel-head">
+        <h2>{escape(copy["flow_title"])}</h2>
+      </div>
+      <p class="panel-note">{escape(copy["flow_note"])}</p>
+      <div class="flow-strip">
+        <article class="flow-node">
+          <span>{"1. Вводные данные" if is_ru else "1. Inputs"}</span>
+          <strong>{escape(snapshot.selected_root)}</strong>
+          <p>{"Цена, сессия, контракт, экспирация и состояние источников." if is_ru else "Price, session, contract ladder, expiry, and source state."}</p>
+        </article>
+        <article class="flow-node">
+          <span>{"2. Аналитики" if is_ru else "2. Analysts"}</span>
+          <strong>{sum(1 for item in panel.model_roles if item.role_key not in {'skeptic', 'arbiter'})}</strong>
+          <p>{"Каждый аналитик смотрит на свой кусок рынка и даёт промежуточный вывод." if is_ru else "Each analyst looks at one slice of the market and returns an intermediate read."}</p>
+        </article>
+        <article class="flow-node">
+          <span>{"3. Скептик" if is_ru else "3. Skeptic"}</span>
+          <strong>{escape(f"{focus.skeptic_score:.2f}" if focus is not None else "n/a")}</strong>
+          <p>{"Ищет противоречия и снижает доверие, если тезис слабый." if is_ru else "Looks for contradictions and reduces trust when the thesis is weak."}</p>
+        </article>
+        <article class="flow-node">
+          <span>{"4. Арбитр" if is_ru else "4. Arbiter"}</span>
+          <strong>{escape(final_call)}</strong>
+          <p>{"Собирает голоса совета и превращает их в один итоговый сценарий." if is_ru else "Collects the council outputs and turns them into one final scenario."}</p>
+        </article>
+        <article class="flow-node">
+          <span>{"5. Выход для пользователя" if is_ru else "5. User output"}</span>
+          <strong>{escape(workflow_state)}</strong>
+          <p>{"На экран попадают summary, направление, confidence, priority и статус." if is_ru else "The product shows the summary, direction, confidence, priority, and workflow state."}</p>
+        </article>
+      </div>
+    </section>
+    <section class="panel"><div class="panel-head"><h2>{escape(copy["roles_title"])}</h2></div><p class="panel-note">{escape(copy["roles_note"])}</p><div class="role-grid">{"".join(role_cards)}</div></section>
+    <section class="panel"><div class="panel-head"><h2>{escape(copy["decision_title"])}</h2></div><p class="panel-note">{escape(copy["decision_note"])}</p><div class="input-grid"><article class="input-card"><span>{"Итоговый вывод" if is_ru else "Final call"}</span><strong>{escape(final_call)}</strong><p>{escape(focus_header)}</p></article><article class="input-card"><span>{"Короткое объяснение" if is_ru else "Short explanation"}</span><strong>{escape(f"{focus.confidence_final:.2f}" if focus is not None else "n/a")}</strong><p>{escape(focus_summary)}</p></article><article class="input-card"><span>{"Статус работы" if is_ru else "Workflow"}</span><strong>{escape(workflow_state)}</strong><p>{escape(snapshot.selected_root)} · {escape(price_source)}</p></article></div><div class="why-grid"><article class="why-card"><h3>{'Почему сейчас' if is_ru else 'Why now'}</h3><ul>{why_now_items}</ul></article><article class="why-card"><h3>{'Что сдерживает' if is_ru else 'What is holding it back'}</h3><ul>{pushback_items}</ul></article><article class="why-card"><h3>{'Что отменяет сценарий' if is_ru else 'What would break it'}</h3><ul>{invalidation_items}</ul></article></div></section>
+    <section class="panel"><div class="panel-head"><h2>{"Карта разногласий" if is_ru else "Disagreement map"}</h2></div><p class="panel-note">{"Показывает, где аналитики усиливают тезис, а где скептик снижает доверие." if is_ru else "Shows where analysts strengthen the thesis and where the skeptic takes trust away."}</p>{disagreement_map}</section>
+    <section class="panel"><div class="panel-head"><h2>{"Контрфактические подсказки" if is_ru else "Counterfactual prompts"}</h2></div><p class="panel-note">{escape(counterfactual_prompt)}</p><div class="metric-list"><article><strong>{"Порог отмены" if is_ru else "No-trade trigger"}</strong><p class="muted">{counterfactual_note}</p></article></div></section>
+    <section class="panel"><div class="panel-head"><h2>{"Позиционирование по сессии" if is_ru else "Session-aware posture guidance"}</h2></div><p class="panel-note">{"Короткий обзор для opening auction, post-clearing, rollover window и моментов с пониженной ликвидностью." if is_ru else "A compact review for the opening auction, post-clearing, rollover window, and low-liquidity caution zones."}</p>{session_guidance}</section>
+    <section class="panel"><div class="panel-head"><h2>{escape(copy["score_title"])}</h2></div><p class="panel-note">{escape(copy["score_note"])}</p><div class="score-grid"><article class="score-card"><span>{"Приоритет" if is_ru else "Priority"}</span><strong>{escape(str(focus.priority_score) if focus is not None else "n/a")}</strong><p>{"Показывает, насколько высоко сигнал должен стоять в пользовательской ленте." if is_ru else "Shows how high the signal should sit in the user-facing queue."}</p></article><article class="score-card"><span>{"Уверенность" if is_ru else "Confidence"}</span><strong>{escape(f"{focus.confidence_final:.2f}" if focus is not None else "n/a")}</strong><p>{"Показывает, насколько устойчив итоговый сценарий после калибровки." if is_ru else "Shows how stable the final scenario looks after calibration."}</p></article><article class="score-card"><span>{"Скептик" if is_ru else "Skeptic"}</span><strong>{escape(f"{focus.skeptic_score:.2f}" if focus is not None else "n/a")}</strong><p>{"Чем выше значение, тем меньше у скептика возражений к текущей идее." if is_ru else "Higher means the skeptic has fewer objections to the current idea."}</p></article><article class="score-card"><span>{"Риск ролла" if is_ru else "Roll risk"}</span><strong>{escape(f"{focus.roll_risk:.2f}" if focus is not None else "n/a")}</strong><p>{"Чем выше значение, тем сильнее переход между контрактами может исказить сигнал." if is_ru else "Higher means the contract transition can distort the setup more strongly."}</p></article><article class="score-card"><span>{"Риск экспирации" if is_ru else "Expiry risk"}</span><strong>{escape(f"{focus.expiry_risk:.2f}" if focus is not None else "n/a")}</strong><p>{"Чем выше значение, тем больше близость экспирации влияет на решение." if is_ru else "Higher means time-to-expiry matters more for this decision."}</p></article></div></section>
+    <section class="panel"><div class="panel-head"><h2>{escape(copy["runtime_title"])}</h2></div><p class="panel-note">{escape(copy["runtime_note"])}</p>{control_panel}</section>
+  </main>
+  </div>
 </body>
 </html>"""
 
 
 def _render_journal_workspace(snapshot: JournalWorkspaceSnapshot) -> str:
+    sidebar = _render_page_sidebar("journal", root=snapshot.selected_root, roots=snapshot.roots)
+    sidebar_styles = _render_page_sidebar_styles("1280px")
     root_filters = ['<a class="chip{}" href="/workspace/journal">All roots</a>'.format(" is-active" if snapshot.selected_root is None else "")]
     for root in snapshot.roots:
         query = urlencode({"root": root.root_code, **({"status": snapshot.selected_status.value} if snapshot.selected_status is not None else {}), **({"kind": snapshot.selected_kind.value} if snapshot.selected_kind is not None else {})})
@@ -2347,6 +5189,7 @@ def _render_journal_workspace(snapshot: JournalWorkspaceSnapshot) -> str:
         )
 
     entry_cards = "".join(_render_journal_workspace_entry(item) for item in snapshot.entries) or '<p class="empty">No journal entries match the current filters yet.</p>'
+    decision_cards = "".join(_render_journal_decision_log_item(item) for item in snapshot.decision_log) or '<p class="empty">No decision cards available for the current filter window.</p>'
     related = "".join(_render_related_signal(item) for item in snapshot.related_signals) or '<p class="empty">No related signals in the current filter window.</p>'
     payload = escape(json.dumps(snapshot.model_dump(mode="json"), ensure_ascii=False))
 
@@ -2454,11 +5297,11 @@ def _render_journal_workspace(snapshot: JournalWorkspaceSnapshot) -> str:
       grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.95fr);
       gap: 16px;
     }}
-    .stack, .entry-list, .related-list, .metric-grid {{ display: grid; gap: 12px; }}
+    .stack, .entry-list, .related-list, .metric-grid, .decision-list {{ display: grid; gap: 12px; }}
     .metric-grid {{
       grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     }}
-    .metric-grid article, .entry-card, .related-card, .raw-box {{
+    .metric-grid article, .entry-card, .related-card, .raw-box, .decision-card {{
       padding: 14px 16px;
       border-radius: 18px;
       border: 1px solid var(--line);
@@ -2492,6 +5335,49 @@ def _render_journal_workspace(snapshot: JournalWorkspaceSnapshot) -> str:
       letter-spacing: 0.08em;
       font-size: 12px;
     }}
+    .decision-head {{
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }}
+    .decision-head-actions {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }}
+    .decision-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+    }}
+    .decision-grid article {{
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.74);
+    }}
+    .decision-grid span {{
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 11px;
+    }}
+    .decision-grid ul {{
+      margin: 0;
+      padding-left: 18px;
+      color: var(--ink);
+      line-height: 1.55;
+    }}
+    .decision-grid p {{
+      margin: 0;
+      line-height: 1.6;
+    }}
     pre {{
       margin: 0;
       white-space: pre-wrap;
@@ -2506,9 +5392,12 @@ def _render_journal_workspace(snapshot: JournalWorkspaceSnapshot) -> str:
       }}
       .shell {{ width: min(100% - 16px, 1280px); }}
     }}
+    {sidebar_styles}
   </style>
 </head>
 <body>
+  <div class="page-shell">
+  {sidebar}
   <main class="shell">
     <section class="hero">
       <div>
@@ -2535,6 +5424,11 @@ def _render_journal_workspace(snapshot: JournalWorkspaceSnapshot) -> str:
       <div class="chips">{''.join(root_filters)}</div>
       <div class="chips">{''.join(status_filters)}</div>
       <div class="chips">{''.join(kind_filters)}</div>
+    </section>
+    <section class="panel">
+      <h2>Decision log</h2>
+      <p class="muted">What the user decided, why the current call exists, and what needs to change next.</p>
+      <div class="decision-list">{decision_cards}</div>
     </section>
     <section class="layout">
       <div class="stack">
@@ -2563,11 +5457,14 @@ def _render_journal_workspace(snapshot: JournalWorkspaceSnapshot) -> str:
       </div>
     </section>
   </main>
+  </div>
 </body>
 </html>"""
 
 
 def _render_delivery_history_workspace(snapshot: DeliveryHistoryWorkspaceSnapshot) -> str:
+    sidebar = _render_page_sidebar("delivery-history", root=snapshot.selected_root, roots=snapshot.roots)
+    sidebar_styles = _render_page_sidebar_styles("1320px")
     selected_root = snapshot.selected_root
     root_links = ['<a class="chip{}" href="/workspace/delivery-history">All roots</a>'.format(" is-active" if selected_root is None and snapshot.delivery_activity_filters.root_scope is None else "")]
     for root in snapshot.roots:
@@ -2715,9 +5612,12 @@ def _render_delivery_history_workspace(snapshot: DeliveryHistoryWorkspaceSnapsho
       .hero, .layout {{ grid-template-columns: 1fr; }}
       .shell {{ width: min(100% - 16px, 1320px); }}
     }}
+    {sidebar_styles}
   </style>
 </head>
 <body>
+  <div class="page-shell">
+  {sidebar}
   <main class="shell">
     <section class="hero">
       <div>
@@ -2771,11 +5671,22 @@ def _render_delivery_history_workspace(snapshot: DeliveryHistoryWorkspaceSnapsho
       </div>
     </section>
   </main>
+  </div>
 </body>
 </html>"""
 
 
-def _render_workspace_preferences(snapshot: NotificationPreferenceWorkspaceSnapshot) -> str:
+def _render_workspace_preferences(
+    snapshot: NotificationPreferenceWorkspaceSnapshot,
+    *,
+    root_context: str | None = None,
+) -> str:
+    sidebar = _render_page_sidebar(
+        "preferences",
+        root=root_context or snapshot.preferences.default_root,
+        roots=snapshot.roots,
+    )
+    sidebar_styles = _render_page_sidebar_styles("1240px")
     preferences = snapshot.preferences
     root_options = ['<option value="">Auto root</option>']
     for root in snapshot.roots:
@@ -3003,9 +5914,12 @@ def _render_workspace_preferences(snapshot: NotificationPreferenceWorkspaceSnaps
       }}
       .shell {{ width: min(100% - 16px, 1240px); }}
     }}
+    {sidebar_styles}
   </style>
 </head>
 <body>
+  <div class="page-shell">
+  {sidebar}
   <main class="shell">
     <section class="hero">
       <div>
@@ -3242,12 +6156,16 @@ def _render_workspace_preferences(snapshot: NotificationPreferenceWorkspaceSnaps
       }});
     }}
   </script>
+  </main>
+  </div>
 </body>
 </html>"""
 
 
-def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot) -> str:
+def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot, *, language: str) -> str:
     signal = snapshot.signal
+    sidebar = _render_page_sidebar("signal", root=signal.root, roots=snapshot.roots, signal_id=signal.signal_id)
+    sidebar_styles = _render_page_sidebar_styles("1280px")
     root_details = snapshot.root_details
     visual = snapshot.visual
     journal_rows = "".join(_render_journal_entry(item) for item in signal.journal_entries) or '<p class="empty">No journal entries yet.</p>'
@@ -3264,7 +6182,7 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot) -> str:
         resolution_block = (
             '<article class="resolution-card">'
             f'<strong>{escape(signal.resolution.outcome.value)} | {escape(signal.resolution.status.value)}</strong>'
-            f'<p class="muted">Resolved at {escape(signal.resolution.resolved_at.isoformat())} | return {signal.resolution.realized_return_bps:.1f} bps</p>'
+            f'<p class="muted">Resolved at {escape(_format_timestamp(signal.resolution.resolved_at))} | return {signal.resolution.realized_return_bps:.1f} bps</p>'
             f'<p class="muted">{escape(signal.resolution.resolution_note)}</p>'
             f'<p class="muted">{escape(signal.resolution.post_mortem_summary)}</p>'
             "</article>"
@@ -3272,17 +6190,32 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot) -> str:
 
     context_band = ""
     if root_details is not None:
+        market_data_context = _render_market_data_context(snapshot.control_panel)
+        expiry_summary = _format_expiry_countdown(
+            root_details.continuous_series.days_to_expiry,
+            root_details.continuous_series.expiry_date,
+            language=language,
+        )
         context_band = (
             '<section class="band-grid">'
             f'<article><span>Session</span><strong>{escape(root_details.session.session_type.value)}</strong><p class="muted">Trading day {escape(root_details.session.trading_day.isoformat())}</p></article>'
             f'<article><span>Contract state</span><strong>{escape(root_details.continuous_series.active_contract)}</strong><p class="muted">Next {escape(root_details.continuous_series.next_contract)} | roll {root_details.continuous_series.next_contract_share:.0%}</p></article>'
+            f'<article><span>Days To Expiry</span><strong>{escape(expiry_summary)}</strong><p class="muted">Until contract expiry</p></article>'
             f'<article><span>Universe</span><strong>{escape(root_details.root.universe_status.value)}</strong><p class="muted">Liquidity rank {root_details.root.liquidity_rank}</p></article>'
             f'<article><span>Evaluation</span><strong>{snapshot.evaluation.resolved_signals}</strong><p class="muted">Resolved signals | Brier {_format_optional(snapshot.evaluation.brier_score)}</p></article>'
+            f"{market_data_context}"
             "</section>"
         )
 
     payload = escape(json.dumps(snapshot.model_dump(mode="json"), ensure_ascii=False))
     telegram_preview = escape(snapshot.telegram_preview_message or "Telegram preview is not available.")
+    workflow_panel = _render_workflow_panel(signal, status_id="signal-workflow-status")
+    trust_ribbon = _render_trust_ribbon(snapshot.trust_ribbon)
+    diff_block = _render_signal_diff(snapshot.signal_diff)
+    confidence_block = _render_confidence_decomposition(snapshot.confidence_decomposition)
+    decision_log = _render_decision_timeline(snapshot.decision_log, title="Decision log")
+    similar_setups = _render_similar_setups(snapshot.similar_setups)
+    market_panel = _render_market_snapshot(snapshot.market_snapshot, language=language)
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3515,6 +6448,101 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot) -> str:
       letter-spacing: 0.08em;
       font-size: 12px;
     }}
+    .workflow-chip {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: rgba(23, 54, 77, 0.1);
+      color: var(--navy);
+    }}
+    .workflow-chip.tone-review {{
+      background: rgba(187, 113, 34, 0.16);
+      color: var(--amber);
+    }}
+    .workflow-chip.tone-ignore {{
+      background: rgba(92, 105, 112, 0.16);
+      color: var(--muted);
+    }}
+    .workflow-chip.tone-escalate {{
+      background: rgba(180, 74, 61, 0.16);
+      color: var(--red);
+    }}
+    .workflow-panel {{
+      display: grid;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(246, 239, 229, 0.18);
+      background: rgba(255, 255, 255, 0.1);
+    }}
+    .workflow-meta {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }}
+    .workflow-meta span {{
+      display: block;
+      margin-bottom: 6px;
+      color: rgba(246, 239, 229, 0.72);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 11px;
+    }}
+    .workflow-summary {{
+      margin: 0;
+      color: rgba(246, 239, 229, 0.82);
+      line-height: 1.5;
+    }}
+    .workflow-actions {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }}
+    .workflow-button {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(246, 239, 229, 0.18);
+      background: rgba(255, 255, 255, 0.12);
+      color: #f6efe5;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }}
+    .workflow-button:disabled {{
+      opacity: 0.55;
+      cursor: not-allowed;
+    }}
+    .workflow-button.is-active {{
+      border-color: transparent;
+      color: #fff8ef;
+    }}
+    .workflow-button.tone-watch.is-active {{
+      background: rgba(246, 239, 229, 0.18);
+    }}
+    .workflow-button.tone-review.is-active {{
+      background: var(--amber);
+    }}
+    .workflow-button.tone-ignore.is-active {{
+      background: rgba(92, 105, 112, 0.92);
+    }}
+    .workflow-button.tone-escalate.is-active {{
+      background: var(--red);
+    }}
+    .workflow-button.tone-ready.is-active {{
+      background: rgba(17, 104, 102, 0.92);
+    }}
+    .workflow-button.tone-resolved.is-active {{
+      background: rgba(23, 56, 79, 0.92);
+    }}
     pre {{
       margin: 0;
       white-space: pre-wrap;
@@ -3529,9 +6557,12 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot) -> str:
       }}
       .shell {{ width: min(100% - 16px, 1280px); }}
     }}
+    {sidebar_styles}
   </style>
 </head>
 <body>
+  <div class="page-shell">
+  {sidebar}
   <main class="shell">
     <section class="hero">
       <div>
@@ -3557,10 +6588,23 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot) -> str:
           <article><span>Skeptic</span><strong>{signal.skeptic_score:.2f}</strong></article>
           <article><span>Priority</span><strong>{signal.priority_score}</strong></article>
           <article><span>Status</span><strong>{escape(signal.status.value)}</strong></article>
+          <article><span>Workflow</span><strong>{escape(_workflow_state_label(signal.workflow_state))}</strong></article>
         </div>
+        {workflow_panel}
       </aside>
     </section>
+    {trust_ribbon}
+    <section class="layout">
+      <div class="stack">
+        {diff_block}
+        {confidence_block}
+      </div>
+      <div class="stack">
+        {similar_setups}
+      </div>
+    </section>
     {context_band}
+    {market_panel}
     <section class="layout">
       <div class="stack">
         <section class="panel">
@@ -3612,6 +6656,7 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot) -> str:
           <h2>Lifecycle timeline</h2>
           <div class="timeline-list">{timeline}</div>
         </section>
+        {decision_log}
         <section class="panel">
           <div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:16px;">
             <h2>Journal</h2>
@@ -3628,6 +6673,8 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot) -> str:
               <option value="risk_note">Risk note</option>
               <option value="execution_note">Execution note</option>
               <option value="post_mortem">Post-mortem</option>
+              <option value="invalidation_breach">Invalidation breach</option>
+              <option value="data_anomaly">Data anomaly</option>
             </select>
             <input type="text" name="title" placeholder="Short title">
             <textarea name="note" placeholder="What changed, what risk you see, and what should be watched next."></textarea>
@@ -3657,6 +6704,7 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot) -> str:
       </div>
     </section>
   </main>
+  </div>
   <script>
     const journalForm = document.getElementById("signal-journal-form");
     const journalStatus = document.getElementById("signal-journal-status");
@@ -3697,15 +6745,460 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot) -> str:
         await window.__imoexRefreshPage();
       }});
     }}
+    const workflowStatus = document.getElementById("signal-workflow-status");
+    const workflowButtons = document.querySelectorAll(".workflow-button[data-signal-id]");
+    for (const button of workflowButtons) {{
+      button.addEventListener("click", async () => {{
+        const signalId = button.dataset.signalId;
+        const workflowState = button.dataset.workflowState;
+        if (!signalId || !workflowState) {{
+          return;
+        }}
+        if (workflowStatus) {{
+          workflowStatus.textContent = "Updating workflow...";
+        }}
+        const response = await fetch(`/api/v1/signals/${{signalId}}/workflow-state`, {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{ workflow_state: workflowState }}),
+        }});
+        if (!response.ok) {{
+          if (workflowStatus) {{
+            workflowStatus.textContent = "Workflow update failed.";
+          }}
+          return;
+        }}
+        if (workflowStatus) {{
+          workflowStatus.textContent = "Workflow updated. Refreshing...";
+        }}
+        await window.__imoexRefreshPage();
+      }});
+    }}
   </script>
 </body>
 </html>"""
 
 
-def _render_workspace_signal_tile(signal, selected_signal_id: str | None) -> str:
-    is_focus = signal.signal_id == selected_signal_id or (selected_signal_id is None and signal.status.value == "active")
+def _workflow_state_label(state: SignalWorkflowState) -> str:
+    labels = {
+        SignalWorkflowState.WATCHING: "watching",
+        SignalWorkflowState.VALIDATING: "validating",
+        SignalWorkflowState.READY: "ready",
+        SignalWorkflowState.IGNORED: "ignored",
+        SignalWorkflowState.ESCALATE: "escalated",
+        SignalWorkflowState.RESOLVED: "resolved",
+    }
+    return labels.get(state, state.value)
+
+
+def _workflow_state_tone(state: SignalWorkflowState) -> str:
+    tones = {
+        SignalWorkflowState.WATCHING: "watch",
+        SignalWorkflowState.VALIDATING: "review",
+        SignalWorkflowState.READY: "ready",
+        SignalWorkflowState.IGNORED: "ignore",
+        SignalWorkflowState.ESCALATE: "escalate",
+        SignalWorkflowState.RESOLVED: "resolved",
+    }
+    return tones.get(state, "watch")
+
+
+def _workflow_state_hint(state: SignalWorkflowState) -> str:
+    hints = {
+        SignalWorkflowState.WATCHING: "Keep this setup in view and wait for stronger confirmation.",
+        SignalWorkflowState.VALIDATING: "Manually verify the setup before taking action.",
+        SignalWorkflowState.READY: "The setup is actionable; manage it closely.",
+        SignalWorkflowState.IGNORED: "This signal is deprioritized until the context changes.",
+        SignalWorkflowState.ESCALATE: "This signal needs a higher-attention review right now.",
+        SignalWorkflowState.RESOLVED: "The setup is closed and should now feed the review loop.",
+    }
+    return hints.get(state, "Manual workflow state for the current signal.")
+
+
+def _render_workflow_chip(signal) -> str:
+    state = getattr(signal, "workflow_state", SignalWorkflowState.WATCHING)
+    tone = _workflow_state_tone(state)
+    label = _workflow_state_label(state)
+    return f'<span class="workflow-chip tone-{escape(tone)}">{escape(label)}</span>'
+
+
+def _render_workflow_panel(signal, *, status_id: str) -> str:
+    if signal is None:
+        buttons = "".join(
+            f'<button class="workflow-button tone-{escape(_workflow_state_tone(state))}" type="button" disabled>{escape(_workflow_state_label(state))}</button>'
+            for state in SignalWorkflowState
+        )
+        return (
+            '<div class="workflow-panel">'
+            '<div class="workflow-meta">'
+            '<div><span>Workflow</span><strong>Pick a signal first</strong></div>'
+            "</div>"
+            '<p class="workflow-summary">Select a signal to set how you want to handle it.</p>'
+            f'<div class="workflow-actions">{buttons}</div>'
+            f'<div class="status" id="{escape(status_id)}"></div>'
+            "</div>"
+        )
+
+    state = signal.workflow_state
+    buttons = []
+    for candidate in SignalWorkflowState:
+        tone = _workflow_state_tone(candidate)
+        active = " is-active" if candidate == state else ""
+        buttons.append(
+            f'<button class="workflow-button tone-{escape(tone)}{active}" '
+            f'type="button" data-workflow-state="{escape(candidate.value)}" data-signal-id="{escape(signal.signal_id)}">'
+            f"{escape(_workflow_state_label(candidate))}"
+            "</button>"
+        )
     return (
-        f'<a class="signal-tile{" is-focus" if is_focus else ""}" href="/workspace?root={escape(signal.root)}&signal_id={escape(signal.signal_id)}">'
+        '<div class="workflow-panel">'
+        '<div class="workflow-meta">'
+        f'<div><span>Workflow</span><strong>{escape(_workflow_state_label(state))}</strong></div>'
+        f"{_render_workflow_chip(signal)}"
+        "</div>"
+        f'<p class="workflow-summary">{escape(_workflow_state_hint(state))}</p>'
+        f'<div class="workflow-actions">{"".join(buttons)}</div>'
+        f'<div class="status" id="{escape(status_id)}"></div>'
+        "</div>"
+    )
+
+
+def _render_root_pulse_card(item, *, selected_root: str, language: str) -> str:
+    price_line = f"{item.active_signals} active | roll {item.next_contract_share:.0%}"
+    if item.current_price is not None:
+        unit = f" {escape(item.price_unit)}" if item.price_unit else ""
+        price_line = (
+            f"L {_format_price_value(item.current_price)}{unit} | "
+            f"D {_format_signed_pct(item.price_change_pct)} | "
+            f"{item.active_signals} active | roll {item.next_contract_share:.0%}"
+        )
+    copy = {
+        "open": "Открыть" if language == "ru" else "Open",
+        "preview_ready": "Выберите таймфрейм" if language == "ru" else "Pick a timeframe",
+        "preview_note": "Быстрый просмотр свечей без перехода" if language == "ru" else "Quick candle preview without navigation",
+        "pin_a": "Серия A" if language == "ru" else "Root A",
+        "pin_b": "Серия B" if language == "ru" else "Root B",
+    }
+    preview_buttons = "".join(
+        (
+            f'<button class="rail-preview-button{" is-active" if timeframe == "1D" else ""}" '
+            f'type="button" data-root-preview-button data-root-code="{escape(item.root_code)}" '
+            f'data-timeframe="{timeframe}">{timeframe}</button>'
+        )
+        for timeframe in ("1D", "1W", "1M")
+    )
+    return (
+        f'<article class="rail-card tone-{escape(item.tone)}{" is-active" if item.root_code == selected_root else ""}" '
+        f'data-root-preview-card data-root-code="{escape(item.root_code)}">'
+        f'<a class="rail-card-link" href="/workspace?root={escape(item.root_code)}">'
+        f"<strong>{escape(item.root_code)}</strong>"
+        f"<span>{escape(item.base_asset)}</span>"
+        f"<small>{escape(item.headline)}</small>"
+        f"<em>{price_line}</em>"
+        "</a>"
+        '<div class="rail-card-footer">'
+        f'<div class="rail-card-tabs">{preview_buttons}</div>'
+        f'<a class="rail-open-link" href="/workspace?root={escape(item.root_code)}">{escape(copy["open"])}</a>'
+        "</div>"
+        f'<div class="rail-preview-popover" hidden data-root-preview-popover data-root-code="{escape(item.root_code)}">'
+        '<div class="rail-preview-head">'
+        f'<strong>{escape(item.root_code)} · <span data-root-preview-label>1D</span></strong>'
+        f'<small data-root-preview-updated>{escape(copy["preview_ready"])}</small>'
+        "</div>"
+        f'<div class="rail-preview-chart" data-root-preview-chart><div class="empty">{escape(copy["preview_note"])}</div></div>'
+        f'<div class="rail-preview-meta" data-root-preview-meta>{escape(price_line)}</div>'
+        '<div class="signal-preview-actions">'
+        f'<button class="preview-pin-button" type="button" data-pin-root-preview data-root-code="{escape(item.root_code)}" data-compare-slot="a" data-timeframe="1D">{escape(copy["pin_a"])}</button>'
+        f'<button class="preview-pin-button" type="button" data-pin-root-preview data-root-code="{escape(item.root_code)}" data-compare-slot="b" data-timeframe="1D">{escape(copy["pin_b"])}</button>'
+        f'<a class="rail-open-link" href="/workspace?root={escape(item.root_code)}">{escape(copy["open"])}</a>'
+        "</div>"
+        "</div>"
+        "</article>"
+    )
+
+
+def _render_market_snapshot(snapshot, *, language: str) -> str:
+    if snapshot is None:
+        return ""
+
+    copy = {
+        "title": "Текущая цена и графики" if language == "ru" else "Current price and charts",
+        "subtitle": (
+            "По выбранному инструменту: текущая цена и три масштаба просмотра без переключения страниц."
+            if language == "ru"
+            else "Current price plus day, week, and month views for the selected instrument."
+        ),
+        "current_price": "Последняя цена" if language == "ru" else "Last",
+        "daily_change": "Дневное изменение" if language == "ru" else "Daily change",
+        "day_high": "Дневной максимум" if language == "ru" else "Day high",
+        "day_low": "Дневной минимум" if language == "ru" else "Day low",
+        "updated": "Обновлено" if language == "ru" else "Updated",
+        "source": "Источник" if language == "ru" else "Source",
+        "warning_title": "Поток цены требует внимания" if language == "ru" else "Price feed needs attention",
+        "warning_body": (
+            "Данные выглядят несвежими или деградировавшими, поэтому цену стоит читать с осторожностью."
+            if language == "ru"
+            else "The feed looks stale or degraded, so treat the displayed price with caution."
+        ),
+        "status": "Статус" if language == "ru" else "Status",
+    }
+    unit = f" {escape(snapshot.unit)}" if snapshot.unit else ""
+    tone = _market_status_tone(snapshot.status)
+    warning = ""
+    if tone != "positive":
+        warning_detail = snapshot.status_detail or copy["warning_body"]
+        warning = (
+            '<div class="metric-list" style="margin-bottom:12px;">'
+            f'<article class="action-card tone-{tone}">'
+            f'<strong>{escape(copy["warning_title"])}</strong>'
+            f'<p class="muted">{escape(_market_status_label(snapshot.status, language=language))} | {escape(warning_detail)}</p>'
+            "</article>"
+            "</div>"
+        )
+    charts = "".join(
+        _render_market_chart_card(series, unit=snapshot.unit, language=language)
+        for series in (snapshot.daily, snapshot.weekly, snapshot.monthly)
+    )
+    return (
+        '<section class="panel">'
+        '<div class="panel-head">'
+        f'<h2>{escape(copy["title"])}</h2>'
+        f'<p>{escape(copy["subtitle"])}</p>'
+        "</div>"
+        f"{warning}"
+        '<div class="metric-list" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));">'
+        f'<article><span>{escape(copy["current_price"])}</span><strong>{_format_price_value(snapshot.current_price)}{unit}</strong><p class="muted">{escape(snapshot.root_code)} · {escape(snapshot.contract)}</p></article>'
+        f'<article><span>{escape(copy["daily_change"])}</span><strong>{_format_signed_value(snapshot.price_change_abs)}{unit}</strong><p class="muted">{_format_signed_pct(snapshot.price_change_pct)}</p></article>'
+        f'<article><span>{escape(copy["day_high"])}</span><strong>{_format_price_value(snapshot.daily.high_price)}{unit}</strong><p class="muted">{escape(snapshot.daily.points[-1].label if snapshot.daily.points else snapshot.contract)}</p></article>'
+        f'<article><span>{escape(copy["day_low"])}</span><strong>{_format_price_value(snapshot.daily.low_price)}{unit}</strong><p class="muted">{escape(snapshot.daily.points[0].label if snapshot.daily.points else snapshot.contract)}</p></article>'
+        f'<article><span>{escape(copy["updated"])}</span><strong>{escape(_format_timestamp(snapshot.as_of))}</strong><p class="muted">{escape(copy["status"])}: {escape(_market_status_label(snapshot.status, language=language))}</p></article>'
+        f'<article><span>{escape(copy["source"])}</span><strong>{escape(snapshot.price_source)}</strong><p class="muted">{escape(snapshot.base_asset)}</p></article>'
+        "</div>"
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:16px;">'
+        f"{charts}"
+        "</div>"
+        "</section>"
+    )
+
+
+def _render_market_chart_card(series, *, unit: str, language: str) -> str:
+    if not series.points:
+        return ""
+    chart_labels = {
+        "1D": "День" if language == "ru" else "Day",
+        "1W": "Неделя" if language == "ru" else "Week",
+        "1M": "Месяц" if language == "ru" else "Month",
+    }
+    label = chart_labels.get(series.label, series.label)
+    low = min(point.low for point in series.points)
+    high = max(point.high for point in series.points)
+    span = max(high - low, 0.0001)
+    width = 220.0
+    height = 92.0
+    tone = "#2f7e57" if series.change_abs >= 0 else "#b44a3d"
+    unit_suffix = f" {escape(unit)}" if unit else ""
+    first_label = escape(series.points[0].label)
+    last_label = escape(series.points[-1].label)
+    range_label = "Диапазон" if language == "ru" else "Range"
+    open_label = "Открытие" if language == "ru" else "Open"
+    close_label = "Закрытие" if language == "ru" else "Close"
+    change_label = "Изменение" if language == "ru" else "Change"
+    candles: list[str] = []
+    body_width = max(6.0, min(16.0, width / max(len(series.points) * 1.9, 1)))
+
+    def _map_price_y(value: float) -> float:
+        return height - (((value - low) / span) * (height - 14.0)) - 7.0
+
+    for index, point in enumerate(series.points):
+        x = width / 2 if len(series.points) == 1 else (index / float(len(series.points) - 1)) * width
+        open_y = _map_price_y(point.open)
+        close_y = _map_price_y(point.close)
+        high_y = _map_price_y(point.high)
+        low_y = _map_price_y(point.low)
+        body_top = min(open_y, close_y)
+        body_height = max(abs(close_y - open_y), 3.0)
+        candle_tone = "#2f7e57" if point.close >= point.open else "#b44a3d"
+        candles.append(
+            f'<line x1="{x:.1f}" y1="{high_y:.1f}" x2="{x:.1f}" y2="{low_y:.1f}" '
+            f'stroke="{candle_tone}" stroke-width="1.8" stroke-linecap="round"></line>'
+            f'<rect x="{(x - (body_width / 2)):.1f}" y="{body_top:.1f}" width="{body_width:.1f}" '
+            f'height="{body_height:.1f}" rx="2" fill="{candle_tone}" fill-opacity="0.92"></rect>'
+        )
+    return (
+        '<article style="padding:14px 16px;border-radius:18px;border:1px solid rgba(21, 32, 42, 0.1);background:rgba(255,255,255,0.72);display:grid;gap:10px;">'
+        '<div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;">'
+        f'<strong>{escape(label)} · {escape(series.label)}</strong>'
+        f'<span style="font-weight:700;color:{tone};">{_format_price_value(series.current_price)}{unit_suffix}</span>'
+        "</div>"
+        f'<svg viewBox="0 0 220 92" preserveAspectRatio="none" style="width:100%;height:92px;border-radius:14px;background:linear-gradient(180deg, rgba(15,108,103,0.06), rgba(255,255,255,0.6));">'
+        f'<line x1="0" y1="{_map_price_y(series.open_price):.1f}" x2="220" y2="{_map_price_y(series.open_price):.1f}" stroke="rgba(21,32,42,0.08)" stroke-width="1" stroke-dasharray="4 4"></line>'
+        f'{"".join(candles)}'
+        "</svg>"
+        '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#5c6970;">'
+        f"<span>{first_label}</span><span>{last_label}</span>"
+        "</div>"
+        f'<p class="muted">{escape(open_label)} {_format_price_value(series.open_price)}{unit_suffix} | {escape(close_label)} {_format_price_value(series.current_price)}{unit_suffix} | {escape(change_label)} {_format_signed_value(series.change_abs)}{unit_suffix} ({_format_signed_pct(series.change_pct)})</p>'
+        f'<p class="muted">{escape(range_label)} {_format_price_value(series.low_price)}{unit_suffix} - {_format_price_value(series.high_price)}{unit_suffix}</p>'
+        "</article>"
+    )
+
+
+def _render_trust_ribbon(ribbon) -> str:
+    items = "".join(
+        f'<article class="action-card tone-{escape(item.tone)}"><strong>{escape(item.label)}</strong><p class="muted">{escape(item.value)} | {escape(item.detail or "")}</p></article>'
+        for item in ribbon.items
+    )
+    return (
+        '<section class="panel">'
+        '<div class="panel-head">'
+        '<h2>Trust ribbon</h2>'
+        f'<p>{escape(ribbon.headline)}</p>'
+        "</div>"
+        f'<div class="action-list">{items}</div>'
+        "</section>"
+    )
+
+
+def _render_watchlist(items) -> str:
+    body = "".join(
+        f'<article><strong>{escape(item.root_code)}</strong><p class="muted">{escape(item.note or (item.signal.summary if item.signal is not None else "Root-level watch item"))}</p></article>'
+        for item in items
+    ) or '<p class="empty">No watchlist entries yet.</p>'
+    return (
+        '<section class="panel">'
+        '<div class="panel-head">'
+        '<h2>Watchlist</h2>'
+        '<p>Promoted roots and signals stay visible between cycles.</p>'
+        "</div>"
+        f'<div class="metric-list">{body}</div>'
+        "</section>"
+    )
+
+
+def _render_horizon_comparison(snapshot) -> str:
+    if snapshot is None:
+        return (
+            '<section class="panel">'
+            '<div class="panel-head"><h2>Horizon compare</h2><p>No horizon comparison is available yet.</p></div>'
+            "</section>"
+        )
+    rows = "".join(
+        (
+            "<article>"
+            f"<strong>{escape(item.horizon)} | {escape(item.direction)}</strong>"
+            f'<p class="muted">confidence {item.confidence:.2f} | skeptic {item.skeptic_score:.2f} | attention {item.attention_score:.2f}</p>'
+            f'<p class="muted">{escape(item.summary)}</p>'
+            "</article>"
+        )
+        for item in snapshot.items
+    )
+    return (
+        '<section class="panel">'
+        '<div class="panel-head"><h2>Horizon compare</h2><p>Read the root across multiple horizons in one place.</p></div>'
+        f'<div class="metric-list">{rows}</div>'
+        "</section>"
+    )
+
+
+def _render_signal_diff(diff) -> str:
+    if diff is None:
+        return ""
+    return (
+        '<section class="panel">'
+        '<div class="panel-head"><h2>What changed since last cycle?</h2><p>Diff vs the previous recalculation.</p></div>'
+        '<div class="metric-list">'
+        f'<article><strong>{escape(diff.summary)}</strong><p class="muted">Prob up {diff.probability_up_delta:+.2f} | confidence {diff.confidence_delta:+.2f} | skeptic {diff.skeptic_delta:+.2f} | freshness {diff.freshness_delta:+.2f}</p></article>'
+        f'<article><strong>Drivers</strong><p class="muted">Added: {escape(", ".join(diff.drivers_added) or "none")} | Removed: {escape(", ".join(diff.drivers_removed) or "none")}</p></article>'
+        f'<article><strong>Invalidation</strong><p class="muted">Added: {escape(", ".join(diff.invalidations_added) or "none")} | Removed: {escape(", ".join(diff.invalidations_removed) or "none")}</p></article>'
+        "</div>"
+        "</section>"
+    )
+
+
+def _render_confidence_decomposition(decomposition) -> str:
+    if decomposition is None:
+        return ""
+    items = "".join(
+        f'<article><strong>{escape(item.label)}</strong><p class="muted">{item.value:.2f} | {escape(item.detail or "")}</p></article>'
+        for item in decomposition.factors
+    )
+    return (
+        '<section class="panel">'
+        '<div class="panel-head"><h2>Confidence decomposition</h2><p>'
+        f"{escape(decomposition.headline)}"
+        "</p></div>"
+        f'<div class="metric-list">{items}</div>'
+        "</section>"
+    )
+
+
+def _render_decision_timeline(items, *, title: str) -> str:
+    rows = "".join(
+        f'<article class="timeline-item tone-{escape(item.tone)}"><strong>{escape(item.title)}</strong><p class="muted">{escape(_format_timestamp(item.at))} | {escape(item.detail)}</p></article>'
+        for item in items
+    ) or '<p class="empty">No decision events yet.</p>'
+    return (
+        '<section class="panel">'
+        f'<div class="panel-head"><h2>{escape(title)}</h2><p>Narrative timeline across workflow, journal, and resolution.</p></div>'
+        f'<div class="timeline-list">{rows}</div>'
+        "</section>"
+    )
+
+
+def _render_review_bundle(bundle) -> str:
+    highlights = "".join(f"<li>{escape(item)}</li>" for item in bundle.highlights) or "<li>No review highlights yet.</li>"
+    return (
+        '<section class="panel">'
+        '<div class="panel-head"><h2>Review bundle</h2><p>End-of-day and post-resolution recall in one block.</p></div>'
+        '<div class="metric-list">'
+        f'<article><strong>Watched roots</strong><p class="muted">{bundle.watched_roots}</p></article>'
+        f'<article><strong>Decisions logged</strong><p class="muted">{bundle.decisions_logged}</p></article>'
+        f'<article><strong>Ignored / resolved</strong><p class="muted">{bundle.ignored_signals} / {bundle.resolved_signals}</p></article>'
+        f'<article><strong>Highlights</strong><ul>{highlights}</ul></article>'
+        "</div>"
+        "</section>"
+    )
+
+
+def _render_similar_setups(items) -> str:
+    body = "".join(
+        f'<article><strong>{escape(item.outcome)}</strong><p class="muted">{escape(_format_timestamp(item.resolved_at))} | {item.realized_return_bps:.1f} bps | similarity {item.similarity_score:.2f}</p><p class="muted">{escape(item.note)}</p></article>'
+        for item in items
+    ) or '<p class="empty">No similar historical setups are available yet.</p>'
+    return (
+        '<section class="panel">'
+        '<div class="panel-head"><h2>Similar historical setups</h2><p>Resolved analogs for quick precedent checks.</p></div>'
+        f'<div class="metric-list">{body}</div>'
+        "</section>"
+    )
+
+
+def _render_workspace_signal_tile(signal, selected_signal_id: str | None, *, language: str) -> str:
+    is_focus = signal.signal_id == selected_signal_id or (selected_signal_id is None and signal.status.value == "active")
+    copy = {
+        "open": "Открыть" if language == "ru" else "Open",
+        "focus": "В фокус" if language == "ru" else "Focus",
+        "pin_a": "Сигнал A" if language == "ru" else "Signal A",
+        "pin_b": "Сигнал B" if language == "ru" else "Signal B",
+        "preview_ready": "Выберите таймфрейм" if language == "ru" else "Pick a timeframe",
+        "preview_note": (
+            "Быстрый просмотр сигнала без перехода на полную страницу."
+            if language == "ru"
+            else "Quick signal preview without leaving the lane."
+        ),
+    }
+    preview_buttons = "".join(
+        (
+            f'<button class="signal-preview-button{" is-active" if timeframe == "1D" else ""}" '
+            f'type="button" data-signal-preview-button data-signal-id="{escape(signal.signal_id)}" '
+            f'data-timeframe="{timeframe}">{timeframe}</button>'
+        )
+        for timeframe in ("1D", "1W", "1M")
+    )
+    return (
+        f'<article class="signal-tile{" is-focus" if is_focus else ""}" '
+        f'data-signal-preview-card data-signal-id="{escape(signal.signal_id)}">'
+        f'<a class="signal-tile-link" href="/workspace?root={escape(signal.root)}&signal_id={escape(signal.signal_id)}">'
         '<div class="signal-top">'
         f'<div><strong>{escape(signal.root)} | {escape(signal.contract)}</strong><p class="muted">{escape(signal.summary)}</p></div>'
         f'<span class="badge">{escape(signal.direction_final.value)} | {escape(signal.horizon.value)}</span>'
@@ -3714,8 +7207,29 @@ def _render_workspace_signal_tile(signal, selected_signal_id: str | None) -> str
         f"<small>confidence {signal.confidence_final:.2f}</small>"
         f"<small>skeptic {signal.skeptic_score:.2f}</small>"
         f"<small>priority {signal.priority_score}</small>"
+        f"<small>workflow {_workflow_state_label(signal.workflow_state)}</small>"
         "</div>"
         "</a>"
+        '<div class="signal-tile-footer">'
+        f'<div class="signal-preview-tabs">{preview_buttons}</div>'
+        f'<a class="rail-open-link" href="/workspace/signals/{escape(signal.signal_id)}">{escape(copy["open"])}</a>'
+        "</div>"
+        f'<div class="signal-preview-popover" hidden data-signal-preview-popover data-signal-id="{escape(signal.signal_id)}">'
+        '<div class="signal-preview-head">'
+        f'<strong>{escape(signal.root)} | {escape(signal.horizon.value)} | <span data-signal-preview-label>1D</span></strong>'
+        f'<small data-signal-preview-updated>{escape(copy["preview_ready"])}</small>'
+        "</div>"
+        f'<div class="signal-preview-chart" data-signal-preview-chart><div class="empty">{escape(copy["preview_note"])}</div></div>'
+        '<div class="signal-preview-grid" data-signal-preview-grid></div>'
+        f'<div class="signal-preview-summary" data-signal-preview-summary>{escape(signal.summary)}</div>'
+        '<div class="signal-preview-actions">'
+        f'<button class="preview-pin-button" type="button" data-pin-signal-preview data-signal-id="{escape(signal.signal_id)}" data-compare-slot="a" data-timeframe="1D">{escape(copy["pin_a"])}</button>'
+        f'<button class="preview-pin-button" type="button" data-pin-signal-preview data-signal-id="{escape(signal.signal_id)}" data-compare-slot="b" data-timeframe="1D">{escape(copy["pin_b"])}</button>'
+        f'<a class="rail-open-link" href="/workspace?root={escape(signal.root)}&signal_id={escape(signal.signal_id)}">{escape(copy["focus"])}</a>'
+        f'<a class="rail-open-link" href="/workspace/signals/{escape(signal.signal_id)}">{escape(copy["open"])}</a>'
+        "</div>"
+        "</div>"
+        "</article>"
     )
 
 
@@ -3732,7 +7246,7 @@ def _render_journal_entry(entry) -> str:
     return (
         '<article class="journal-entry">'
         f"<strong>{escape(entry.title)}</strong>"
-        f"<small>{escape(entry.kind.value)} | {escape(entry.author)} | {escape(entry.created_at.isoformat())}</small>"
+        f"<small>{escape(entry.kind.value)} | {escape(entry.author)} | {escape(_format_timestamp(entry.created_at))}</small>"
         f'<p class="muted">{escape(entry.note)}</p>'
         "</article>"
     )
@@ -3743,8 +7257,41 @@ def _render_related_signal(signal) -> str:
         f'<a class="related-card" href="/workspace/signals/{escape(signal.signal_id)}">'
         f"<strong>{escape(signal.root)} | {escape(signal.contract)} | {escape(signal.horizon.value)}</strong>"
         f'<p class="muted">{escape(signal.summary)}</p>'
-        f'<p class="muted">confidence {signal.confidence_final:.2f} | skeptic {signal.skeptic_score:.2f} | {escape(signal.direction_final.value)}</p>'
+        f'<p class="muted">confidence {signal.confidence_final:.2f} | skeptic {signal.skeptic_score:.2f} | {escape(signal.direction_final.value)} | workflow {_workflow_state_label(signal.workflow_state)}</p>'
         "</a>"
+    )
+
+
+def _render_journal_decision_log_item(item) -> str:
+    signal = item.signal
+    latest_entry = item.latest_entry
+    why_now = "".join(f"<li>{escape(point)}</li>" for point in item.why_now)
+    next_watch = "".join(f"<li>{escape(point)}</li>" for point in item.next_watch)
+    latest_note = (
+        f'Latest note: {escape(latest_entry.title)} | {escape(latest_entry.author)} | {escape(_format_timestamp(latest_entry.created_at))}'
+        if latest_entry is not None
+        else f'Latest note: none yet | updated {escape(_format_timestamp(item.updated_at))}'
+    )
+    return (
+        '<article class="decision-card">'
+        '<div class="decision-head">'
+        f'<div><strong>{escape(signal.root)} | {escape(signal.contract)} | {escape(signal.horizon.value)}</strong><p class="muted">{escape(signal.summary)}</p></div>'
+        '<div class="decision-head-actions">'
+        f'<span class="badge">{escape(signal.direction_final.value)} | {escape(signal.status.value)}</span>'
+        f"{_render_workflow_chip(signal)}"
+        "</div>"
+        "</div>"
+        '<div class="decision-grid">'
+        f'<article><span>Decision</span><p>{escape(item.decision_summary)}</p></article>'
+        f'<article><span>Why this is the current call</span><ul>{why_now}</ul></article>'
+        f'<article><span>What should change next</span><ul>{next_watch}</ul></article>'
+        "</div>"
+        f'<p class="muted" style="margin-top:12px;">{latest_note}</p>'
+        '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;">'
+        f'<a class="button" href="/workspace/signals/{escape(signal.signal_id)}">Open signal page</a>'
+        f'<a class="button" href="/workspace?root={escape(signal.root)}&signal_id={escape(signal.signal_id)}">Open in workspace</a>'
+        "</div>"
+        "</article>"
     )
 
 
@@ -3758,7 +7305,7 @@ def _render_journal_workspace_entry(item) -> str:
         f'<span class="badge">{escape(entry.kind.value)} | {escape(signal.status.value)}</span>'
         "</div>"
         f'<p class="muted">{escape(entry.note)}</p>'
-        f'<p class="muted">author {escape(entry.author)} | created {escape(entry.created_at.isoformat())}</p>'
+        f'<p class="muted">author {escape(entry.author)} | created {escape(_format_timestamp(entry.created_at))}</p>'
         '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;">'
         f'<a class="button" href="/workspace/signals/{escape(signal.signal_id)}">Open signal page</a>'
         f'<a class="button" href="/workspace?root={escape(signal.root)}&signal_id={escape(signal.signal_id)}">Open in workspace</a>'
@@ -3800,7 +7347,7 @@ def _render_timeline(items, *, compact: bool) -> str:
         rendered.append(
             f'<article class="timeline-item tone-{escape(item.tone)}">'
             f"<strong>{escape(item.title)}</strong>"
-            f'<p class="muted">{escape(item.at.isoformat())} | {escape(item.kind)}</p>'
+            f'<p class="muted">{escape(_format_timestamp(item.at))} | {escape(item.kind)}</p>'
             f'<p class="muted">{escape(item.detail)}</p>'
             "</article>"
         )
@@ -3828,7 +7375,7 @@ def _render_delivery_windows(items) -> str:
         return '<p class="empty">No delivery windows configured yet.</p>'
     rendered = []
     for item in items:
-        next_run = escape(item.next_run_at.isoformat()) if item.next_run_at is not None else "not scheduled"
+        next_run = escape(_format_timestamp(item.next_run_at)) if item.next_run_at is not None else "not scheduled"
         last_status = escape(item.last_run_status or "never")
         detail = escape(item.last_run_detail or item.quiet_hours_policy)
         skip_label = "Mute next digest" if item.event_kind == NotificationEventKind.DIGEST else "Skip next brief"
@@ -3877,7 +7424,7 @@ def _render_delivery_activity(items) -> str:
         rendered.append(
             f'<article class="delivery-card tone-{"positive" if item.status == "sent" else "warning"}">'
             f"<strong>{escape(title)}</strong>"
-            f'<p class="muted">{escape(item.event_kind.value)} | {escape(item.created_at.isoformat())}</p>'
+            f'<p class="muted">{escape(item.event_kind.value)} | {escape(_format_timestamp(item.created_at))}</p>'
             f'<p class="muted">root {root_scope} | source {source} | status {escape(item.status)}</p>'
             f'<p class="muted">{escape(item.detail)}</p>'
             f'<p class="muted">{escape(signal_info)}'
@@ -4087,6 +7634,209 @@ def _journal_filter_href(
     return f"/workspace/journal?{urlencode(params)}"
 
 
+def _with_optional_root(path: str, *, root: str | None = None) -> str:
+    if not root:
+        return path
+    return f"{path}?{urlencode({'root': root})}"
+
+
+def _sidebar_selected_root(roots, root: str | None):
+    if roots:
+        if root:
+            match = next((item for item in roots if item.root_code == root), None)
+            if match is not None:
+                return match
+        return roots[0]
+    return None
+
+
+def _render_page_sidebar_styles(max_width: str) -> str:
+    return f"""
+    .page-shell {{
+      width: min({max_width}, calc(100% - 28px));
+      margin: 20px auto 36px;
+      display: grid;
+      grid-template-columns: 248px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }}
+    .shell {{
+      width: 100%;
+      margin: 0;
+    }}
+    .page-sidebar {{
+      position: sticky;
+      top: 18px;
+      align-self: start;
+    }}
+    .sidebar-card {{
+      background: var(--paper, var(--panel));
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+      display: grid;
+      gap: 12px;
+      backdrop-filter: blur(14px);
+    }}
+    .sidebar-kicker {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(23, 56, 79, 0.08);
+      color: var(--navy, var(--teal));
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 12px;
+    }}
+    .sidebar-title {{
+      margin: 0;
+      font-family: Georgia, "Palatino Linotype", serif;
+      font-size: 22px;
+    }}
+    .sidebar-nav {{
+      display: grid;
+      gap: 8px;
+    }}
+    .sidebar-link {{
+      display: block;
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.68);
+      font-weight: 700;
+    }}
+    .sidebar-link.is-active {{
+      background: rgba(17, 104, 102, 0.12);
+      color: var(--teal);
+      border-color: rgba(17, 104, 102, 0.28);
+    }}
+    .sidebar-meta {{
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.62);
+    }}
+    .sidebar-switch {{
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.62);
+      display: grid;
+      gap: 10px;
+    }}
+    .sidebar-switch select {{
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.84);
+      color: var(--ink);
+      font: inherit;
+    }}
+    .sidebar-meta label {{
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 11px;
+    }}
+    .sidebar-switch label {{
+      display: block;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 11px;
+    }}
+    .sidebar-meta strong {{
+      font-size: 18px;
+    }}
+    .sidebar-meta small {{
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      line-height: 1.45;
+    }}
+    @media (max-width: 1040px) {{
+      .page-shell {{
+        grid-template-columns: 1fr;
+        width: min(100% - 16px, {max_width});
+      }}
+      .page-sidebar {{
+        position: static;
+      }}
+      .sidebar-nav {{
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      }}
+    }}
+"""
+
+
+def _render_page_sidebar(
+    page_key: str,
+    *,
+    root: str | None = None,
+    roots=None,
+    signal_id: str | None = None,
+) -> str:
+    items = [
+        ("workspace", "Workspace", _with_optional_root("/workspace", root=root)),
+        ("dashboard", "Operations", _with_optional_root("/dashboard", root=root)),
+        ("council", "Decision flow", _with_optional_root("/workspace/council", root=root)),
+        ("runtime", "Runtime control", _with_optional_root("/workspace/runtime", root=root)),
+        ("journal", "Journal", _with_optional_root("/workspace/journal", root=root)),
+        ("preferences", "Preferences", _with_optional_root("/workspace/preferences", root=root)),
+        ("delivery-history", "Delivery history", _with_optional_root("/workspace/delivery-history", root=root)),
+    ]
+    if signal_id:
+        items.append(("signal", "Signal detail", f"/workspace/signals/{escape(signal_id)}"))
+
+    links = "".join(
+        f'<a class="sidebar-link{" is-active" if key == page_key else ""}" href="{href}" data-swap-link>{label}</a>'
+        for key, label, href in items
+    )
+    selected_root = _sidebar_selected_root(roots or [], root)
+    current_root = selected_root.root_code if selected_root is not None else (root or "auto")
+    switch_markup = ""
+    if roots:
+        fallback_attr = ' data-fallback-path="/workspace"' if page_key == "signal" else ""
+        options = "".join(
+            (
+                f'<option value="{escape(item.root_code)}"'
+                f'{" selected" if item.root_code == current_root else ""}>'
+                f"{escape(item.root_code)} · {escape(item.active_contract)} · {escape(item.base_asset)}"
+                "</option>"
+            )
+            for item in roots
+        )
+        switch_markup = (
+            '<div class="sidebar-switch">'
+            '<label for="sidebar-root-switch">Switch instrument</label>'
+            f'<select id="sidebar-root-switch" data-root-switch data-page-key="{escape(page_key)}"{fallback_attr}>'
+            f"{options}"
+            "</select>"
+            "</div>"
+        )
+    meta_detail = ""
+    if selected_root is not None:
+        meta_detail = f'<small>{escape(selected_root.active_contract)} · {escape(selected_root.base_asset)}</small>'
+    return (
+        '<aside class="page-sidebar">'
+        '<div class="sidebar-card">'
+        '<span class="sidebar-kicker">Navigation</span>'
+        '<h2 class="sidebar-title">Move around the workspace</h2>'
+        '<p class="muted">Jump between the main pages for the current root and signal.</p>'
+        f'<div class="sidebar-nav">{links}</div>'
+        f"{switch_markup}"
+        f'<div class="sidebar-meta"><label>Current instrument</label><strong>{escape(current_root)}</strong>{meta_detail}</div>'
+        "</div>"
+        "</aside>"
+    )
+
+
 def _render_signal_card(signal) -> str:
     return (
         '<article class="signal-card">'
@@ -4098,6 +7848,7 @@ def _render_signal_card(signal) -> str:
         f"<small>confidence {signal.confidence_final:.2f}</small>"
         f"<small>skeptic {signal.skeptic_score:.2f}</small>"
         f"<small>priority {signal.priority_score}</small>"
+        f"<small>workflow {_workflow_state_label(signal.workflow_state)}</small>"
         "</div>"
         "</article>"
     )
@@ -4107,13 +7858,86 @@ def _render_signal_row(signal) -> str:
     return (
         '<article class="signal-row">'
         f"<strong>{escape(signal.root)} · {escape(signal.horizon.value)} · {escape(signal.direction_final.value)}</strong>"
-        f"<small>{escape(signal.summary)}</small>"
+        f"<small>{escape(signal.summary)} | workflow {_workflow_state_label(signal.workflow_state)}</small>"
         "</article>"
+    )
+
+
+def _control_panel_data_mode_tone(mode: str) -> str:
+    if mode == "live":
+        return "tone-positive"
+    if mode == "snapshot":
+        return "tone-warning"
+    return "tone-negative"
+
+
+def _control_panel_data_mode_label(mode: str) -> str:
+    labels = {
+        "live": "Live",
+        "snapshot": "Snapshot",
+        "degraded_feed": "Degraded feed",
+    }
+    return labels.get(mode, mode.replace("_", " ").title())
+
+
+def _control_panel_reference_sync_tone(status: str) -> str:
+    if status == "fresh":
+        return "tone-positive"
+    if status == "stale":
+        return "tone-warning"
+    return "tone-negative"
+
+
+def _control_panel_reference_sync_label(status: str) -> str:
+    labels = {
+        "fresh": "Fresh",
+        "stale": "Stale",
+        "fallback": "Fallback",
+    }
+    return labels.get(status, status.replace("_", " ").title())
+
+
+def _control_panel_reference_sync_source(source: str) -> str:
+    labels = {
+        "moex_iss": "MOEX ISS",
+        "bundled_fallback": "Bundled fallback",
+    }
+    return labels.get(source, source.replace("_", " ").title())
+
+
+def _primary_market_feed(panel):
+    primary = next((item for item in panel.market_data_feeds if item.primary), None)
+    if primary is not None:
+        return primary
+    return panel.market_data_feeds[0] if panel.market_data_feeds else None
+
+
+def _render_market_data_context(panel) -> str:
+    primary_feed = _primary_market_feed(panel)
+    if primary_feed is None:
+        return (
+            '<article><span>Price Source</span><strong>n/a</strong>'
+            '<p class="muted">No market-data feed is attached yet.</p></article>'
+        )
+
+    data_mode_label = _control_panel_data_mode_label(panel.data_mode)
+    updated_at = _format_timestamp(primary_feed.last_update_at)
+    return (
+        f'<article><span>Price Source</span><strong>{escape(primary_feed.owner)}</strong>'
+        f'<p class="muted">{escape(data_mode_label)} | Updated {escape(updated_at)}</p></article>'
     )
 
 
 def _render_control_panel(panel) -> str:
     latest_market_data = _format_timestamp(panel.latest_market_data_at)
+    data_mode_label = _control_panel_data_mode_label(panel.data_mode)
+    data_mode_tone = _control_panel_data_mode_tone(panel.data_mode)
+    data_mode_detail = escape(panel.data_mode_detail or "No detail available.")
+    reference_sync_label = _control_panel_reference_sync_label(panel.reference_sync.status)
+    reference_sync_source = _control_panel_reference_sync_source(panel.reference_sync.source)
+    reference_sync_tone = _control_panel_reference_sync_tone(panel.reference_sync.status)
+    reference_sync_detail = escape(panel.reference_sync.detail or "No detail available.")
+    latest_reference_sync = _format_timestamp(panel.reference_sync.last_sync_at)
     role_cards = "".join(
         (
             "<article>"
@@ -4135,10 +7959,13 @@ def _render_control_panel(panel) -> str:
         for item in panel.market_data_feeds
     ) or '<p class="empty">No market-data feeds are attached to this root yet.</p>'
     return (
-        '<div class="spotlight-grid">'
-        f'<div><label>LLM runtime</label><strong>{escape(panel.llm_product)} &middot; {escape(panel.llm_model)}</strong></div>'
-        f'<div><label>LLM owner</label><strong>{escape(panel.llm_owner)}</strong></div>'
-        f'<div><label>Latest market data</label><strong>{escape(latest_market_data)}</strong></div>'
+        '<div class="control-summary-grid">'
+        f'<article class="control-summary-card"><label>LLM runtime</label><strong>{escape(panel.llm_product)} &middot; {escape(panel.llm_model)}</strong></article>'
+        f'<article class="control-summary-card"><label>LLM owner</label><strong>{escape(panel.llm_owner)}</strong></article>'
+        f'<article class="control-summary-card is-wide {data_mode_tone}"><label>Data mode</label><strong>{escape(data_mode_label)}</strong><small>{data_mode_detail}</small></article>'
+        f'<article class="control-summary-card"><label>Latest market data</label><strong>{escape(latest_market_data)}</strong></article>'
+        f'<article class="control-summary-card is-wide {reference_sync_tone}"><label>Reference sync</label><strong>{escape(reference_sync_label)} &middot; {escape(reference_sync_source)}</strong><small>{escape(panel.reference_sync.owner)} | {reference_sync_detail}</small></article>'
+        f'<article class="control-summary-card"><label>Latest reference sync</label><strong>{escape(latest_reference_sync)}</strong></article>'
         "</div>"
         '<div class="panel-head" style="margin-top:18px;"><h3>Role routing</h3></div>'
         f'<div class="metric-list">{role_cards}</div>'
@@ -4158,6 +7985,49 @@ def _render_quality_pair(pair: DashboardQualityPair) -> str:
     )
 
 
+def _market_status_tone(status: str) -> str:
+    normalized = status.lower()
+    if normalized in {"fresh", "live", "ok"}:
+        return "positive"
+    if normalized in {"aging", "snapshot", "stale", "warning"}:
+        return "warning"
+    return "negative"
+
+
+def _market_status_label(status: str, *, language: str) -> str:
+    labels = {
+        "fresh": "Свежие" if language == "ru" else "Fresh",
+        "live": "Live",
+        "ok": "OK",
+        "aging": "Стареют" if language == "ru" else "Aging",
+        "snapshot": "Снимок" if language == "ru" else "Snapshot",
+        "stale": "Несвежие" if language == "ru" else "Stale",
+        "warning": "Предупреждение" if language == "ru" else "Warning",
+        "degraded": "Деградация" if language == "ru" else "Degraded",
+    }
+    return labels.get(status.lower(), status)
+
+
+def _format_price_value(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    if abs(value) >= 1000:
+        return f"{value:,.2f}".replace(",", " ")
+    return f"{value:.2f}"
+
+
+def _format_signed_value(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:+.2f}"
+
+
+def _format_signed_pct(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:+.2%}"
+
+
 def _format_optional(value: float | None) -> str:
     if value is None:
         return "n/a"
@@ -4167,4 +8037,23 @@ def _format_optional(value: float | None) -> str:
 def _format_timestamp(value: datetime | None) -> str:
     if value is None:
         return "n/a"
-    return value.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(MOSCOW_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S MSK")
+
+
+def _format_calendar_date(value: date | None, *, language: str) -> str:
+    if value is None:
+        return "n/a"
+    if language == "ru":
+        return value.strftime("%d.%m.%Y")
+    return value.isoformat()
+
+
+def _format_expiry_countdown(days_to_expiry: int, expiry_date: date | None, *, language: str) -> str:
+    if expiry_date is None:
+        return str(days_to_expiry)
+    formatted_date = _format_calendar_date(expiry_date, language=language)
+    if language == "ru":
+        return f"{days_to_expiry} · до {formatted_date}"
+    return f"{days_to_expiry} · until {formatted_date}"

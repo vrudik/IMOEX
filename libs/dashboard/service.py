@@ -1,20 +1,39 @@
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime, timedelta
 
+from libs.adapters.contracts import Bar
 from libs.dashboard.contracts import (
     DashboardKpi,
     MarketDataFeedStatus,
     ModelRoleAssignment,
     DashboardQualityPair,
     DashboardSnapshot,
+    ConfidenceDecomposition,
+    ConfidenceFactor,
+    DecisionTimelineItem,
+    HistoricalSetup,
     HorizonPulsePoint,
+    InstrumentChartPoint,
+    InstrumentChartSeries,
+    InstrumentMarketSnapshot,
+    HorizonComparisonItem,
+    HorizonComparisonSnapshot,
+    JournalDecisionLogItem,
     JournalWorkspaceEntry,
     JournalWorkspaceSnapshot,
+    ReviewBundle,
+    ReferenceSyncStatus,
+    SignalChangeSummary,
     RuntimeControlPanel,
     SignalMetricBar,
     SignalTimelineEvent,
     SignalVisualSnapshot,
+    SystemConfidencePanel,
+    TrustRibbon,
+    TrustRibbonItem,
+    WatchlistEntry,
     WorkspaceActionItem,
     WorkspaceSignalSnapshot,
     WorkspaceRootPulse,
@@ -24,9 +43,12 @@ from libs.domain.contracts import EvaluationSummary, FinalSignalCard, FinalSigna
 from libs.domain.repository import SqlAlchemyContractMasterRepository
 from libs.domain.service import ContractMasterService, get_contract_master_service
 from libs.evaluation.service import EvaluationService
+from libs.marketdata.service import MarketDataService, get_market_data_service
 from libs.observability.service import ObservabilityService
 from libs.quality.repository import SqlAlchemySourceQualityRepository
+from libs.runtime.service import RuntimeControlService
 from libs.signals.service import SignalService
+from libs.utils.config import settings
 from libs.utils.db import get_session_factory
 
 
@@ -40,6 +62,8 @@ class DashboardService:
         signal_service: SignalService | None = None,
         evaluation_service: EvaluationService | None = None,
         observability_service: ObservabilityService | None = None,
+        runtime_control_service: RuntimeControlService | None = None,
+        market_data_service: MarketDataService | None = None,
     ) -> None:
         self.repository = repository
         self.quality_repository = quality_repository
@@ -47,6 +71,8 @@ class DashboardService:
         self.signal_service = signal_service or SignalService(repository)
         self.evaluation_service = evaluation_service or EvaluationService(repository)
         self.observability_service = observability_service or ObservabilityService(repository)
+        self.runtime_control_service = runtime_control_service or RuntimeControlService(repository)
+        self.market_data_service = market_data_service or get_market_data_service()
 
     def build_snapshot(self, *, root: str | None = None) -> DashboardSnapshot:
         roots = self.contract_service.list_roots()
@@ -77,6 +103,13 @@ class DashboardService:
             root_details=root_details,
             admin_health=admin_health,
         )
+        trust_ribbon = self._build_trust_ribbon(control_panel=control_panel, admin_health=admin_health)
+        system_confidence = self._build_system_confidence(
+            control_panel=control_panel,
+            admin_health=admin_health,
+            evaluation=evaluation,
+            active_signals=spotlight_signals,
+        )
 
         return DashboardSnapshot(
             generated_at=generated_at,
@@ -90,6 +123,8 @@ class DashboardService:
             quality_pairs=quality_pairs,
             kpis=kpis,
             control_panel=control_panel,
+            trust_ribbon=trust_ribbon,
+            system_confidence=system_confidence,
         )
 
     def build_workspace_snapshot(
@@ -130,13 +165,38 @@ class DashboardService:
             root_details=root_details,
             admin_health=admin_health,
         )
+        watchlist = self._build_watchlist()
+        trust_ribbon = self._build_trust_ribbon(control_panel=control_panel, admin_health=admin_health)
+        focus_signal_diff = self._build_signal_change_summary(focus_signal)
+        focus_confidence = self._build_confidence_decomposition(focus_signal, root_details=root_details)
+        decision_log_preview = self._build_decision_timeline(focus_signal)
+        workspace_mode = self._workspace_mode(focus_signal=focus_signal, watchlist=watchlist)
+        comparison = self._build_horizon_comparison(selected_root=selected_root, root_details=root_details)
+        system_confidence = self._build_system_confidence(
+            control_panel=control_panel,
+            admin_health=admin_health,
+            evaluation=evaluation,
+            active_signals=signal_lane,
+        )
+        market_snapshot = self._build_instrument_market_snapshot(
+            root_details=root_details,
+            control_panel=control_panel,
+            generated_at=generated_at,
+            signal=focus_signal,
+        )
 
         return WorkspaceSnapshot(
             generated_at=generated_at,
             selected_root=selected_root,
             selected_signal_id=selected_signal_id,
             roots=roots,
-            pulses=self._build_pulses(roots=roots, active_signals=all_active, selected_root=selected_root),
+            pulses=self._build_pulses(
+                roots=roots,
+                active_signals=all_active,
+                selected_root=selected_root,
+                generated_at=generated_at,
+            ),
+            market_snapshot=market_snapshot,
             signal_lane=signal_lane,
             focus_signal=focus_signal,
             root_details=root_details,
@@ -144,6 +204,11 @@ class DashboardService:
             admin_health=admin_health,
             quality_pairs=quality_pairs,
             control_panel=control_panel,
+            trust_ribbon=trust_ribbon,
+            system_confidence=system_confidence,
+            workspace_mode=workspace_mode,
+            watchlist=watchlist,
+            comparison=comparison,
             action_items=self._build_workspace_actions(
                 focus_signal=focus_signal,
                 root_details=root_details,
@@ -155,6 +220,10 @@ class DashboardService:
                 if focus_signal is not None
                 else None
             ),
+            focus_signal_diff=focus_signal_diff,
+            focus_confidence=focus_confidence,
+            decision_log_preview=decision_log_preview,
+            review_bundle=self._build_review_bundle(roots=roots),
         )
 
     def build_signal_snapshot(self, *, signal_id: str) -> WorkspaceSignalSnapshot | None:
@@ -162,6 +231,7 @@ class DashboardService:
         if signal is None:
             return None
 
+        roots = self.contract_service.list_roots()
         root_details = self.contract_service.get_root_deep_dive(signal.root)
         related_signals = self._list_signals(
             root=signal.root,
@@ -169,14 +239,41 @@ class DashboardService:
             seed_root_details=root_details,
         )
         related_signals = [item for item in related_signals if item.signal_id != signal.signal_id][:5]
+        generated_at = datetime.now(UTC)
         evaluation = self.evaluation_service.summarize(root=signal.root, top_k=3, limit=200)
-        return WorkspaceSignalSnapshot(
-            generated_at=datetime.now(UTC),
-            signal=signal,
+        admin_health = self.observability_service.admin_health()
+        control_panel = self._build_control_panel(
+            generated_at=generated_at,
             root_details=root_details,
+            admin_health=admin_health,
+        )
+        market_snapshot = self._build_instrument_market_snapshot(
+            root_details=root_details,
+            control_panel=control_panel,
+            generated_at=generated_at,
+            signal=signal,
+        )
+        return WorkspaceSignalSnapshot(
+            generated_at=generated_at,
+            signal=signal,
+            roots=roots,
+            root_details=root_details,
+            market_snapshot=market_snapshot,
             related_signals=related_signals,
             evaluation=evaluation,
+            control_panel=control_panel,
+            trust_ribbon=self._build_trust_ribbon(control_panel=control_panel, admin_health=admin_health),
+            system_confidence=self._build_system_confidence(
+                control_panel=control_panel,
+                admin_health=admin_health,
+                evaluation=evaluation,
+                active_signals=related_signals,
+            ),
             visual=self._build_signal_visual(signal=signal, root_details=root_details),
+            signal_diff=self._build_signal_change_summary(signal),
+            confidence_decomposition=self._build_confidence_decomposition(signal, root_details=root_details),
+            decision_log=self._build_decision_timeline(signal),
+            similar_setups=self._build_similar_setups(signal),
         )
 
     def build_journal_snapshot(
@@ -191,6 +288,7 @@ class DashboardService:
         roots = self.contract_service.list_roots()
         related_signals = self._list_signals(root=root, status=status, limit=max(20, min(limit, 120)))
         entries: list[JournalWorkspaceEntry] = []
+        decision_log: list[JournalDecisionLogItem] = []
 
         # Materialize journal across the current signal universe. This keeps the UX stable even on a fresh DB.
         for signal in related_signals:
@@ -199,18 +297,24 @@ class DashboardService:
                 detail = self._materialize_signal_detail(signal.signal_id)
             if detail is None:
                 continue
+            if signal_id is None or detail.signal_id == signal_id:
+                decision_log.append(self._build_decision_log_item(detail))
             for entry in detail.journal_entries:
                 if kind is not None and entry.kind != kind:
                     continue
                 entries.append(JournalWorkspaceEntry(entry=entry, signal=signal))
 
+        decision_log.sort(key=lambda item: item.updated_at, reverse=True)
         entries.sort(key=lambda item: item.entry.created_at, reverse=True)
         if signal_id is not None:
             entries = [item for item in entries if item.signal.signal_id == signal_id]
+            related_signals = [item for item in related_signals if item.signal_id == signal_id] or related_signals
 
         selected_signal_id = signal_id
         if selected_signal_id is None and entries:
             selected_signal_id = entries[0].signal.signal_id
+        if selected_signal_id is None and decision_log:
+            selected_signal_id = decision_log[0].signal.signal_id
 
         return JournalWorkspaceSnapshot(
             generated_at=datetime.now(UTC),
@@ -219,12 +323,96 @@ class DashboardService:
             selected_status=status,
             selected_kind=kind,
             selected_signal_id=selected_signal_id,
+            decision_log=decision_log[: min(limit, 12)],
             entries=entries[:limit],
             related_signals=related_signals[:12],
             total_entries=len(entries),
             thesis_entries=sum(1 for item in entries if item.entry.kind == JournalEntryKind.THESIS),
             risk_entries=sum(1 for item in entries if item.entry.kind == JournalEntryKind.RISK_NOTE),
             post_mortems=sum(1 for item in entries if item.entry.kind == JournalEntryKind.POST_MORTEM),
+            note_templates=self._note_templates(),
+            tag_suggestions=self._tag_suggestions(),
+        )
+
+    def add_watchlist_entry(self, *, root_code: str, signal_id: str | None = None, note: str | None = None) -> list[WatchlistEntry]:
+        effective_root = root_code
+        if signal_id is not None:
+            signal = self.signal_service.get_signal(signal_id)
+            if signal is not None:
+                effective_root = signal.root
+        watch_key = f"default:{effective_root}:{signal_id or 'root'}"
+        self.repository.upsert_workspace_watch(
+            watch_key=watch_key,
+            profile_id="default",
+            root_code=effective_root,
+            signal_id=signal_id,
+            note=note,
+            updated_at=datetime.now(UTC),
+        )
+        return self._build_watchlist()
+
+    def remove_watchlist_entry(self, watch_key: str) -> list[WatchlistEntry]:
+        self.repository.delete_workspace_watch(watch_key=watch_key, profile_id="default")
+        return self._build_watchlist()
+
+    def build_horizon_comparison_snapshot(self, *, root: str) -> HorizonComparisonSnapshot | None:
+        return self._build_horizon_comparison(selected_root=root, root_details=self.contract_service.get_root_deep_dive(root))
+
+    def build_root_market_snapshot(self, *, root: str) -> InstrumentMarketSnapshot | None:
+        generated_at = datetime.now(UTC)
+        root_details = self.contract_service.get_root_deep_dive(root)
+        if root_details is None:
+            return None
+        control_panel = self._build_control_panel(
+            generated_at=generated_at,
+            root_details=root_details,
+            admin_health=self.observability_service.admin_health(),
+        )
+        return self._build_instrument_market_snapshot(
+            root_details=root_details,
+            control_panel=control_panel,
+            generated_at=generated_at,
+            signal=None,
+        )
+
+    def build_signal_diff(self, *, signal_id: str) -> SignalChangeSummary | None:
+        signal = self._materialize_signal_detail(signal_id)
+        return self._build_signal_change_summary(signal)
+
+    def build_decision_log(self, *, signal_id: str) -> list[DecisionTimelineItem]:
+        signal = self._materialize_signal_detail(signal_id)
+        return self._build_decision_timeline(signal)
+
+    def _build_decision_log_item(self, signal: FinalSignalDetail) -> JournalDecisionLogItem:
+        entries = sorted(signal.journal_entries, key=lambda item: item.created_at, reverse=True)
+        latest_entry = entries[0] if entries else None
+        latest_thesis = next((item for item in entries if item.kind == JournalEntryKind.THESIS), None)
+        latest_risk = next((item for item in entries if item.kind == JournalEntryKind.RISK_NOTE), None)
+        latest_execution = next((item for item in entries if item.kind == JournalEntryKind.EXECUTION_NOTE), None)
+
+        decision_summary = (
+            latest_execution.note
+            if latest_execution is not None
+            else latest_thesis.note
+            if latest_thesis is not None
+            else signal.summary
+        )
+        why_now = signal.drivers[:3] or [signal.summary]
+        next_watch = (
+            signal.invalidation_conditions[:3]
+            or ([latest_risk.note] if latest_risk is not None else [])
+            or signal.objections[:3]
+            or ["Capture what would invalidate or weaken this setup next."]
+        )
+        updated_at = latest_entry.created_at if latest_entry is not None else signal.generated_at
+
+        return JournalDecisionLogItem(
+            signal=FinalSignalCard.model_validate(signal.model_dump()),
+            updated_at=updated_at,
+            latest_entry=latest_entry,
+            decision_summary=decision_summary,
+            why_now=why_now,
+            next_watch=next_watch,
         )
 
     def _list_signals(
@@ -283,72 +471,65 @@ class DashboardService:
             root_details=root_details,
             admin_health=admin_health,
         )
+        data_mode, data_mode_detail = self._derive_data_mode(feeds)
         latest_market_data_at = max(
             (item.last_update_at for item in feeds if item.last_update_at is not None),
             default=None,
         )
+        reference_sync = self._build_reference_sync_status(generated_at=generated_at)
         return RuntimeControlPanel(
             generated_at=generated_at,
             llm_owner="OpenAI",
             llm_product="ChatGPT",
             llm_model="gpt-5",
+            data_mode=data_mode,
+            data_mode_detail=data_mode_detail,
             model_roles=self._build_model_roles(),
             market_data_feeds=feeds,
             latest_market_data_at=latest_market_data_at,
+            reference_sync=reference_sync,
+        )
+
+    def _build_reference_sync_status(self, *, generated_at: datetime) -> ReferenceSyncStatus:
+        state = self.repository.get_reference_sync_state()
+        refresh_interval = timedelta(hours=max(1, settings.moex_reference_auto_sync_interval_hours))
+        if state is None:
+            return ReferenceSyncStatus(
+                source="bundled_fallback",
+                owner="Repository",
+                status="fallback",
+                detail="Using bundled contract metadata until MOEX ISS sync succeeds.",
+                last_sync_at=None,
+            )
+
+        synced_at = state.synced_at if state.synced_at.tzinfo is not None else state.synced_at.replace(tzinfo=UTC)
+        age = generated_at - synced_at
+        if state.source == "moex_iss":
+            status = "fresh" if age <= refresh_interval else "stale"
+            detail = (
+                state.detail
+                or (
+                    "Reference metadata is synced from MOEX ISS."
+                    if status == "fresh"
+                    else "Last MOEX ISS sync is older than the target interval; using the latest saved snapshot."
+                )
+            )
+            owner = "MOEX"
+        else:
+            status = "fallback"
+            detail = state.detail or "Using bundled contract metadata until MOEX ISS sync succeeds."
+            owner = "Repository"
+
+        return ReferenceSyncStatus(
+            source=state.source,
+            owner=owner,
+            status=status,
+            detail=detail,
+            last_sync_at=synced_at,
         )
 
     def _build_model_roles(self) -> list[ModelRoleAssignment]:
-        detail = "Temporary fixed mapping until configurable role routing is added."
-        return [
-            ModelRoleAssignment(
-                role_key="trend_vol",
-                role_label="Trend / volatility analyst",
-                owner="OpenAI",
-                product="ChatGPT",
-                model="gpt-5",
-                detail=detail,
-            ),
-            ModelRoleAssignment(
-                role_key="flow_liquidity",
-                role_label="Flow / liquidity analyst",
-                owner="OpenAI",
-                product="ChatGPT",
-                model="gpt-5",
-                detail=detail,
-            ),
-            ModelRoleAssignment(
-                role_key="oi_roll",
-                role_label="OI / roll analyst",
-                owner="OpenAI",
-                product="ChatGPT",
-                model="gpt-5",
-                detail=detail,
-            ),
-            ModelRoleAssignment(
-                role_key="macro_event",
-                role_label="Macro-event analyst",
-                owner="OpenAI",
-                product="ChatGPT",
-                model="gpt-5",
-                detail=detail,
-            ),
-            ModelRoleAssignment(
-                role_key="skeptic",
-                role_label="Skeptic",
-                owner="OpenAI",
-                product="ChatGPT",
-                model="gpt-5",
-                detail=detail,
-            ),
-            ModelRoleAssignment(
-                role_key="arbiter",
-                role_label="Arbiter",
-                owner="OpenAI",
-                product="ChatGPT",
-                model="gpt-5",
-                detail=detail,
-            ),
-        ]
+        return self.runtime_control_service.list_model_routes()
 
     def _build_market_data_feeds(self, *, generated_at: datetime, root_details, admin_health) -> list[MarketDataFeedStatus]:
         provider_order: list[str] = []
@@ -412,6 +593,365 @@ class DashboardService:
             return None
         return generated_at - timedelta(seconds=max(0, freshness_seconds))
 
+    def _derive_data_mode(self, feeds: list[MarketDataFeedStatus]) -> tuple[str, str]:
+        policy = self.runtime_control_service.get_freshness_policy()
+        if not feeds:
+            return (
+                "degraded_feed",
+                "No market-data feeds are attached to this root yet.",
+            )
+
+        primary_feeds = [item for item in feeds if item.primary]
+        if not primary_feeds:
+            primary_feeds = feeds[:1]
+
+        if not any(item.status == "ok" for item in primary_feeds):
+            return (
+                "degraded_feed",
+                "Primary price source is degraded or unavailable.",
+            )
+
+        live_roles = {"broker_market_data", "secondary_market_data", "shadow_market_data"}
+        has_live_feed = any(
+            item.status == "ok"
+            and item.role in live_roles
+            and item.freshness_seconds is not None
+            and item.freshness_seconds <= policy.fresh_max_seconds
+            for item in feeds
+        )
+        if has_live_feed:
+            return (
+                "live",
+                "At least one fresh market-data API is healthy for this root.",
+            )
+
+        return (
+            "snapshot",
+            "Healthy reference data is available, but live broker feeds are not fully active.",
+        )
+
+    def _build_watchlist(self, *, profile_id: str = "default") -> list[WatchlistEntry]:
+        watches = self.repository.list_workspace_watches(profile_id=profile_id)
+        signals = {
+            item.signal_id: item
+            for item in self._list_signals(limit=24)
+        }
+        return [
+            WatchlistEntry(
+                watch_key=row.watch_key,
+                root_code=row.root_code,
+                signal_id=row.signal_id,
+                note=row.note,
+                added_at=row.created_at,
+                updated_at=row.updated_at,
+                signal=signals.get(row.signal_id) if row.signal_id else None,
+            )
+            for row in watches
+        ]
+
+    def _workspace_mode(self, *, focus_signal: FinalSignalDetail | None, watchlist: list[WatchlistEntry]) -> str:
+        if focus_signal is not None:
+            if focus_signal.workflow_state.value in {"ready", "escalate", "resolved"}:
+                return "manage"
+            return "focus"
+        if watchlist:
+            return "scan"
+        return "scan"
+
+    def _build_horizon_comparison(self, *, selected_root: str, root_details) -> HorizonComparisonSnapshot | None:
+        related = self._list_signals(root=selected_root, limit=12, seed_root_details=root_details)
+        if not related:
+            return None
+        items = sorted(
+            related,
+            key=lambda item: item.horizon.value,
+        )
+        return HorizonComparisonSnapshot(
+            root=selected_root,
+            items=[
+                HorizonComparisonItem(
+                    horizon=item.horizon.value,
+                    direction=item.direction_final.value,
+                    confidence=item.confidence_final,
+                    skeptic_score=item.skeptic_score,
+                    freshness_score=item.freshness_score,
+                    attention_score=self._attention_score(item),
+                    summary=item.summary,
+                    workflow_state=item.workflow_state,
+                )
+                for item in items
+            ],
+        )
+
+    def _build_trust_ribbon(self, *, control_panel: RuntimeControlPanel, admin_health) -> TrustRibbon:
+        items = [
+            TrustRibbonItem(
+                label="Data mode",
+                value=control_panel.data_mode,
+                tone=self._tone_from_status(control_panel.data_mode),
+                detail=control_panel.data_mode_detail,
+            ),
+            TrustRibbonItem(
+                label="Reference",
+                value=control_panel.reference_sync.status,
+                tone=self._tone_from_status(control_panel.reference_sync.status),
+                detail=control_panel.reference_sync.detail,
+            ),
+            TrustRibbonItem(
+                label="Platform",
+                value=admin_health.status,
+                tone=self._tone_from_status(admin_health.status),
+                detail="Database, scheduler, and source posture.",
+            ),
+        ]
+        headline = "Trader trust is healthy." if all(item.tone == "positive" for item in items) else "Review runtime trust before acting."
+        tone = "positive" if all(item.tone == "positive" for item in items) else "warning"
+        return TrustRibbon(headline=headline, tone=tone, items=items)
+
+    def _build_system_confidence(
+        self,
+        *,
+        control_panel: RuntimeControlPanel,
+        admin_health,
+        evaluation: EvaluationSummary,
+        active_signals: list[FinalSignalCard],
+    ) -> SystemConfidencePanel:
+        score = 100
+        drivers = []
+        if control_panel.data_mode == "snapshot":
+            score -= 18
+            drivers.append("Live feeds are not fully fresh.")
+        elif control_panel.data_mode == "degraded_feed":
+            score -= 34
+            drivers.append("Primary feed posture is degraded.")
+        else:
+            drivers.append("A healthy live feed is present.")
+        if control_panel.reference_sync.status == "stale":
+            score -= 10
+            drivers.append("Contract reference sync is aging.")
+        elif control_panel.reference_sync.status == "fallback":
+            score -= 18
+            drivers.append("Bundled fallback reference snapshot is active.")
+        if admin_health.status != "ok":
+            score -= 12
+            drivers.append("Operational health is not fully green.")
+        if not active_signals:
+            score -= 6
+            drivers.append("No active setups are currently available.")
+        if evaluation.resolved_signals > 0:
+            drivers.append(f"{evaluation.resolved_signals} resolved signals support calibration.")
+        score = max(20, min(99, score))
+        tone = "positive" if score >= 80 else "warning" if score >= 60 else "negative"
+        label = "high" if score >= 80 else "medium" if score >= 60 else "fragile"
+        detail = "Combined view of feed freshness, reference sync, health, and evaluation coverage."
+        return SystemConfidencePanel(score=score, label=label, tone=tone, detail=detail, drivers=drivers[:4])
+
+    def _build_signal_change_summary(self, signal: FinalSignalDetail | None) -> SignalChangeSummary | None:
+        if signal is None:
+            return None
+        versions = self.repository.list_signal_versions(
+            root=signal.root,
+            contract=signal.contract,
+            horizon=signal.horizon.value,
+            limit=4,
+        )
+        previous = next((item for item in versions if item.signal_id != signal.signal_id), None)
+        if previous is None:
+            return SignalChangeSummary(signal_id=signal.signal_id, summary="No earlier recalculation is available yet.")
+        previous_drivers = self._split_blob(previous.drivers_blob)
+        previous_invalidations = self._split_blob(previous.invalidation_conditions_blob)
+        previous_sources = self._split_blob(previous.data_sources_blob)
+        drivers_added, drivers_removed = self._diff_lists(signal.drivers, previous_drivers)
+        invalidations_added, invalidations_removed = self._diff_lists(signal.invalidation_conditions, previous_invalidations)
+        sources_added, sources_removed = self._diff_lists(signal.data_sources, previous_sources)
+        confidence_delta = round(signal.confidence_final - float(previous.confidence_final), 4)
+        skeptic_delta = round(signal.skeptic_score - float(previous.skeptic_score), 4)
+        freshness_delta = round(signal.freshness_score - float(previous.freshness_score or 0), 4)
+        changed = any(
+            abs(value) >= 0.0001
+            for value in (
+                signal.probability_up - float(previous.probability_up),
+                signal.probability_down - float(previous.probability_down),
+                confidence_delta,
+                skeptic_delta,
+                freshness_delta,
+            )
+        ) or any((drivers_added, drivers_removed, invalidations_added, invalidations_removed, sources_added, sources_removed))
+        summary = (
+            "Signal changed since the last recalculation."
+            if changed
+            else "Signal is materially unchanged versus the last recalculation."
+        )
+        return SignalChangeSummary(
+            signal_id=signal.signal_id,
+            previous_signal_id=previous.signal_id,
+            changed=changed,
+            summary=summary,
+            probability_up_delta=round(signal.probability_up - float(previous.probability_up), 4),
+            probability_down_delta=round(signal.probability_down - float(previous.probability_down), 4),
+            confidence_delta=confidence_delta,
+            skeptic_delta=skeptic_delta,
+            freshness_delta=freshness_delta,
+            drivers_added=drivers_added,
+            drivers_removed=drivers_removed,
+            invalidations_added=invalidations_added,
+            invalidations_removed=invalidations_removed,
+            data_sources_added=sources_added,
+            data_sources_removed=sources_removed,
+        )
+
+    def _build_confidence_decomposition(
+        self,
+        signal: FinalSignalDetail | None,
+        *,
+        root_details,
+    ) -> ConfidenceDecomposition | None:
+        if signal is None:
+            return None
+        factors = [
+            ConfidenceFactor(label="Final confidence", value=signal.confidence_final, tone="positive" if signal.confidence_final >= 0.6 else "warning"),
+            ConfidenceFactor(label="Skeptic support", value=signal.skeptic_score, tone="positive" if signal.skeptic_score >= 0.6 else "warning"),
+            ConfidenceFactor(label="Freshness", value=signal.freshness_score, tone="positive" if signal.freshness_score >= 0.75 else "warning"),
+        ]
+        if root_details is not None:
+            roll_penalty = max(0.0, min(1.0, 1.0 - root_details.continuous_series.next_contract_share))
+            factors.append(
+                ConfidenceFactor(
+                    label="Roll posture",
+                    value=round(roll_penalty, 4),
+                    tone="positive" if roll_penalty >= 0.7 else "warning",
+                    detail=f"Next-contract share {root_details.continuous_series.next_contract_share:.0%}.",
+                )
+            )
+        headline = "Conviction comes from confidence, skeptic support, freshness, and roll posture."
+        return ConfidenceDecomposition(headline=headline, factors=factors)
+
+    def _build_decision_timeline(self, signal: FinalSignalDetail | None) -> list[DecisionTimelineItem]:
+        if signal is None:
+            return []
+        timeline = [
+            DecisionTimelineItem(
+                at=signal.generated_at,
+                kind="signal",
+                title="Signal published",
+                detail=signal.summary,
+                tone="positive" if signal.direction_final.value != "no_edge" else "neutral",
+            ),
+            DecisionTimelineItem(
+                at=signal.generated_at,
+                kind="workflow",
+                title="Workflow state",
+                detail=f"Marked as {signal.workflow_state.value}.",
+                tone=self._workflow_tone(signal.workflow_state.value),
+            ),
+        ]
+        for entry in signal.journal_entries:
+            timeline.append(
+                DecisionTimelineItem(
+                    at=entry.created_at,
+                    kind=entry.kind.value,
+                    title=entry.title,
+                    detail=entry.note,
+                    tone="warning" if entry.kind == JournalEntryKind.RISK_NOTE else "neutral",
+                    tags=entry.tags,
+                )
+            )
+        if signal.resolution is not None:
+            timeline.append(
+                DecisionTimelineItem(
+                    at=signal.resolution.resolved_at,
+                    kind="resolution",
+                    title=f"Resolved as {signal.resolution.outcome.value}",
+                    detail=signal.resolution.resolution_note,
+                    tone="positive" if signal.resolution.outcome.value == "win" else "negative",
+                )
+            )
+        timeline.sort(key=lambda item: self._coerce_utc(item.at), reverse=True)
+        return timeline
+
+    def _build_similar_setups(self, signal: FinalSignalDetail) -> list[HistoricalSetup]:
+        rows = self.repository.list_similar_resolutions(root=signal.root, horizon=signal.horizon.value, limit=5)
+        results: list[HistoricalSetup] = []
+        for row in rows:
+            similarity = max(0.1, 1.0 - abs(float(row.realized_return_bps)) / 1000.0)
+            results.append(
+                HistoricalSetup(
+                    signal_id=row.signal_id,
+                    outcome=row.outcome,
+                    realized_return_bps=float(row.realized_return_bps),
+                    resolved_at=row.resolved_at,
+                    note=row.post_mortem_summary or row.resolution_note,
+                    similarity_score=round(similarity, 4),
+                )
+            )
+        return results
+
+    def _build_review_bundle(self, *, roots) -> ReviewBundle:
+        signals = self._list_signals(limit=64)
+        watched = self._build_watchlist()
+        ignored = sum(1 for item in signals if item.workflow_state.value == "ignored")
+        resolved = self.repository.count_signals(status="resolved")
+        journal_entries = self.repository.count_journal_entries()
+        return ReviewBundle(
+            watched_roots=len({item.root_code for item in watched}),
+            decisions_logged=journal_entries,
+            ignored_signals=ignored,
+            resolved_signals=resolved,
+            highlights=[
+                f"{len(watched)} watchlist items are being monitored.",
+                f"{len(roots)} roots are available in the current universe.",
+            ],
+        )
+
+    def _note_templates(self) -> list[dict[str, str]]:
+        return [
+            {"kind": "thesis", "title": "Thesis update", "prompt": "What changed, why it matters, and what supports the setup now?"},
+            {"kind": "invalidation_breach", "title": "Invalidation breach", "prompt": "What level or condition failed, and how does that change the plan?"},
+            {"kind": "execution_note", "title": "Execution observation", "prompt": "What did the market do around the decision window?"},
+            {"kind": "post_mortem", "title": "Post-mortem", "prompt": "What worked, what failed, and what will you repeat or avoid?"},
+            {"kind": "data_anomaly", "title": "Data anomaly", "prompt": "What looked stale, missing, or contradictory in the inputs?"},
+        ]
+
+    def _tag_suggestions(self) -> list[str]:
+        return ["false urgency", "late", "great context", "data issue", "good skeptic catch"]
+
+    def _attention_score(self, signal: FinalSignalCard) -> float:
+        score = signal.confidence_final * 0.45 + signal.skeptic_score * 0.2 + signal.freshness_score * 0.15 + min(signal.priority_score / 100.0, 1.0) * 0.2
+        if signal.workflow_state.value == "ready":
+            score += 0.08
+        if signal.workflow_state.value == "escalate":
+            score += 0.05
+        return round(min(1.0, score), 4)
+
+    def _tone_from_status(self, status: str) -> str:
+        if status in {"live", "fresh", "ok", "high"}:
+            return "positive"
+        if status in {"snapshot", "stale", "degraded", "medium", "warning"}:
+            return "warning"
+        return "negative"
+
+    def _workflow_tone(self, workflow_state: str) -> str:
+        if workflow_state in {"ready", "resolved"}:
+            return "positive"
+        if workflow_state in {"escalate", "validating"}:
+            return "warning"
+        if workflow_state == "ignored":
+            return "negative"
+        return "neutral"
+
+    def _split_blob(self, value: str | None) -> list[str]:
+        if not value:
+            return []
+        return [item for item in value.split("\n") if item]
+
+    def _diff_lists(self, current: list[str], previous: list[str]) -> tuple[list[str], list[str]]:
+        current_set = set(current)
+        previous_set = set(previous)
+        return (
+            [item for item in current if item not in previous_set],
+            [item for item in previous if item not in current_set],
+        )
+
     def _resolve_focus_signal(
         self,
         *,
@@ -471,6 +1011,7 @@ class DashboardService:
         roots,
         active_signals: list[FinalSignalCard],
         selected_root: str,
+        generated_at: datetime,
     ) -> list[WorkspaceRootPulse]:
         pulses: list[WorkspaceRootPulse] = []
         for item in roots:
@@ -479,6 +1020,24 @@ class DashboardService:
             next_share = deep_dive.continuous_series.next_contract_share if deep_dive is not None else 0.0
             root_signals = [signal for signal in active_signals if signal.root == item.root_code]
             top_signal = root_signals[0] if root_signals else None
+            live_quote = self._live_quote_snapshot(
+                root_code=item.root_code,
+                contract=item.active_contract,
+                primary_provider=item.primary_provider,
+                secondary_provider=item.secondary_provider,
+                unit_hint=self._instrument_price_unit(item.root_code),
+                generated_at=generated_at,
+            )
+            fallback_market_snapshot = (
+                self._build_synthetic_instrument_market_snapshot(
+                    root_details=deep_dive,
+                    control_panel=None,
+                    generated_at=generated_at,
+                    signal=top_signal,
+                )
+                if live_quote is None and deep_dive is not None
+                else None
+            )
             tone = "positive" if item.root_code == selected_root else "warning" if root_signals else "neutral"
             headline = top_signal.summary if top_signal is not None else "No active setup yet; keep root on watch."
             pulses.append(
@@ -491,11 +1050,412 @@ class DashboardService:
                     next_contract_share=next_share,
                     liquidity_rank=item.liquidity_rank,
                     best_direction=top_signal.direction_final if top_signal is not None else None,
+                    current_price=(
+                        live_quote.current_price
+                        if live_quote is not None
+                        else fallback_market_snapshot.current_price if fallback_market_snapshot is not None else None
+                    ),
+                    price_change_abs=(
+                        live_quote.price_change_abs
+                        if live_quote is not None
+                        else fallback_market_snapshot.price_change_abs
+                        if fallback_market_snapshot is not None
+                        else None
+                    ),
+                    price_change_pct=(
+                        live_quote.price_change_pct
+                        if live_quote is not None
+                        else fallback_market_snapshot.price_change_pct
+                        if fallback_market_snapshot is not None
+                        else None
+                    ),
+                    price_unit=(
+                        live_quote.unit
+                        if live_quote is not None
+                        else fallback_market_snapshot.unit
+                        if fallback_market_snapshot is not None
+                        else self._instrument_price_unit(item.root_code)
+                    ),
                     headline=headline,
                     tone=tone,
                 )
             )
         return pulses
+
+    def _build_instrument_market_snapshot(
+        self,
+        *,
+        root_details,
+        control_panel,
+        generated_at: datetime,
+        signal: FinalSignalCard | FinalSignalDetail | None,
+    ) -> InstrumentMarketSnapshot | None:
+        if root_details is None:
+            return None
+
+        fallback_snapshot = self._build_synthetic_instrument_market_snapshot(
+            root_details=root_details,
+            control_panel=control_panel,
+            generated_at=generated_at,
+            signal=signal,
+        )
+        live_snapshot = self.market_data_service.get_market_snapshot(
+            root_code=root_details.root.root_code,
+            contract=root_details.continuous_series.active_contract,
+            providers=self._market_data_providers(
+                primary_provider=root_details.root.primary_provider,
+                secondary_provider=root_details.root.secondary_provider,
+            ),
+            unit_hint=fallback_snapshot.unit,
+            now=generated_at,
+        )
+        if live_snapshot is None:
+            return fallback_snapshot
+
+        daily = self._build_chart_series_from_bars(
+            label="1D",
+            bars=live_snapshot.daily_bars,
+            fallback=fallback_snapshot.daily,
+            max_points=12,
+            label_kind="hour",
+        )
+        weekly = self._build_chart_series_from_bars(
+            label="1W",
+            bars=live_snapshot.weekly_bars,
+            fallback=fallback_snapshot.weekly,
+            max_points=7,
+            label_kind="date",
+        )
+        monthly = self._build_chart_series_from_bars(
+            label="1M",
+            bars=live_snapshot.monthly_bars,
+            fallback=fallback_snapshot.monthly,
+            max_points=6,
+            label_kind="date",
+        )
+        return InstrumentMarketSnapshot(
+            root_code=root_details.root.root_code,
+            contract=root_details.continuous_series.active_contract,
+            base_asset=root_details.root.base_asset,
+            unit=live_snapshot.unit or fallback_snapshot.unit,
+            current_price=live_snapshot.quote.current_price,
+            price_change_abs=(
+                live_snapshot.quote.price_change_abs
+                if live_snapshot.quote.price_change_abs is not None
+                else daily.change_abs
+            ),
+            price_change_pct=(
+                live_snapshot.quote.price_change_pct
+                if live_snapshot.quote.price_change_pct is not None
+                else daily.change_pct
+            ),
+            price_source=f"{live_snapshot.provider} live",
+            status=live_snapshot.status or fallback_snapshot.status,
+            status_detail=live_snapshot.detail or fallback_snapshot.status_detail,
+            as_of=live_snapshot.as_of,
+            daily=daily,
+            weekly=weekly,
+            monthly=monthly,
+        )
+
+    def _build_synthetic_instrument_market_snapshot(
+        self,
+        *,
+        root_details,
+        control_panel,
+        generated_at: datetime,
+        signal: FinalSignalCard | FinalSignalDetail | None,
+    ) -> InstrumentMarketSnapshot:
+        if root_details is None:
+            raise ValueError("Root details are required for a synthetic market snapshot.")
+
+        features = list(root_details.feature_snapshots)
+        active_signal = signal
+        if active_signal is None and root_details.active_signals:
+            active_signal = max(
+                root_details.active_signals,
+                key=lambda item: (item.generated_at, item.confidence_final, item.priority_score),
+            )
+
+        trend_bias = self._safe_average(item.trend_slope for item in features)
+        volatility = self._safe_average(item.realized_volatility for item in features)
+        return_score = self._safe_average(item.return_score for item in features)
+        conviction = 0.0
+        confidence = 0.5
+        if active_signal is not None:
+            conviction = float(active_signal.probability_up) - float(active_signal.probability_down)
+            confidence = float(active_signal.confidence_final)
+        roll_drag = float(root_details.continuous_series.next_contract_share) * 0.018
+        base_price = self._instrument_price_baseline(root_details.root.root_code)
+        current_price = base_price * (
+            1
+            + trend_bias * 0.14
+            + return_score * 0.07
+            + conviction * 0.08
+            + (confidence - 0.5) * 0.05
+            - roll_drag
+        )
+        current_price = round(max(base_price * 0.45, current_price), 2)
+
+        daily = self._build_instrument_chart_series(
+            label="1D",
+            points_count=12,
+            current_price=current_price,
+            trend_bias=trend_bias,
+            volatility=volatility,
+            conviction=conviction,
+            generated_at=generated_at,
+            label_kind="hour",
+            lookback_step=timedelta(minutes=30),
+            amplitude_scale=0.38,
+        )
+        weekly = self._build_instrument_chart_series(
+            label="1W",
+            points_count=7,
+            current_price=current_price,
+            trend_bias=trend_bias,
+            volatility=volatility,
+            conviction=conviction,
+            generated_at=generated_at,
+            label_kind="weekday",
+            lookback_step=timedelta(days=1),
+            amplitude_scale=0.72,
+        )
+        monthly = self._build_instrument_chart_series(
+            label="1M",
+            points_count=6,
+            current_price=current_price,
+            trend_bias=trend_bias,
+            volatility=volatility,
+            conviction=conviction,
+            generated_at=generated_at,
+            label_kind="date",
+            lookback_step=timedelta(days=5),
+            amplitude_scale=1.08,
+        )
+
+        price_source = f"{root_details.root.primary_provider} snapshot proxy"
+        status = "fresh"
+        status_detail = None
+        as_of = generated_at
+        if control_panel is not None:
+            primary_feed = next((item for item in control_panel.market_data_feeds if item.primary), None)
+            if primary_feed is None and control_panel.market_data_feeds:
+                primary_feed = control_panel.market_data_feeds[0]
+            if primary_feed is not None:
+                price_source = f"{primary_feed.provider} snapshot proxy"
+                status = primary_feed.status
+                status_detail = primary_feed.detail
+                as_of = primary_feed.last_update_at or generated_at
+            else:
+                status = control_panel.data_mode
+                status_detail = control_panel.data_mode_detail
+                as_of = control_panel.latest_market_data_at or generated_at
+
+        return InstrumentMarketSnapshot(
+            root_code=root_details.root.root_code,
+            contract=root_details.continuous_series.active_contract,
+            base_asset=root_details.root.base_asset,
+            unit=self._instrument_price_unit(root_details.root.root_code),
+            current_price=daily.current_price,
+            price_change_abs=daily.change_abs,
+            price_change_pct=daily.change_pct,
+            price_source=price_source,
+            status=status,
+            status_detail=status_detail,
+            as_of=as_of,
+            daily=daily,
+            weekly=weekly,
+            monthly=monthly,
+        )
+
+    def _build_chart_series_from_bars(
+        self,
+        *,
+        label: str,
+        bars: list[Bar],
+        fallback: InstrumentChartSeries,
+        max_points: int,
+        label_kind: str,
+    ) -> InstrumentChartSeries:
+        if not bars:
+            return fallback
+
+        sampled_bars = self._sample_bars(bars, max_points=max_points)
+        points = [
+            InstrumentChartPoint(
+                label=self._instrument_chart_label(bar.end_at, kind=label_kind),
+                value=round(bar.close, 2),
+                open=round(bar.open, 2),
+                high=round(bar.high, 2),
+                low=round(bar.low, 2),
+                close=round(bar.close, 2),
+            )
+            for bar in sampled_bars
+        ]
+        open_price = round(sampled_bars[0].open, 2)
+        current_price = round(sampled_bars[-1].close, 2)
+        high_price = round(max(bar.high for bar in sampled_bars), 2)
+        low_price = round(min(bar.low for bar in sampled_bars), 2)
+        change_abs = round(current_price - open_price, 2)
+        change_pct = round(change_abs / open_price, 4) if open_price else 0.0
+        return InstrumentChartSeries(
+            label=label,
+            points=points,
+            open_price=open_price,
+            current_price=current_price,
+            high_price=high_price,
+            low_price=low_price,
+            change_abs=change_abs,
+            change_pct=change_pct,
+        )
+
+    def _live_quote_snapshot(
+        self,
+        *,
+        root_code: str,
+        contract: str,
+        primary_provider: str | None,
+        secondary_provider: str | None,
+        unit_hint: str | None,
+        generated_at: datetime,
+    ):
+        return self.market_data_service.get_quote_snapshot(
+            root_code=root_code,
+            contract=contract,
+            providers=self._market_data_providers(
+                primary_provider=primary_provider,
+                secondary_provider=secondary_provider,
+            ),
+            unit_hint=unit_hint,
+            now=generated_at,
+        )
+
+    def _market_data_providers(
+        self,
+        *,
+        primary_provider: str | None,
+        secondary_provider: str | None,
+    ) -> list[str]:
+        providers: list[str] = []
+        for provider in (primary_provider, secondary_provider):
+            if provider is None:
+                continue
+            normalized = provider.strip().lower()
+            if normalized and normalized not in providers:
+                providers.append(normalized)
+        if "moex" not in providers:
+            providers.append("moex")
+        return providers
+
+    def _sample_bars(self, bars: list[Bar], *, max_points: int) -> list[Bar]:
+        ordered = sorted(bars, key=lambda item: item.start_at)
+        if len(ordered) <= max_points:
+            return ordered
+
+        last_index = len(ordered) - 1
+        sampled_indices = {
+            round(step * last_index / float(max_points - 1))
+            for step in range(max_points)
+        }
+        return [ordered[index] for index in sorted(sampled_indices)]
+
+    def _build_instrument_chart_series(
+        self,
+        *,
+        label: str,
+        points_count: int,
+        current_price: float,
+        trend_bias: float,
+        volatility: float,
+        conviction: float,
+        generated_at: datetime,
+        label_kind: str,
+        lookback_step: timedelta,
+        amplitude_scale: float,
+    ) -> InstrumentChartSeries:
+        seed = 0.17 + (points_count * 0.11)
+        amplitude = max(0.0035, min(0.065, 0.006 + volatility * 0.02)) * amplitude_scale
+        drift = conviction * 0.018 * amplitude_scale + trend_bias * 0.034 * amplitude_scale
+        offsets: list[float] = []
+        for index in range(points_count):
+            progress = 0.0 if points_count == 1 else index / float(points_count - 1)
+            wave = math.sin(progress * math.pi * 1.55 + seed) * amplitude
+            echo = math.cos(progress * math.pi * 0.82 + seed / 2) * amplitude * 0.42
+            offsets.append(((progress - 1.0) * drift) + wave + echo)
+
+        last_offset = offsets[-1] if offsets else 0.0
+        values = [
+            round(max(current_price * 0.3, current_price * (1 + (offset - last_offset))), 2)
+            for offset in offsets
+        ]
+        times = [
+            generated_at - (lookback_step * (points_count - index - 1))
+            for index in range(points_count)
+        ]
+        points: list[InstrumentChartPoint] = []
+        previous_close = values[0] if values else current_price
+        wick_scale = max(0.0015, min(0.0125, 0.002 + (volatility * 0.015)))
+        for moment, value in zip(times, values, strict=False):
+            open_value = previous_close
+            close_value = value
+            high_value = max(open_value, close_value) * (1 + wick_scale)
+            low_value = min(open_value, close_value) * (1 - wick_scale)
+            points.append(
+                InstrumentChartPoint(
+                    label=self._instrument_chart_label(moment, kind=label_kind),
+                    value=close_value,
+                    open=round(open_value, 2),
+                    high=round(high_value, 2),
+                    low=round(low_value, 2),
+                    close=round(close_value, 2),
+                )
+            )
+            previous_close = close_value
+        open_price = values[0] if values else current_price
+        high_price = max(values) if values else current_price
+        low_price = min(values) if values else current_price
+        change_abs = round((values[-1] if values else current_price) - open_price, 2)
+        change_pct = round(change_abs / open_price, 4) if open_price else 0.0
+        return InstrumentChartSeries(
+            label=label,
+            points=points,
+            open_price=open_price,
+            current_price=values[-1] if values else current_price,
+            high_price=high_price,
+            low_price=low_price,
+            change_abs=change_abs,
+            change_pct=change_pct,
+        )
+
+    def _instrument_chart_label(self, moment: datetime, *, kind: str) -> str:
+        if kind == "hour":
+            return moment.strftime("%H:%M")
+        if kind == "weekday":
+            return moment.strftime("%d.%m")
+        return moment.strftime("%d.%m")
+
+    def _instrument_price_baseline(self, root_code: str) -> float:
+        baselines = {
+            "SI": 94850.0,
+            "BR": 68.4,
+            "MXI": 342800.0,
+        }
+        return baselines.get(root_code.upper(), 1000.0 + float(len(root_code) * 125))
+
+    def _instrument_price_unit(self, root_code: str) -> str:
+        units = {
+            "SI": "RUB",
+            "BR": "USD",
+            "MXI": "pts",
+        }
+        return units.get(root_code.upper(), "pts")
+
+    def _safe_average(self, values) -> float:
+        materialized = [float(value) for value in values]
+        if not materialized:
+            return 0.0
+        return sum(materialized) / len(materialized)
 
     def _build_workspace_actions(
         self,
@@ -754,4 +1714,6 @@ def get_dashboard_service() -> DashboardService:
         signal_service=SignalService(repository),
         evaluation_service=EvaluationService(repository),
         observability_service=ObservabilityService(repository),
+        runtime_control_service=RuntimeControlService(repository),
+        market_data_service=get_market_data_service(),
     )

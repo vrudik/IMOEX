@@ -49,10 +49,18 @@ async def sync_moex_reference(payload: AdminMoexReferenceSyncRequest) -> AdminMo
     )
     repository = get_app_container().repository
     sync_time = payload.as_of or datetime.now(UTC)
-    roots_synced, contracts_synced = repository.sync_reference_snapshot(as_of=sync_time)
+    roots_synced, contracts_synced = repository.sync_reference_snapshot(
+        as_of=sync_time,
+        source=result.source,
+    )
     details = list(result.details)
     details.append(f"roots_synced={roots_synced}")
     details.append(f"repository_contracts_synced={contracts_synced}")
+    repository.record_reference_sync(
+        as_of=sync_time,
+        source=result.source,
+        detail="; ".join(details),
+    )
     return result.model_copy(update={"details": details}, deep=True)
 
 

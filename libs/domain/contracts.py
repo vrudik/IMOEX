@@ -47,6 +47,15 @@ class SignalStatus(StrEnum):
     INVALIDATED = "invalidated"
 
 
+class SignalWorkflowState(StrEnum):
+    WATCHING = "watching"
+    VALIDATING = "validating"
+    READY = "ready"
+    IGNORED = "ignored"
+    ESCALATE = "escalate"
+    RESOLVED = "resolved"
+
+
 class ResolutionOutcome(StrEnum):
     WIN = "win"
     LOSS = "loss"
@@ -59,6 +68,8 @@ class JournalEntryKind(StrEnum):
     RISK_NOTE = "risk_note"
     EXECUTION_NOTE = "execution_note"
     POST_MORTEM = "post_mortem"
+    INVALIDATION_BREACH = "invalidation_breach"
+    DATA_ANOMALY = "data_anomaly"
 
 
 class HealthStatus(StrEnum):
@@ -140,6 +151,7 @@ class ContinuousSeriesSnapshot(BaseModel):
     active_contract: str
     next_contract: str
     days_to_expiry: int
+    expiry_date: date | None = None
     days_to_last_trade: int
     roll_risk_flag: bool
     next_contract_share: float
@@ -231,6 +243,11 @@ class JournalEntryCreate(BaseModel):
     title: str
     note: str
     author: str = "system"
+    tags: list[str] = Field(default_factory=list)
+
+
+class SignalWorkflowStateUpdate(BaseModel):
+    workflow_state: SignalWorkflowState
 
 
 class JournalEntry(BaseModel):
@@ -241,6 +258,7 @@ class JournalEntry(BaseModel):
     note: str
     author: str
     created_at: datetime
+    tags: list[str] = Field(default_factory=list)
 
 
 class AdminRecalculateRequest(BaseModel):
@@ -383,6 +401,7 @@ class FinalSignalCard(BaseModel):
     generated_at: datetime
     freshness_score: float
     summary: str
+    workflow_state: SignalWorkflowState = SignalWorkflowState.WATCHING
 
 
 class FinalSignalDetail(FinalSignalCard):
