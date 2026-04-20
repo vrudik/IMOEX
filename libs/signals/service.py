@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from libs.arbiter.service import ArbiterService
-from libs.domain.contracts import FinalSignalCard, FinalSignalDetail, RootDeepDive
+from libs.domain.contracts import FinalSignalCard, FinalSignalDetail, RootDeepDive, SignalWorkflowState
 from libs.domain.models import FinalSignalRecord
 from libs.domain.repository import SqlAlchemyContractMasterRepository
 from libs.journal.service import JournalService
@@ -82,6 +82,15 @@ class SignalService:
             detail = detail.model_copy(update={"status": resolution.status, "resolution": resolution}, deep=True)
         return detail.model_copy(update={"journal_entries": entries}, deep=True)
 
+    def set_workflow_state(self, signal_id: str, workflow_state: SignalWorkflowState) -> FinalSignalDetail | None:
+        try:
+            updated = self.repository.update_signal_workflow_state(signal_id, workflow_state.value)
+        except Exception:
+            return None
+        if not updated:
+            return None
+        return self.get_signal(signal_id)
+
     def _to_card(self, row: FinalSignalRecord) -> FinalSignalCard:
         return FinalSignalCard(
             signal_id=row.signal_id,
@@ -103,6 +112,7 @@ class SignalService:
             generated_at=row.generated_at,
             freshness_score=float(row.freshness_score),
             summary=row.summary,
+            workflow_state=self._workflow_state_from_row(row.workflow_state),
         )
 
     def _to_detail(self, row: FinalSignalRecord) -> FinalSignalDetail:
@@ -119,3 +129,18 @@ class SignalService:
         if not value:
             return []
         return [item for item in value.split("\n") if item]
+
+    def _workflow_state_from_row(self, value: str | None) -> SignalWorkflowState:
+        if not value:
+            return SignalWorkflowState.WATCHING
+        aliases = {
+            "watch": SignalWorkflowState.WATCHING,
+            "review": SignalWorkflowState.VALIDATING,
+            "ignore": SignalWorkflowState.IGNORED,
+        }
+        if value in aliases:
+            return aliases[value]
+        try:
+            return SignalWorkflowState(value)
+        except ValueError:
+            return SignalWorkflowState.WATCHING

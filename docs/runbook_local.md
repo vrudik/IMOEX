@@ -354,6 +354,34 @@ From repo root (PowerShell):
 .\scripts\smoke_local.ps1
 ```
 
+## Local browser preview
+
+For a stable local UI preview with a temporary SQLite database and pre-warmed data:
+
+```powershell
+.\scripts\run_preview.ps1
+```
+
+This keeps `uvicorn` in the current terminal. Open:
+
+```text
+http://127.0.0.1:8011/workspace?root=Si
+http://127.0.0.1:8011/dashboard?root=Si
+```
+
+If you want the preview in the background instead:
+
+```powershell
+.\scripts\start_preview.ps1
+.\scripts\stop_preview.ps1
+```
+
+`start_preview.ps1` returns immediately with preview metadata. If you explicitly want it to wait for HTTP readiness first, use:
+
+```powershell
+.\scripts\start_preview.ps1 -WaitUntilReady
+```
+
 ## Docker compose
 
 From `infra/docker`:

@@ -3,7 +3,13 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from libs.bootstrap.container import get_app_container
-from libs.domain.contracts import FinalSignalCard, FinalSignalDetail, HorizonCode, SignalStatus
+from libs.domain.contracts import (
+    FinalSignalCard,
+    FinalSignalDetail,
+    HorizonCode,
+    SignalStatus,
+    SignalWorkflowStateUpdate,
+)
 
 router = APIRouter(tags=["signals"])
 
@@ -75,3 +81,15 @@ async def get_signal_details(signal_id: str) -> FinalSignalDetail:
     if signal is None:
         raise HTTPException(status_code=404, detail=f"Unknown signal: {signal_id}")
     return signal
+
+
+@router.post("/signals/{signal_id}/workflow-state", response_model=FinalSignalDetail)
+async def update_signal_workflow_state(signal_id: str, payload: SignalWorkflowStateUpdate) -> FinalSignalDetail:
+    signal_service = get_app_container().signal_service
+    signal = signal_service.get_signal(signal_id)
+    if signal is None:
+        _build_signal_baseline()
+    updated = signal_service.set_workflow_state(signal_id, payload.workflow_state)
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Unknown signal: {signal_id}")
+    return updated

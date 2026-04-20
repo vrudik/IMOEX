@@ -63,6 +63,14 @@ class Settings(BaseSettings):
     moex_iss_timeout_seconds: float = 10.0
     moex_iss_securities_path: str = "/engines/futures/markets/forts/securities.json"
     moex_iss_calendar_path: str = "/history/engines/futures/markets/forts/dates.json"
+    market_data_live_enabled: bool = True
+    market_data_http_timeout_seconds: float = 2.5
+    market_data_cache_ttl_seconds: int = 45
+    moex_reference_auto_sync_enabled: bool = True
+    moex_reference_auto_sync_interval_hours: int = 12
+    moex_reference_retry_cooldown_minutes: int = 30
+    moex_reference_calendar_lookback_days: int = 7
+    moex_reference_calendar_lookahead_days: int = 14
     log_level: str = "INFO"
     log_json: bool = True
     feature_flags_json: str = "{}"

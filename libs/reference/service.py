@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
 
 from libs.domain.contracts import AdminMoexReferenceSyncResult
 from libs.reference.contracts import MoexCalendarDay, MoexContractReference
 from libs.reference.iss import MoexIssClient
 from libs.session.rules import DEFAULT_RULE_SETS, SessionRuleSet
+from libs.utils.config import settings
+from libs.utils.logging import get_logger
+
+logger = get_logger("imoex.reference")
 
 
 class MoexReferenceService:
@@ -19,6 +23,8 @@ class MoexReferenceService:
         self.rule_sets = tuple(sorted(rule_sets, key=lambda item: item.effective_from))
         self.contracts = contracts or _default_contract_references()
         self.calendar_overrides: dict[date, tuple[date, bool]] = {}
+        self._last_auto_sync_attempt_at: datetime | None = None
+        self._last_auto_sync_success_at: datetime | None = None
 
     def get_rule_set(self, day: date) -> SessionRuleSet:
         active = self.rule_sets[0]
@@ -98,6 +104,64 @@ class MoexReferenceService:
             details=details,
         )
 
+    def sync_from_iss_if_due(
+        self,
+        *,
+        now: datetime | None = None,
+        force: bool = False,
+    ) -> AdminMoexReferenceSyncResult | None:
+        if not settings.moex_reference_auto_sync_enabled:
+            return None
+
+        current_time = now or datetime.now(UTC)
+        if current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=UTC)
+        else:
+            current_time = current_time.astimezone(UTC)
+
+        refresh_interval = timedelta(hours=max(1, settings.moex_reference_auto_sync_interval_hours))
+        retry_cooldown = timedelta(minutes=max(0, settings.moex_reference_retry_cooldown_minutes))
+
+        if not force:
+            if (
+                self._last_auto_sync_success_at is not None
+                and current_time - self._last_auto_sync_success_at < refresh_interval
+            ):
+                return None
+            if (
+                self._last_auto_sync_attempt_at is not None
+                and current_time - self._last_auto_sync_attempt_at < retry_cooldown
+            ):
+                return None
+
+        self._last_auto_sync_attempt_at = current_time
+        from_date = current_time.date() - timedelta(days=max(0, settings.moex_reference_calendar_lookback_days))
+        to_date = current_time.date() + timedelta(days=max(0, settings.moex_reference_calendar_lookahead_days))
+
+        try:
+            result = self.sync_from_iss(
+                from_date=from_date,
+                to_date=to_date,
+                sync_calendar=True,
+                sync_contracts=True,
+            )
+        except Exception as exc:
+            logger.warning(
+                "moex_reference_auto_sync_failed",
+                extra={
+                    "event": "moex_reference_auto_sync_failed",
+                    "from_date": from_date.isoformat(),
+                    "to_date": to_date.isoformat(),
+                    "error": repr(exc),
+                },
+            )
+            return None
+
+        self._last_auto_sync_success_at = current_time
+        details = list(result.details)
+        details.append("auto_sync=true")
+        return result.model_copy(update={"details": details}, deep=True)
+
     def _next_weekday(self, current_day: date) -> date:
         candidate = current_day + timedelta(days=1)
         while candidate.weekday() >= 5:
@@ -115,8 +179,8 @@ def _default_contract_references() -> tuple[MoexContractReference, ...]:
         MoexContractReference(
             contract_code="SiM6",
             root_code="Si",
-            expiry_date=date(2026, 6, 19),
-            last_trade_date=date(2026, 6, 17),
+            expiry_date=date(2026, 6, 18),
+            last_trade_date=date(2026, 6, 18),
             tick_size=1.0,
             lot_size=1,
             currency="RUB",
@@ -124,8 +188,8 @@ def _default_contract_references() -> tuple[MoexContractReference, ...]:
         MoexContractReference(
             contract_code="SiU6",
             root_code="Si",
-            expiry_date=date(2026, 9, 18),
-            last_trade_date=date(2026, 9, 16),
+            expiry_date=date(2026, 9, 17),
+            last_trade_date=date(2026, 9, 17),
             tick_size=1.0,
             lot_size=1,
             currency="RUB",
@@ -133,17 +197,17 @@ def _default_contract_references() -> tuple[MoexContractReference, ...]:
         MoexContractReference(
             contract_code="BRK6",
             root_code="BR",
-            expiry_date=date(2026, 6, 11),
-            last_trade_date=date(2026, 6, 9),
+            expiry_date=date(2026, 5, 4),
+            last_trade_date=date(2026, 5, 4),
             tick_size=0.01,
             lot_size=10,
             currency="USD",
         ),
         MoexContractReference(
-            contract_code="BRN6",
+            contract_code="BRM6",
             root_code="BR",
-            expiry_date=date(2026, 9, 10),
-            last_trade_date=date(2026, 9, 8),
+            expiry_date=date(2026, 6, 1),
+            last_trade_date=date(2026, 6, 1),
             tick_size=0.01,
             lot_size=10,
             currency="USD",
@@ -151,8 +215,8 @@ def _default_contract_references() -> tuple[MoexContractReference, ...]:
         MoexContractReference(
             contract_code="MXM6",
             root_code="MXI",
-            expiry_date=date(2026, 6, 19),
-            last_trade_date=date(2026, 6, 17),
+            expiry_date=date(2026, 6, 18),
+            last_trade_date=date(2026, 6, 18),
             tick_size=1.0,
             lot_size=1,
             currency="PTS",
@@ -160,8 +224,8 @@ def _default_contract_references() -> tuple[MoexContractReference, ...]:
         MoexContractReference(
             contract_code="MXU6",
             root_code="MXI",
-            expiry_date=date(2026, 9, 18),
-            last_trade_date=date(2026, 9, 16),
+            expiry_date=date(2026, 9, 17),
+            last_trade_date=date(2026, 9, 17),
             tick_size=1.0,
             lot_size=1,
             currency="PTS",

@@ -12,6 +12,7 @@ from libs.evaluation.service import EvaluationService
 from libs.features.service import FeatureService
 from libs.journal.service import JournalService
 from libs.maintenance.service import MaintenanceService
+from libs.marketdata.service import get_market_data_service
 from libs.notifications.alerts import TelegramOpsAlertService
 from libs.notifications.service import TelegramNotificationService
 from libs.observability.service import ObservabilityService
@@ -20,6 +21,7 @@ from libs.preferences.service import NotificationPreferenceService
 from libs.quality.repository import SqlAlchemySourceQualityRepository
 from libs.reference.service import get_moex_reference_service
 from libs.resolution.service import ResolutionService
+from libs.runtime.service import RuntimeControlService
 from libs.scheduler.service import SchedulerService
 from libs.session.engine import SessionEngine
 from libs.signals.service import SignalService
@@ -41,6 +43,7 @@ class AppContainer:
     maintenance_service: MaintenanceService
     observability_service: ObservabilityService
     dashboard_service: DashboardService
+    runtime_control_service: RuntimeControlService
     preference_service: NotificationPreferenceService
     telegram_notification_service: TelegramNotificationService
     telegram_ops_alert_service: TelegramOpsAlertService
@@ -79,6 +82,8 @@ def get_app_container() -> AppContainer:
     )
     maintenance_service = MaintenanceService(repository, quality_repository)
     observability_service = ObservabilityService(repository, maintenance_service=maintenance_service)
+    runtime_control_service = RuntimeControlService(repository)
+    market_data_service = get_market_data_service()
     preference_service = NotificationPreferenceService(
         repository,
         list_roots_callable=contract_master_service.list_roots,
@@ -90,6 +95,8 @@ def get_app_container() -> AppContainer:
         signal_service=signal_service,
         evaluation_service=evaluation_service,
         observability_service=observability_service,
+        runtime_control_service=runtime_control_service,
+        market_data_service=market_data_service,
     )
     telegram_notification_service = TelegramNotificationService(
         dashboard_service,
@@ -118,6 +125,7 @@ def get_app_container() -> AppContainer:
         maintenance_service=maintenance_service,
         observability_service=observability_service,
         dashboard_service=dashboard_service,
+        runtime_control_service=runtime_control_service,
         preference_service=preference_service,
         telegram_notification_service=telegram_notification_service,
         telegram_ops_alert_service=telegram_ops_alert_service,

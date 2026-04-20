@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 from libs.domain.contracts import JournalEntry, JournalEntryCreate
@@ -19,6 +20,7 @@ class JournalService:
             title=payload.title,
             note=payload.note,
             author=payload.author,
+            tags=[item.strip() for item in payload.tags if item.strip()],
             created_at=created_at or datetime.now(UTC),
         )
         try:
@@ -43,4 +45,16 @@ class JournalService:
             note=row.note,
             author=row.author,
             created_at=row.created_at,
+            tags=self._parse_tags(row.tags_json),
         )
+
+    def _parse_tags(self, payload: str | None) -> list[str]:
+        if not payload:
+            return []
+        try:
+            decoded = json.loads(payload)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(decoded, list):
+            return []
+        return [str(item) for item in decoded if str(item).strip()]

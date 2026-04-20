@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, desc, select
+from sqlalchemy import delete, desc, inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -17,14 +17,18 @@ from libs.domain.contracts import (
     SkepticReview,
     SignalResolution,
 )
-from libs.domain.demo_data import get_root_deep_dive, list_roots
+from libs.domain.demo_data import list_roots
 from libs.domain.models import (
     AnalystOutputRecord,
     ContractMetaRecord,
     FeatureSnapshotRecord,
     FinalSignalRecord,
     NotificationDeliveryEventRecord,
+    ReferenceSyncStateRecord,
     RootSeriesRecord,
+    RuntimeAuditEventRecord,
+    RuntimeFreshnessPolicyRecord,
+    RuntimeModelRouteRecord,
     SchedulerLockRecord,
     SchedulerRunRecord,
     SkepticReviewRecord,
@@ -33,97 +37,181 @@ from libs.domain.models import (
     TradingSessionRecord,
     UserJournalEntryRecord,
     UserNotificationPreferenceRecord,
+    UserWorkspaceWatchRecord,
 )
+from libs.continuous.engine import ContinuousSeriesEngine
 from libs.reference.service import get_moex_reference_service
 from libs.session.engine import SessionEngine
+from libs.utils.config import settings
 
 
 class SqlAlchemyContractMasterRepository:
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self.session_factory = session_factory
 
+    @staticmethod
+    def _coerce_utc(value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
     def _ensure_schema(self) -> None:
         bind = self.session_factory.kw.get("bind")
         if bind is not None:
             RootSeriesRecord.metadata.create_all(bind)
+            inspector = inspect(bind)
+            table_names = set(inspector.get_table_names())
+            if "final_signal" in table_names:
+                columns = {column["name"] for column in inspector.get_columns("final_signal")}
+                if "workflow_state" not in columns:
+                    with bind.begin() as connection:
+                        connection.exec_driver_sql("ALTER TABLE final_signal ADD COLUMN workflow_state VARCHAR(32)")
+                        connection.exec_driver_sql(
+                            "UPDATE final_signal SET workflow_state = 'watch' WHERE workflow_state IS NULL"
+                        )
+                else:
+                    with bind.begin() as connection:
+                        connection.exec_driver_sql(
+                            "UPDATE final_signal SET workflow_state = 'watch' WHERE workflow_state IS NULL"
+                        )
+                        connection.exec_driver_sql(
+                            "UPDATE final_signal SET workflow_state = 'watching' WHERE workflow_state = 'watch'"
+                        )
+                        connection.exec_driver_sql(
+                            "UPDATE final_signal SET workflow_state = 'validating' WHERE workflow_state = 'review'"
+                        )
+                        connection.exec_driver_sql(
+                            "UPDATE final_signal SET workflow_state = 'ignored' WHERE workflow_state = 'ignore'"
+                        )
+            if "signal_version" in table_names:
+                columns = {column["name"] for column in inspector.get_columns("signal_version")}
+                with bind.begin() as connection:
+                    if "freshness_score" not in columns:
+                        connection.exec_driver_sql("ALTER TABLE signal_version ADD COLUMN freshness_score NUMERIC(18, 10)")
+                    if "drivers_blob" not in columns:
+                        connection.exec_driver_sql("ALTER TABLE signal_version ADD COLUMN drivers_blob VARCHAR(2048)")
+                    if "objections_blob" not in columns:
+                        connection.exec_driver_sql("ALTER TABLE signal_version ADD COLUMN objections_blob VARCHAR(2048)")
+                    if "invalidation_conditions_blob" not in columns:
+                        connection.exec_driver_sql(
+                            "ALTER TABLE signal_version ADD COLUMN invalidation_conditions_blob VARCHAR(2048)"
+                        )
+                    if "data_sources_blob" not in columns:
+                        connection.exec_driver_sql("ALTER TABLE signal_version ADD COLUMN data_sources_blob VARCHAR(512)")
+            if "user_journal_entry" in table_names:
+                columns = {column["name"] for column in inspector.get_columns("user_journal_entry")}
+                if "tags_json" not in columns:
+                    with bind.begin() as connection:
+                        connection.exec_driver_sql(
+                            "ALTER TABLE user_journal_entry ADD COLUMN tags_json VARCHAR(1024) DEFAULT '[]'"
+                        )
 
     def count_roots(self) -> int:
         with self.session_factory() as session:
             stmt = select(RootSeriesRecord)
             return len(list(session.execute(stmt).scalars().all()))
 
-    def seed_demo_snapshot(self) -> None:
+    def get_latest_reference_sync_at(self) -> datetime | None:
+        self._ensure_schema()
         with self.session_factory() as session:
-            existing = session.execute(select(RootSeriesRecord.root_code).limit(1)).first()
-            if existing is not None:
-                return
+            sync_row = session.get(ReferenceSyncStateRecord, "contract_reference")
+            if sync_row is not None and sync_row.synced_at is not None:
+                return self._coerce_utc(sync_row.synced_at)
 
-            created_at = datetime.now(UTC)
-            reference_service = get_moex_reference_service()
-            session_engine = SessionEngine(reference_service=reference_service)
-            for root in list_roots():
-                deep_dive = get_root_deep_dive(root.root_code)
-                root_rule_set = reference_service.sync_root_rule_set(calendar_day=deep_dive.session.calendar_day) if deep_dive else root.session_rule_set
+            stmt = select(ContractMetaRecord.created_at).order_by(desc(ContractMetaRecord.created_at)).limit(1)
+            return self._coerce_utc(session.execute(stmt).scalars().first())
+
+    def get_reference_sync_state(self) -> ReferenceSyncStateRecord | None:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            return session.get(ReferenceSyncStateRecord, "contract_reference")
+
+    def record_reference_sync(
+        self,
+        *,
+        as_of: datetime,
+        source: str,
+        detail: str | None = None,
+    ) -> None:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            row = session.get(ReferenceSyncStateRecord, "contract_reference")
+            if row is None:
                 session.add(
-                    RootSeriesRecord(
-                        root_code=root.root_code,
-                        asset_class=root.asset_class.value,
-                        base_asset=root.base_asset,
-                        active_contract=root.active_contract,
-                        next_contract=root.next_contract,
-                        active_flag=True,
-                        liquidity_rank=root.liquidity_rank,
-                        liquidity_score=root.liquidity_score,
-                        manual_allow=root.manual_override == "allow",
-                        manual_deny=root.manual_override == "deny",
-                        lock_selected=root.manual_override == "lock",
-                        primary_provider=root.primary_provider,
-                        secondary_provider=root.secondary_provider,
-                        session_rule_set=root_rule_set,
-                        created_at=created_at,
+                    ReferenceSyncStateRecord(
+                        sync_key="contract_reference",
+                        source=source,
+                        detail=detail,
+                        synced_at=as_of,
+                        created_at=as_of,
+                        updated_at=as_of,
                     )
                 )
-                if deep_dive is None:
-                    continue
-
-                reference_session = session_engine.resolve(
-                    at=deep_dive.session.session_start_at,
-                    last_trade_date=reference_service.get_contract(root.active_contract).last_trade_date
-                    if reference_service.get_contract(root.active_contract) is not None
-                    else None,
-                )
-                session.add(
-                    TradingSessionRecord(
-                        root_code=root.root_code,
-                        trading_day=reference_session.trading_day,
-                        session_type=reference_session.session_type.value,
-                        session_start_at=reference_session.session_start_at,
-                        session_end_at=reference_session.session_end_at,
-                        is_weekend_linked=reference_session.is_weekend_linked,
-                        is_clearing_window=reference_session.is_clearing_window,
-                        effective_rule_set=reference_session.effective_rule_set,
-                        created_at=created_at,
-                    )
-                )
-
-                contract_rows = []
-                for contract in reference_service.list_contracts_for_root(root.root_code):
-                    contract_rows.append(
-                        ContractMetaRecord(
-                            contract_code=contract.contract_code,
-                            root_code=contract.root_code,
-                            expiry_date=contract.expiry_date,
-                            last_trade_date=contract.last_trade_date,
-                            tick_size=contract.tick_size,
-                            lot_size=contract.lot_size,
-                            currency=contract.currency,
-                            active_flag=contract.active_flag,
-                            created_at=created_at,
-                        )
-                    )
-                session.add_all(contract_rows)
-
+            else:
+                row.source = source
+                row.detail = detail
+                row.synced_at = as_of
+                row.updated_at = as_of
             session.commit()
+
+    def seed_demo_snapshot(self) -> None:
+        self._ensure_schema()
+        as_of = datetime.now(UTC)
+        reference_service = get_moex_reference_service()
+        latest_reference_sync = self.get_latest_reference_sync_at()
+        reference_sync_state = self.get_reference_sync_state()
+        snapshot_source = reference_sync_state.source if reference_sync_state is not None else "bundled_fallback"
+        snapshot_detail = reference_sync_state.detail if reference_sync_state is not None else None
+        refresh_interval = timedelta(hours=max(1, settings.moex_reference_auto_sync_interval_hours))
+        if latest_reference_sync is None or as_of - latest_reference_sync >= refresh_interval:
+            sync_result = reference_service.sync_from_iss_if_due(now=as_of)
+            if sync_result is not None:
+                snapshot_source = sync_result.source
+                snapshot_detail = "; ".join(sync_result.details)
+                self.record_reference_sync(
+                    as_of=as_of,
+                    source=snapshot_source,
+                    detail=snapshot_detail,
+                )
+
+        expected_roots = {
+            item.root_code: item for item in self._build_reference_roots(as_of=as_of, reference_service=reference_service)
+        }
+        expected_contracts = {item.contract_code: item for item in reference_service.list_contracts()}
+        needs_refresh = False
+
+        with self.session_factory() as session:
+            existing_root_codes = set(session.execute(select(RootSeriesRecord.root_code)).scalars().all())
+            if expected_roots.keys() - existing_root_codes:
+                needs_refresh = True
+            else:
+                for root_code, expected_root in expected_roots.items():
+                    row = session.get(RootSeriesRecord, root_code)
+                    if row is None:
+                        needs_refresh = True
+                        break
+                    if row.active_contract != expected_root.active_contract or row.next_contract != expected_root.next_contract:
+                        needs_refresh = True
+                        break
+
+            if not needs_refresh:
+                for contract_code, expected_contract in expected_contracts.items():
+                    row = session.get(ContractMetaRecord, contract_code)
+                    if row is None:
+                        needs_refresh = True
+                        break
+                    if (
+                        row.root_code != expected_contract.root_code
+                        or row.expiry_date != expected_contract.expiry_date
+                        or row.last_trade_date != expected_contract.last_trade_date
+                    ):
+                        needs_refresh = True
+                        break
+
+        if needs_refresh:
+            self.sync_reference_snapshot(as_of=as_of, source=snapshot_source, detail=snapshot_detail)
 
     def list_roots(self) -> list[RootSeriesRecord]:
         with self.session_factory() as session:
@@ -163,10 +251,12 @@ class SqlAlchemyContractMasterRepository:
         self,
         *,
         as_of: datetime,
+        source: str = "bundled_fallback",
+        detail: str | None = None,
     ) -> tuple[int, int]:
         self._ensure_schema()
         reference_service = get_moex_reference_service()
-        roots = list_roots()
+        roots = self._build_reference_roots(as_of=as_of, reference_service=reference_service)
         contracts = reference_service.list_contracts()
         session_engine = SessionEngine(reference_service=reference_service)
         session_snapshot_by_root = {}
@@ -250,7 +340,55 @@ class SqlAlchemyContractMasterRepository:
                     row.active_flag = contract.active_flag
                 contracts_synced += 1
             session.commit()
+        self.record_reference_sync(as_of=as_of, source=source, detail=detail)
         return roots_synced, contracts_synced
+
+    def _build_reference_roots(
+        self,
+        *,
+        as_of: datetime,
+        reference_service,
+    ):
+        session_engine = SessionEngine(reference_service=reference_service)
+        continuous_engine = ContinuousSeriesEngine()
+        trading_day = session_engine.resolve(at=as_of).trading_day
+        resolved_roots = []
+
+        for root in list_roots():
+            contracts = reference_service.list_contracts_for_root(root.root_code)
+            if contracts:
+                contract_rows = [
+                    ContractMetaRecord(
+                        contract_code=item.contract_code,
+                        root_code=item.root_code,
+                        expiry_date=item.expiry_date,
+                        last_trade_date=item.last_trade_date,
+                        tick_size=item.tick_size,
+                        lot_size=item.lot_size,
+                        currency=item.currency,
+                        active_flag=item.active_flag,
+                        created_at=as_of,
+                    )
+                    for item in contracts
+                ]
+                resolved = continuous_engine.resolve(
+                    root_code=root.root_code,
+                    trading_day=trading_day,
+                    contracts=contract_rows,
+                    preferred_active_contract=root.active_contract,
+                    preferred_next_contract=root.next_contract,
+                )
+                if resolved is not None:
+                    root = root.model_copy(
+                        update={
+                            "active_contract": resolved.snapshot.active_contract,
+                            "next_contract": resolved.snapshot.next_contract,
+                        },
+                        deep=True,
+                    )
+            resolved_roots.append(root)
+
+        return resolved_roots
 
     def upsert_feature_snapshots(self, snapshots: list[FeatureSnapshot]) -> None:
         if not snapshots:
@@ -402,6 +540,9 @@ class SqlAlchemyContractMasterRepository:
         self._ensure_schema()
         with self.session_factory() as session:
             for signal in signals:
+                existing_workflow_state = session.execute(
+                    select(FinalSignalRecord.workflow_state).where(FinalSignalRecord.signal_id == signal.signal_id)
+                ).scalar_one_or_none()
                 session.execute(delete(FinalSignalRecord).where(FinalSignalRecord.signal_id == signal.signal_id))
                 session.execute(
                     delete(SignalVersionRecord)
@@ -429,6 +570,7 @@ class SqlAlchemyContractMasterRepository:
                         generated_at=signal.generated_at,
                         freshness_score=signal.freshness_score,
                         summary=signal.summary,
+                        workflow_state=existing_workflow_state or signal.workflow_state.value,
                         drivers_blob="\n".join(signal.drivers),
                         objections_blob="\n".join(signal.objections),
                         invalidation_conditions_blob="\n".join(signal.invalidation_conditions),
@@ -452,8 +594,13 @@ class SqlAlchemyContractMasterRepository:
                         priority_score=signal.priority_score,
                         skeptic_score=signal.skeptic_score,
                         skeptic_verdict=signal.skeptic_verdict.value,
+                        freshness_score=signal.freshness_score,
                         generated_at=signal.generated_at,
                         summary=signal.summary,
+                        drivers_blob="\n".join(signal.drivers),
+                        objections_blob="\n".join(signal.objections),
+                        invalidation_conditions_blob="\n".join(signal.invalidation_conditions),
+                        data_sources_blob="\n".join(signal.data_sources),
                         created_at=datetime.now(UTC),
                     )
                 )
@@ -484,6 +631,56 @@ class SqlAlchemyContractMasterRepository:
         with self.session_factory() as session:
             stmt = select(FinalSignalRecord).where(FinalSignalRecord.signal_id == signal_id)
             return session.execute(stmt).scalars().first()
+
+    def update_signal_workflow_state(self, signal_id: str, workflow_state: str) -> bool:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            row = session.execute(
+                select(FinalSignalRecord).where(FinalSignalRecord.signal_id == signal_id).limit(1)
+            ).scalars().first()
+            if row is None:
+                return False
+            row.workflow_state = workflow_state
+            session.commit()
+            return True
+
+    def list_signal_versions(
+        self,
+        *,
+        root: str,
+        contract: str,
+        horizon: str,
+        limit: int = 8,
+    ) -> list[SignalVersionRecord]:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = (
+                select(SignalVersionRecord)
+                .where(SignalVersionRecord.root_code == root)
+                .where(SignalVersionRecord.contract_code == contract)
+                .where(SignalVersionRecord.horizon == horizon)
+                .order_by(desc(SignalVersionRecord.generated_at), desc(SignalVersionRecord.created_at))
+                .limit(limit)
+            )
+            return list(session.execute(stmt).scalars().all())
+
+    def list_similar_resolutions(
+        self,
+        *,
+        root: str,
+        horizon: str,
+        limit: int = 5,
+    ) -> list[SignalResolutionRecord]:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = (
+                select(SignalResolutionRecord)
+                .where(SignalResolutionRecord.root_code == root)
+                .where(SignalResolutionRecord.horizon == horizon)
+                .order_by(desc(SignalResolutionRecord.resolved_at))
+                .limit(limit)
+            )
+            return list(session.execute(stmt).scalars().all())
 
     def upsert_signal_resolution(self, resolution: SignalResolution) -> None:
         self._ensure_schema()
@@ -540,6 +737,7 @@ class SqlAlchemyContractMasterRepository:
                     title=entry.title,
                     note=entry.note,
                     author=entry.author,
+                    tags_json=json.dumps(entry.tags, ensure_ascii=False),
                     created_at=entry.created_at,
                 )
             )
@@ -554,6 +752,61 @@ class SqlAlchemyContractMasterRepository:
                 .order_by(UserJournalEntryRecord.created_at.asc())
             )
             return list(session.execute(stmt).scalars().all())
+
+    def upsert_workspace_watch(
+        self,
+        *,
+        watch_key: str,
+        profile_id: str,
+        root_code: str,
+        signal_id: str | None,
+        note: str | None,
+        updated_at: datetime,
+    ) -> UserWorkspaceWatchRecord:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = select(UserWorkspaceWatchRecord).where(UserWorkspaceWatchRecord.watch_key == watch_key).limit(1)
+            row = session.execute(stmt).scalars().first()
+            if row is None:
+                row = UserWorkspaceWatchRecord(
+                    watch_key=watch_key,
+                    profile_id=profile_id,
+                    root_code=root_code,
+                    signal_id=signal_id,
+                    note=note,
+                    created_at=updated_at,
+                    updated_at=updated_at,
+                )
+                session.add(row)
+            else:
+                row.root_code = root_code
+                row.signal_id = signal_id
+                row.note = note
+                row.updated_at = updated_at
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def list_workspace_watches(self, *, profile_id: str = "default") -> list[UserWorkspaceWatchRecord]:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = (
+                select(UserWorkspaceWatchRecord)
+                .where(UserWorkspaceWatchRecord.profile_id == profile_id)
+                .order_by(desc(UserWorkspaceWatchRecord.updated_at), UserWorkspaceWatchRecord.root_code.asc())
+            )
+            return list(session.execute(stmt).scalars().all())
+
+    def delete_workspace_watch(self, *, watch_key: str, profile_id: str = "default") -> bool:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            deleted = session.execute(
+                delete(UserWorkspaceWatchRecord)
+                .where(UserWorkspaceWatchRecord.watch_key == watch_key)
+                .where(UserWorkspaceWatchRecord.profile_id == profile_id)
+            ).rowcount or 0
+            session.commit()
+            return bool(deleted)
 
     def count_signals(self, *, status: str | None = None) -> int:
         self._ensure_schema()
@@ -630,6 +883,131 @@ class SqlAlchemyContractMasterRepository:
             session.commit()
             session.refresh(row)
             return row
+
+    def list_runtime_model_routes(self) -> list[RuntimeModelRouteRecord]:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = select(RuntimeModelRouteRecord).order_by(RuntimeModelRouteRecord.role_key.asc())
+            return list(session.execute(stmt).scalars().all())
+
+    def upsert_runtime_model_route(
+        self,
+        *,
+        role_key: str,
+        owner: str,
+        product: str,
+        model: str,
+        control_mode: str,
+        detail: str | None,
+        updated_at: datetime,
+    ) -> RuntimeModelRouteRecord:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            row = session.get(RuntimeModelRouteRecord, role_key)
+            if row is None:
+                row = RuntimeModelRouteRecord(
+                    role_key=role_key,
+                    owner=owner,
+                    product=product,
+                    model=model,
+                    control_mode=control_mode,
+                    detail=detail,
+                    created_at=updated_at,
+                    updated_at=updated_at,
+                )
+                session.add(row)
+            else:
+                row.owner = owner
+                row.product = product
+                row.model = model
+                row.control_mode = control_mode
+                row.detail = detail
+                row.updated_at = updated_at
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def delete_runtime_model_routes(self) -> None:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            session.execute(delete(RuntimeModelRouteRecord))
+            session.commit()
+
+    def get_runtime_freshness_policy(self, policy_key: str = "default") -> RuntimeFreshnessPolicyRecord | None:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            return session.get(RuntimeFreshnessPolicyRecord, policy_key)
+
+    def upsert_runtime_freshness_policy(
+        self,
+        *,
+        policy_key: str,
+        fresh_max_seconds: int,
+        aging_max_seconds: int,
+        stale_max_seconds: int,
+        degraded_max_seconds: int,
+        updated_at: datetime,
+    ) -> RuntimeFreshnessPolicyRecord:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            row = session.get(RuntimeFreshnessPolicyRecord, policy_key)
+            if row is None:
+                row = RuntimeFreshnessPolicyRecord(
+                    policy_key=policy_key,
+                    fresh_max_seconds=fresh_max_seconds,
+                    aging_max_seconds=aging_max_seconds,
+                    stale_max_seconds=stale_max_seconds,
+                    degraded_max_seconds=degraded_max_seconds,
+                    created_at=updated_at,
+                    updated_at=updated_at,
+                )
+                session.add(row)
+            else:
+                row.fresh_max_seconds = fresh_max_seconds
+                row.aging_max_seconds = aging_max_seconds
+                row.stale_max_seconds = stale_max_seconds
+                row.degraded_max_seconds = degraded_max_seconds
+                row.updated_at = updated_at
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def add_runtime_audit_event(
+        self,
+        *,
+        event_id: str,
+        category: str,
+        action: str,
+        target_key: str | None,
+        detail: str,
+        payload_json: str,
+        created_at: datetime,
+    ) -> RuntimeAuditEventRecord:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            session.execute(delete(RuntimeAuditEventRecord).where(RuntimeAuditEventRecord.event_id == event_id))
+            row = RuntimeAuditEventRecord(
+                event_id=event_id,
+                category=category,
+                action=action,
+                target_key=target_key,
+                detail=detail,
+                payload_json=payload_json,
+                created_at=created_at,
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def list_runtime_audit_events(self, *, category: str | None = None, limit: int = 50) -> list[RuntimeAuditEventRecord]:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = select(RuntimeAuditEventRecord)
+            if category:
+                stmt = stmt.where(RuntimeAuditEventRecord.category == category)
+            stmt = stmt.order_by(desc(RuntimeAuditEventRecord.created_at)).limit(limit)
+            return list(session.execute(stmt).scalars().all())
 
     def add_notification_delivery_event(
         self,
