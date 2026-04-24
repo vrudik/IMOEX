@@ -99,3 +99,42 @@ def test_health_modules_exposes_modular_monolith_catalog(client: TestClient) -> 
     assert "scheduler" in names
     assert "dashboard" in names
     assert "worker" in names
+
+
+def test_product_readiness_health_gate_covers_operator_surfaces(client: TestClient) -> None:
+    response = client.get("/api/v1/health/product-readiness", params={"root": "Si"})
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["root"] == "Si"
+    assert payload["release_gate"] == "pass"
+    checks = {item["key"]: item for item in payload["checks"]}
+
+    assert checks["database"]["status"] == "ok"
+    assert checks["dashboard_surface"]["status"] == "ok"
+    assert checks["workspace_surface"]["status"] == "ok"
+    assert checks["review_loop_surface"]["status"] == "ok"
+    assert checks["runtime_control_surface"]["status"] == "ok"
+    assert checks["runtime_prompt_governance"]["status"] == "ok"
+    assert checks["market_data_truth"]["status"] == "ok"
+    assert checks["market_data_truth"]["metrics"]["market_visible"] is True
+    assert checks["runtime_prompt_governance"]["metrics"]["rendered_prompts"] >= 6
+
+
+def test_product_readiness_health_gate_warns_when_market_data_is_hidden(
+    client_without_market_data: TestClient,
+) -> None:
+    response = client_without_market_data.get("/api/v1/health/product-readiness", params={"root": "Si"})
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["release_gate"] == "pass"
+    assert payload["status"] == "warning"
+    checks = {item["key"]: item for item in payload["checks"]}
+
+    assert checks["workspace_surface"]["status"] == "ok"
+    assert checks["runtime_prompt_governance"]["status"] == "ok"
+    assert checks["market_data_truth"]["status"] == "warning"
+    assert checks["market_data_truth"]["metrics"]["market_visible"] is False

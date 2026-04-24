@@ -29,6 +29,7 @@ from libs.domain.models import (
     RuntimeAuditEventRecord,
     RuntimeFreshnessPolicyRecord,
     RuntimeModelRouteRecord,
+    RuntimeRolePromptRecord,
     SchedulerLockRecord,
     SchedulerRunRecord,
     SkepticReviewRecord,
@@ -933,6 +934,49 @@ class SqlAlchemyContractMasterRepository:
             session.execute(delete(RuntimeModelRouteRecord))
             session.commit()
 
+    def list_runtime_role_prompts(self) -> list[RuntimeRolePromptRecord]:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = select(RuntimeRolePromptRecord).order_by(RuntimeRolePromptRecord.role_key.asc())
+            return list(session.execute(stmt).scalars().all())
+
+    def upsert_runtime_role_prompt(
+        self,
+        *,
+        role_key: str,
+        prompt_template: str,
+        control_mode: str,
+        detail: str | None,
+        updated_at: datetime,
+    ) -> RuntimeRolePromptRecord:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            row = session.get(RuntimeRolePromptRecord, role_key)
+            if row is None:
+                row = RuntimeRolePromptRecord(
+                    role_key=role_key,
+                    prompt_template=prompt_template,
+                    control_mode=control_mode,
+                    detail=detail,
+                    created_at=updated_at,
+                    updated_at=updated_at,
+                )
+                session.add(row)
+            else:
+                row.prompt_template = prompt_template
+                row.control_mode = control_mode
+                row.detail = detail
+                row.updated_at = updated_at
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def delete_runtime_role_prompts(self) -> None:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            session.execute(delete(RuntimeRolePromptRecord))
+            session.commit()
+
     def get_runtime_freshness_policy(self, policy_key: str = "default") -> RuntimeFreshnessPolicyRecord | None:
         self._ensure_schema()
         with self.session_factory() as session:
@@ -1000,12 +1044,26 @@ class SqlAlchemyContractMasterRepository:
             session.refresh(row)
             return row
 
-    def list_runtime_audit_events(self, *, category: str | None = None, limit: int = 50) -> list[RuntimeAuditEventRecord]:
+    def get_runtime_audit_event(self, event_id: str) -> RuntimeAuditEventRecord | None:
+        self._ensure_schema()
+        with self.session_factory() as session:
+            stmt = select(RuntimeAuditEventRecord).where(RuntimeAuditEventRecord.event_id == event_id).limit(1)
+            return session.execute(stmt).scalars().first()
+
+    def list_runtime_audit_events(
+        self,
+        *,
+        category: str | None = None,
+        target_key: str | None = None,
+        limit: int = 50,
+    ) -> list[RuntimeAuditEventRecord]:
         self._ensure_schema()
         with self.session_factory() as session:
             stmt = select(RuntimeAuditEventRecord)
             if category:
                 stmt = stmt.where(RuntimeAuditEventRecord.category == category)
+            if target_key:
+                stmt = stmt.where(RuntimeAuditEventRecord.target_key == target_key)
             stmt = stmt.order_by(desc(RuntimeAuditEventRecord.created_at)).limit(limit)
             return list(session.execute(stmt).scalars().all())
 

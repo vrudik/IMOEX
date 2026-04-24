@@ -330,6 +330,17 @@ class RuntimeModelRouteRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class RuntimeRolePromptRecord(Base):
+    __tablename__ = "runtime_role_prompt"
+
+    role_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    prompt_template: Mapped[str] = mapped_column(String(16384))
+    control_mode: Mapped[str] = mapped_column(String(32), default="editable")
+    detail: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class RuntimeFreshnessPolicyRecord(Base):
     __tablename__ = "runtime_freshness_policy"
 
