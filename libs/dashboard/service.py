@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from datetime import UTC, datetime, timedelta
 
 from libs.adapters.contracts import Bar
@@ -14,6 +15,7 @@ from libs.dashboard.contracts import (
     ConfidenceFactor,
     DecisionTimelineItem,
     HistoricalSetup,
+    InstrumentChartOverlay,
     HorizonPulsePoint,
     InstrumentChartPoint,
     InstrumentChartSeries,
@@ -373,6 +375,21 @@ class DashboardService:
             control_panel=control_panel,
             generated_at=generated_at,
             signal=None,
+        )
+
+    def _select_market_signal(
+        self,
+        *,
+        root_details,
+        signal: FinalSignalCard | FinalSignalDetail | None,
+    ) -> FinalSignalCard | FinalSignalDetail | None:
+        if signal is not None:
+            return signal
+        if not root_details.active_signals:
+            return None
+        return max(
+            root_details.active_signals,
+            key=lambda item: (item.generated_at, item.confidence_final, item.priority_score),
         )
 
     def build_signal_diff(self, *, signal_id: str) -> SignalChangeSummary | None:
@@ -1028,16 +1045,6 @@ class DashboardService:
                 unit_hint=self._instrument_price_unit(item.root_code),
                 generated_at=generated_at,
             )
-            fallback_market_snapshot = (
-                self._build_synthetic_instrument_market_snapshot(
-                    root_details=deep_dive,
-                    control_panel=None,
-                    generated_at=generated_at,
-                    signal=top_signal,
-                )
-                if live_quote is None and deep_dive is not None
-                else None
-            )
             tone = "positive" if item.root_code == selected_root else "warning" if root_signals else "neutral"
             headline = top_signal.summary if top_signal is not None else "No active setup yet; keep root on watch."
             pulses.append(
@@ -1050,32 +1057,10 @@ class DashboardService:
                     next_contract_share=next_share,
                     liquidity_rank=item.liquidity_rank,
                     best_direction=top_signal.direction_final if top_signal is not None else None,
-                    current_price=(
-                        live_quote.current_price
-                        if live_quote is not None
-                        else fallback_market_snapshot.current_price if fallback_market_snapshot is not None else None
-                    ),
-                    price_change_abs=(
-                        live_quote.price_change_abs
-                        if live_quote is not None
-                        else fallback_market_snapshot.price_change_abs
-                        if fallback_market_snapshot is not None
-                        else None
-                    ),
-                    price_change_pct=(
-                        live_quote.price_change_pct
-                        if live_quote is not None
-                        else fallback_market_snapshot.price_change_pct
-                        if fallback_market_snapshot is not None
-                        else None
-                    ),
-                    price_unit=(
-                        live_quote.unit
-                        if live_quote is not None
-                        else fallback_market_snapshot.unit
-                        if fallback_market_snapshot is not None
-                        else self._instrument_price_unit(item.root_code)
-                    ),
+                    current_price=live_quote.current_price if live_quote is not None else None,
+                    price_change_abs=live_quote.price_change_abs if live_quote is not None else None,
+                    price_change_pct=live_quote.price_change_pct if live_quote is not None else None,
+                    price_unit=live_quote.unit if live_quote is not None else self._instrument_price_unit(item.root_code),
                     headline=headline,
                     tone=tone,
                 )
@@ -1093,12 +1078,7 @@ class DashboardService:
         if root_details is None:
             return None
 
-        fallback_snapshot = self._build_synthetic_instrument_market_snapshot(
-            root_details=root_details,
-            control_panel=control_panel,
-            generated_at=generated_at,
-            signal=signal,
-        )
+        effective_signal = self._select_market_signal(root_details=root_details, signal=signal)
         live_snapshot = self.market_data_service.get_market_snapshot(
             root_code=root_details.root.root_code,
             contract=root_details.continuous_series.active_contract,
@@ -1106,38 +1086,45 @@ class DashboardService:
                 primary_provider=root_details.root.primary_provider,
                 secondary_provider=root_details.root.secondary_provider,
             ),
-            unit_hint=fallback_snapshot.unit,
+            unit_hint=self._instrument_price_unit(root_details.root.root_code),
             now=generated_at,
         )
         if live_snapshot is None:
-            return fallback_snapshot
+            return None
 
         daily = self._build_chart_series_from_bars(
             label="1D",
             bars=live_snapshot.daily_bars,
-            fallback=fallback_snapshot.daily,
             max_points=12,
             label_kind="hour",
         )
         weekly = self._build_chart_series_from_bars(
             label="1W",
             bars=live_snapshot.weekly_bars,
-            fallback=fallback_snapshot.weekly,
             max_points=7,
             label_kind="date",
         )
         monthly = self._build_chart_series_from_bars(
             label="1M",
             bars=live_snapshot.monthly_bars,
-            fallback=fallback_snapshot.monthly,
             max_points=6,
             label_kind="date",
         )
+        if daily is None or weekly is None or monthly is None:
+            return None
+        overlays = self._build_market_overlays(
+            signal=effective_signal,
+            current_price=live_snapshot.quote.current_price,
+            reference_series=daily,
+        )
+        daily = self._with_chart_overlays(daily, overlays=overlays)
+        weekly = self._with_chart_overlays(weekly, overlays=overlays)
+        monthly = self._with_chart_overlays(monthly, overlays=overlays)
         return InstrumentMarketSnapshot(
             root_code=root_details.root.root_code,
             contract=root_details.continuous_series.active_contract,
             base_asset=root_details.root.base_asset,
-            unit=live_snapshot.unit or fallback_snapshot.unit,
+            unit=live_snapshot.unit or self._instrument_price_unit(root_details.root.root_code),
             current_price=live_snapshot.quote.current_price,
             price_change_abs=(
                 live_snapshot.quote.price_change_abs
@@ -1150,8 +1137,8 @@ class DashboardService:
                 else daily.change_pct
             ),
             price_source=f"{live_snapshot.provider} live",
-            status=live_snapshot.status or fallback_snapshot.status,
-            status_detail=live_snapshot.detail or fallback_snapshot.status_detail,
+            status=live_snapshot.status or "fresh",
+            status_detail=live_snapshot.detail,
             as_of=live_snapshot.as_of,
             daily=daily,
             weekly=weekly,
@@ -1170,12 +1157,7 @@ class DashboardService:
             raise ValueError("Root details are required for a synthetic market snapshot.")
 
         features = list(root_details.feature_snapshots)
-        active_signal = signal
-        if active_signal is None and root_details.active_signals:
-            active_signal = max(
-                root_details.active_signals,
-                key=lambda item: (item.generated_at, item.confidence_final, item.priority_score),
-            )
+        active_signal = self._select_market_signal(root_details=root_details, signal=signal)
 
         trend_bias = self._safe_average(item.trend_slope for item in features)
         volatility = self._safe_average(item.realized_volatility for item in features)
@@ -1233,6 +1215,14 @@ class DashboardService:
             lookback_step=timedelta(days=5),
             amplitude_scale=1.08,
         )
+        overlays = self._build_market_overlays(
+            signal=active_signal,
+            current_price=current_price,
+            reference_series=daily,
+        )
+        daily = self._with_chart_overlays(daily, overlays=overlays)
+        weekly = self._with_chart_overlays(weekly, overlays=overlays)
+        monthly = self._with_chart_overlays(monthly, overlays=overlays)
 
         price_source = f"{root_details.root.primary_provider} snapshot proxy"
         status = "fresh"
@@ -1274,12 +1264,11 @@ class DashboardService:
         *,
         label: str,
         bars: list[Bar],
-        fallback: InstrumentChartSeries,
         max_points: int,
         label_kind: str,
-    ) -> InstrumentChartSeries:
+    ) -> InstrumentChartSeries | None:
         if not bars:
-            return fallback
+            return None
 
         sampled_bars = self._sample_bars(bars, max_points=max_points)
         points = [
@@ -1309,6 +1298,75 @@ class DashboardService:
             change_abs=change_abs,
             change_pct=change_pct,
         )
+
+    def _with_chart_overlays(
+        self,
+        series: InstrumentChartSeries,
+        *,
+        overlays: list[InstrumentChartOverlay],
+    ) -> InstrumentChartSeries:
+        if not overlays:
+            return series
+        return series.model_copy(update={"overlays": overlays})
+
+    def _build_market_overlays(
+        self,
+        *,
+        signal: FinalSignalCard | FinalSignalDetail | None,
+        current_price: float,
+        reference_series: InstrumentChartSeries,
+    ) -> list[InstrumentChartOverlay]:
+        if (
+            signal is None
+            or signal.direction_final.value == "no_edge"
+            or current_price <= 0
+        ):
+            return []
+
+        span = max(reference_series.high_price - reference_series.low_price, current_price * 0.006, 0.01)
+        base_buffer = max(
+            current_price * (0.004 + (1.0 - signal.confidence_final) * 0.012),
+            span * 0.22,
+        )
+        parsed_invalidation = None
+        if isinstance(signal, FinalSignalDetail):
+            parsed_invalidation = self._extract_price_level_from_texts(
+                texts=signal.invalidation_conditions,
+                anchor=current_price,
+            )
+
+        if signal.direction_final.value == "bullish":
+            invalidation_value = parsed_invalidation if parsed_invalidation is not None else current_price - base_buffer
+            risk_distance = max(abs(current_price - invalidation_value), base_buffer)
+            target_value = current_price + max(risk_distance * 1.8, span * 0.33)
+        else:
+            invalidation_value = parsed_invalidation if parsed_invalidation is not None else current_price + base_buffer
+            risk_distance = max(abs(current_price - invalidation_value), base_buffer)
+            target_value = current_price - max(risk_distance * 1.8, span * 0.33)
+
+        overlays = [
+            InstrumentChartOverlay(key="entry", value=round(current_price, 2), tone="entry"),
+            InstrumentChartOverlay(key="invalidation", value=round(max(0.01, invalidation_value), 2), tone="risk"),
+            InstrumentChartOverlay(key="target", value=round(max(0.01, target_value), 2), tone="target"),
+        ]
+        return overlays
+
+    def _extract_price_level_from_texts(self, *, texts: list[str], anchor: float) -> float | None:
+        if anchor <= 0:
+            return None
+
+        pattern = re.compile(r"\d+(?:[ \u00A0]\d{3})*(?:[.,]\d+)?")
+        for text in texts:
+            for match in pattern.finditer(text):
+                raw = match.group(0).replace(" ", "").replace("\u00A0", "").replace(",", ".")
+                try:
+                    candidate = float(raw)
+                except ValueError:
+                    continue
+                relative_diff = abs(candidate - anchor) / max(anchor, 1.0)
+                if 0.0 < candidate and relative_diff <= 0.35:
+                    return round(candidate, 2)
+        return None
 
     def _live_quote_snapshot(
         self,

@@ -210,6 +210,95 @@ class RuntimeModelRouteUpdate(BaseModel):
     detail: str | None = None
 
 
+class RuntimeRolePromptProfile(BaseModel):
+    role_key: str
+    role_label: str
+    prompt_template: str
+    control_mode: str = "editable"
+    detail: str | None = None
+    variables: list[str] = Field(default_factory=list)
+    rendered_prompt: str | None = None
+    default_prompt_template: str | None = None
+    current_version_id: str | None = None
+    approved_version_id: str | None = None
+    pending_version_id: str | None = None
+    approval_required: bool = False
+    approval_state: str = "live"
+    approval_note: str | None = None
+    approval_reasons: list[str] = Field(default_factory=list)
+    effective_prompt_template: str | None = None
+    effective_control_mode: str | None = None
+    effective_rendered_prompt: str | None = None
+    version_history: list["RuntimeRolePromptVersion"] = Field(default_factory=list)
+
+
+class RuntimeRolePromptUpdate(BaseModel):
+    role_key: str
+    prompt_template: str = Field(min_length=1, max_length=6000)
+    control_mode: str = "editable"
+    detail: str | None = None
+
+
+class RuntimeRolePromptRestoreRequest(BaseModel):
+    role_key: str
+    version_id: str = Field(min_length=1, max_length=128)
+
+
+class RuntimeRolePromptApproveRequest(BaseModel):
+    role_key: str
+    version_id: str | None = Field(default=None, max_length=128)
+
+
+class RuntimeRolePromptDismissRequest(BaseModel):
+    role_key: str
+    version_id: str | None = Field(default=None, max_length=128)
+
+
+class RuntimePromptDiffLine(BaseModel):
+    kind: str
+    text: str
+
+
+class RuntimePromptValidationIssue(BaseModel):
+    code: str
+    severity: str
+    message: str
+
+
+class RuntimeRolePromptDiff(BaseModel):
+    role_key: str
+    role_label: str
+    has_changes: bool
+    can_save: bool = True
+    approval_required: bool = False
+    summary: str
+    baseline_version_id: str | None = None
+    baseline_label: str | None = None
+    release_note_preview: str | None = None
+    metadata_changes: list[str] = Field(default_factory=list)
+    approval_reasons: list[str] = Field(default_factory=list)
+    unresolved_variables: list[str] = Field(default_factory=list)
+    validation_issues: list[RuntimePromptValidationIssue] = Field(default_factory=list)
+    lines: list[RuntimePromptDiffLine] = Field(default_factory=list)
+    before_rendered_prompt: str | None = None
+    after_rendered_prompt: str | None = None
+
+
+class RuntimeRolePromptVersion(BaseModel):
+    version_id: str
+    action: str
+    summary: str
+    prompt_template: str
+    control_mode: str = "editable"
+    detail: str | None = None
+    created_at: datetime
+    lifecycle_state: str = "history"
+    release_note: str | None = None
+    dismissed_version_id: str | None = None
+    restored_from_version_id: str | None = None
+    restorable: bool = True
+
+
 class RuntimeFreshnessPolicyUpdate(BaseModel):
     fresh_max_seconds: int = Field(default=30, ge=1)
     aging_max_seconds: int = Field(default=180, ge=1)
@@ -230,6 +319,7 @@ class RuntimeAuditEvent(BaseModel):
 class RuntimeControlSnapshot(BaseModel):
     generated_at: datetime
     model_routes: list[ModelRoleAssignment] = Field(default_factory=list)
+    role_prompts: list[RuntimeRolePromptProfile] = Field(default_factory=list)
     freshness_policy: RuntimeFreshnessPolicySnapshot
     audit_trail: list[RuntimeAuditEvent] = Field(default_factory=list)
 
@@ -313,6 +403,12 @@ class InstrumentChartPoint(BaseModel):
     close: float
 
 
+class InstrumentChartOverlay(BaseModel):
+    key: str
+    value: float
+    tone: str = "neutral"
+
+
 class InstrumentChartSeries(BaseModel):
     label: str
     points: list[InstrumentChartPoint] = Field(default_factory=list)
@@ -322,6 +418,7 @@ class InstrumentChartSeries(BaseModel):
     low_price: float
     change_abs: float
     change_pct: float
+    overlays: list[InstrumentChartOverlay] = Field(default_factory=list)
 
 
 class InstrumentMarketSnapshot(BaseModel):

@@ -49,6 +49,8 @@ def test_workspace_snapshot_returns_user_facing_payload(client: TestClient) -> N
     assert payload["market_snapshot"]["weekly"]["points"]
     assert payload["market_snapshot"]["monthly"]["points"]
     assert {"open", "high", "low", "close"} <= set(payload["market_snapshot"]["daily"]["points"][0])
+    assert payload["market_snapshot"]["daily"]["overlays"]
+    assert {item["key"] for item in payload["market_snapshot"]["daily"]["overlays"]} >= {"entry", "invalidation", "target"}
     assert payload["focus_signal"]["root"] == "Si"
     assert payload["focus_signal"]["workflow_state"] == "watching"
     assert payload["trust_ribbon"]["items"]
@@ -152,16 +154,57 @@ def test_workspace_page_renders_user_journey_html(client: TestClient) -> None:
     assert 'data-root-preview-button' in response.text
     assert 'data-root-preview-popover' in response.text
     assert 'data-pin-root-preview' in response.text
+    assert 'data-root-price-line' in response.text
+    assert 'data-root-level-chip' in response.text
     assert 'data-signal-preview-button' in response.text
     assert 'data-signal-preview-popover' in response.text
     assert 'data-pin-signal-preview' in response.text
+    assert 'data-signal-level-chip' in response.text
+    assert 'data-surface-state-strip="workspace"' in response.text
+    assert 'data-market-panel' in response.text
+    assert 'data-market-current-line' in response.text
+    assert 'data-market-current-hit' in response.text
+    assert 'data-market-distance-bar' in response.text
+    assert 'renderMarketOhlcReadout' in response.text
+    assert 'attachInteractiveMarketCharts' in response.text
+    assert 'data-market-ohlc-readout' in response.text
+    assert 'data-market-crosshair-x' in response.text
+    assert 'data-market-range-toolbar' in response.text
+    assert 'data-market-range-button' in response.text
+    assert 'data-market-level-legend' in response.text
+    assert 'data-market-level-detail' in response.text
+    assert 'data-market-overlay-line' in response.text
+    assert 'data-market-level-button' in response.text
+    assert 'data-market-measure-readout' in response.text
+    assert 'data-market-measure-layer' in response.text
+    assert 'data-market-measure-line' in response.text
     assert 'data-compare-board' in response.text
     assert 'data-compare-root' in response.text
     assert 'data-compare-signal' in response.text
     assert 'data-compare-root-slot="a"' in response.text
     assert 'data-compare-root-slot="b"' in response.text
+    assert 'data-compare-root-delta' in response.text
+    assert 'data-compare-root-regime' in response.text
+    assert 'data-compare-chart-host' in response.text
+    assert 'data-compare-chart-readout' in response.text
+    assert 'data-compare-chart-measure-readout' in response.text
+    assert 'data-compare-range-toolbar' in response.text
+    assert 'data-compare-range-button' in response.text
     assert 'data-compare-signal-slot="a"' in response.text
     assert 'data-compare-signal-slot="b"' in response.text
+    assert 'data-compare-signal-delta' in response.text
+    assert 'data-compare-signal-regime' in response.text
+    assert "bindCompareStickyCursor" in response.text
+    assert "applyCompareChartMeasurement" in response.text
+    assert "buildCompareRangeToolbar" in response.text
+    assert "renderCompareRegimeStrip" in response.text
+    assert "buildCompareRegimeDriftNote" in response.text
+    assert "compare-regime-note" in response.text
+    assert "setCompareChartLevelFocus" in response.text
+    assert 'data-tooltip="' in response.text
+    assert '"tooltip_shift_intro"' in response.text
+    assert "compare-delta-note" in response.text
+    assert "buildPairMismatchCallout" in response.text
     assert "Watchlist" in response.text
     assert "What changed since last cycle?" in response.text
     assert 'id="workspace-journal-form"' in response.text
@@ -186,6 +229,10 @@ def test_workspace_council_page_renders_explainer_html(client: TestClient) -> No
     assert "control-summary-grid" in response.text
     assert "\u041a\u0430\u0440\u0442\u0430 \u0440\u0430\u0437\u043d\u043e\u0433\u043b\u0430\u0441\u0438\u0439" in response.text
     assert "\u041a\u043e\u043d\u0442\u0440\u0444\u0430\u043a\u0442\u0438\u0447\u0435\u0441\u043a\u0438\u0435 \u043f\u043e\u0434\u0441\u043a\u0430\u0437\u043a\u0438" in response.text
+    assert 'data-surface-state-strip="council"' in response.text
+    assert 'data-council-prompt-card' in response.text
+    assert 'data-council-prompt-preview' in response.text
+    assert '/workspace/runtime?root=Si#runtime-prompts' in response.text
     assert 'data-root-switch' in response.text
 
 
@@ -205,6 +252,8 @@ def test_workspace_signal_snapshot_returns_detail_payload(client: TestClient) ->
     assert payload["market_snapshot"]["weekly"]["points"]
     assert payload["market_snapshot"]["monthly"]["points"]
     assert {"open", "high", "low", "close"} <= set(payload["market_snapshot"]["daily"]["points"][0])
+    assert payload["market_snapshot"]["daily"]["overlays"]
+    assert {item["key"] for item in payload["market_snapshot"]["daily"]["overlays"]} >= {"entry", "invalidation", "target"}
     assert payload["signal_diff"]["summary"]
     assert payload["confidence_decomposition"]["factors"]
     assert payload["decision_log"]
@@ -242,9 +291,28 @@ def test_workspace_signal_page_renders_detail_html(client: TestClient) -> None:
     assert "\u0414\u0435\u043d\u044c \u00b7 1D" in response.text
     assert "\u041d\u0435\u0434\u0435\u043b\u044f \u00b7 1W" in response.text
     assert "\u041c\u0435\u0441\u044f\u0446 \u00b7 1M" in response.text
+    assert 'data-market-current-line' in response.text
+    assert 'data-market-current-hit' in response.text
+    assert 'data-market-distance-bar' in response.text
+    assert 'renderMarketOhlcReadout' in response.text
+    assert 'attachInteractiveMarketCharts' in response.text
+    assert 'data-market-ohlc-readout' in response.text
+    assert 'data-market-crosshair-x' in response.text
+    assert 'data-market-range-toolbar' in response.text
+    assert 'data-market-range-button' in response.text
+    assert 'data-market-level-legend' in response.text
+    assert 'data-market-level-detail' in response.text
+    assert 'data-market-overlay-line' in response.text
+    assert 'data-market-level-button' in response.text
+    assert 'data-market-measure-readout' in response.text
+    assert 'data-market-measure-layer' in response.text
+    assert 'data-market-measure-line' in response.text
     assert "Confidence decomposition" in response.text
     assert "Similar historical setups" in response.text
+    assert 'data-surface-state-strip="signal"' in response.text
     assert 'data-root-switch' in response.text
+    assert 'data-market-panel' in response.text
+    assert 'data-market-signal-id' in response.text
     assert "workflow-button" in response.text
     assert 'id="signal-journal-form"' in response.text
     assert 'id="signal-page-data"' in response.text
@@ -285,6 +353,8 @@ def test_workspace_watchlist_compare_and_signal_detail_endpoints(client: TestCli
     assert market_payload["daily"]["points"]
     assert market_payload["weekly"]["points"]
     assert market_payload["monthly"]["points"]
+    assert market_payload["daily"]["overlays"]
+    assert {item["key"] for item in market_payload["daily"]["overlays"]} >= {"entry", "invalidation", "target"}
 
     diff = client.get(f"/api/v1/workspace/signals/{signal_id}/diff")
     assert diff.status_code == 200
@@ -304,11 +374,67 @@ def test_workspace_watchlist_compare_and_signal_detail_endpoints(client: TestCli
     assert delete_watch.json() == []
 
 
+def test_workspace_snapshot_omits_market_snapshot_when_live_data_is_unavailable(
+    client_without_market_data: TestClient,
+) -> None:
+    workspace = client_without_market_data.get("/api/v1/workspace", params={"root": "Si"})
+
+    assert workspace.status_code == 200
+    payload = workspace.json()
+    selected_pulse = next(item for item in payload["pulses"] if item["root_code"] == "Si")
+    assert selected_pulse["current_price"] is None
+    assert selected_pulse["price_change_pct"] is None
+    assert payload["market_snapshot"] is None
+
+    signal_id = payload["focus_signal"]["signal_id"]
+    signal_snapshot = client_without_market_data.get(f"/api/v1/workspace/signals/{signal_id}")
+    assert signal_snapshot.status_code == 200
+    assert signal_snapshot.json()["market_snapshot"] is None
+
+    market_preview = client_without_market_data.get("/api/v1/workspace/market-preview", params={"root": "Si"})
+    assert market_preview.status_code == 200
+    assert market_preview.json() is None
+
+
+def test_workspace_page_renders_market_unavailable_panel_when_live_data_is_unavailable(
+    client_without_market_data: TestClient,
+) -> None:
+    workspace = client_without_market_data.get("/workspace", params={"root": "Si"})
+
+    assert workspace.status_code == 200
+    assert 'data-market-panel' in workspace.text
+    assert 'data-surface-state-strip="workspace"' in workspace.text
+    assert "\u0413\u0440\u0430\u0444\u0438\u043a\u0438 \u0441\u043a\u0440\u044b\u0442\u044b" in workspace.text
+
+    signal_id = client_without_market_data.get("/api/v1/workspace", params={"root": "Si"}).json()["focus_signal"]["signal_id"]
+    signal_page = client_without_market_data.get(f"/workspace/signals/{signal_id}")
+    assert signal_page.status_code == 200
+    assert 'data-market-panel' in signal_page.text
+    assert 'data-surface-state-strip="signal"' in signal_page.text
+    assert "\u0413\u0440\u0430\u0444\u0438\u043a\u0438 \u0441\u043a\u0440\u044b\u0442\u044b" in signal_page.text
+
+
+def test_council_and_runtime_pages_render_surface_state_strip(client_without_market_data: TestClient) -> None:
+    council = client_without_market_data.get("/workspace/council", params={"root": "Si"})
+    assert council.status_code == 200
+    assert 'data-surface-state-strip="council"' in council.text
+    assert (
+        "\u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0430 \u0441\u043e\u0432\u0435\u0442\u0430 "
+        "\u0447\u0435\u0441\u0442\u043d\u043e \u043f\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0435\u0442"
+    ) in council.text
+
+    runtime = client_without_market_data.get("/workspace/runtime", params={"root": "Si"})
+    assert runtime.status_code == 200
+    assert 'data-surface-state-strip="runtime"' in runtime.text
+    assert "\u0421\u043e\u0441\u0442\u043e\u044f\u043d\u0438\u0435 runtime" in runtime.text
+
+
 def test_runtime_control_panel_endpoints_support_update_reset_and_audit(client: TestClient) -> None:
     snapshot = client.get("/api/v1/runtime/control-panel")
     assert snapshot.status_code == 200
     payload = snapshot.json()
     assert payload["model_routes"]
+    assert payload["role_prompts"]
     assert payload["freshness_policy"]["fresh_max_seconds"] >= 1
 
     update_route = client.post(
@@ -327,6 +453,162 @@ def test_runtime_control_panel_endpoints_support_update_reset_and_audit(client: 
     skeptic_route = next(item for item in updated_payload["model_routes"] if item["role_key"] == "skeptic")
     assert skeptic_route["model"] == "gpt-5.4-mini"
     assert any(event["action"] == "update" for event in updated_payload["audit_trail"])
+
+    prompt_template_v1 = (
+        "Role={role_label}\n"
+        "Root={root_code}\n"
+        "Summary={signal_summary}\n"
+        "Confidence={confidence_final}\n"
+        "Skeptic={skeptic_score}\n"
+        "Packet={role_context_packet}\n"
+        "Task=challenge the thesis but stay in decision support mode"
+    )
+    invalid_prompt_template = "Role={role_label}\nRoot={root_code}\nPacket={role_context_packet}\nMissing={missing_field}"
+    prompt_template_v2 = (
+        "Role={role_label}\n"
+        "Root={root_code}\n"
+        "Summary={signal_summary}\n"
+        "Confidence={confidence_final}\n"
+        "Skeptic={skeptic_score}\n"
+        "Packet={role_context_packet}\n"
+        "Detail=review\n"
+        "Task=stress test the idea without execution instructions"
+    )
+
+    update_prompt = client.post(
+        "/api/v1/runtime/control-panel/role-prompt",
+        json={
+            "role_key": "skeptic",
+            "prompt_template": prompt_template_v1,
+            "control_mode": "editable",
+            "detail": "Stress-test skeptic prompt",
+        },
+    )
+    assert update_prompt.status_code == 200, update_prompt.text
+    prompt_payload = update_prompt.json()
+    skeptic_prompt = next(item for item in prompt_payload["role_prompts"] if item["role_key"] == "skeptic")
+    assert skeptic_prompt["prompt_template"] == prompt_template_v1
+    assert "root_code" in skeptic_prompt["variables"]
+    assert skeptic_prompt["default_prompt_template"]
+    assert skeptic_prompt["current_version_id"]
+    assert skeptic_prompt["version_history"]
+    assert any(version["version_id"] == skeptic_prompt["current_version_id"] for version in skeptic_prompt["version_history"])
+    assert any(event["category"] == "role_prompt" for event in prompt_payload["audit_trail"])
+    saved_version_id = skeptic_prompt["current_version_id"]
+
+    diff_prompt = client.post(
+        "/api/v1/runtime/control-panel/role-prompt/diff",
+        params={"root": "Si"},
+        json={
+            "role_key": "skeptic",
+            "prompt_template": invalid_prompt_template,
+            "control_mode": "fixed",
+            "detail": "Diff preview skeptic prompt",
+        },
+    )
+    assert diff_prompt.status_code == 200
+    diff_payload = diff_prompt.json()
+    assert diff_payload["role_key"] == "skeptic"
+    assert diff_payload["has_changes"] is True
+    assert diff_payload["can_save"] is False
+    assert diff_payload["baseline_version_id"] == saved_version_id
+    assert diff_payload["baseline_label"] == "approved_version"
+    assert diff_payload["release_note_preview"]
+    assert any(line["kind"] == "add" for line in diff_payload["lines"])
+    assert "missing_field" in diff_payload["unresolved_variables"]
+    assert any(issue["severity"] == "blocking" for issue in diff_payload["validation_issues"])
+    assert diff_payload["before_rendered_prompt"]
+    assert "Si" in diff_payload["before_rendered_prompt"]
+    assert diff_payload["after_rendered_prompt"]
+
+    invalid_save = client.post(
+        "/api/v1/runtime/control-panel/role-prompt",
+        json={
+            "role_key": "skeptic",
+            "prompt_template": invalid_prompt_template,
+            "control_mode": "fixed",
+            "detail": "Invalid skeptic prompt",
+        },
+    )
+    assert invalid_save.status_code == 400
+    assert "unsupported placeholders" in invalid_save.text.lower()
+
+    update_prompt_v2 = client.post(
+        "/api/v1/runtime/control-panel/role-prompt",
+        json={
+            "role_key": "skeptic",
+            "prompt_template": prompt_template_v2,
+            "control_mode": "fixed",
+            "detail": "Updated skeptic prompt again",
+        },
+    )
+    assert update_prompt_v2.status_code == 200
+    updated_v2_payload = update_prompt_v2.json()
+    skeptic_prompt_v2 = next(item for item in updated_v2_payload["role_prompts"] if item["role_key"] == "skeptic")
+    assert skeptic_prompt_v2["prompt_template"] == prompt_template_v2
+    assert skeptic_prompt_v2["control_mode"] == "fixed"
+    assert skeptic_prompt_v2["approval_state"] == "pending_approval"
+    assert skeptic_prompt_v2["pending_version_id"]
+    assert skeptic_prompt_v2["approved_version_id"] == saved_version_id
+    assert skeptic_prompt_v2["effective_prompt_template"] == prompt_template_v1
+    assert skeptic_prompt_v2["version_history"]
+    assert any(item["lifecycle_state"] == "draft" for item in skeptic_prompt_v2["version_history"])
+    assert any(item["lifecycle_state"] == "approved" for item in skeptic_prompt_v2["version_history"])
+    assert any(item["release_note"] for item in skeptic_prompt_v2["version_history"])
+
+    approve_prompt = client.post(
+        "/api/v1/runtime/control-panel/role-prompt/approve",
+        json={
+            "role_key": "skeptic",
+            "version_id": skeptic_prompt_v2["pending_version_id"],
+        },
+    )
+    assert approve_prompt.status_code == 200
+    approved_prompt_payload = approve_prompt.json()
+    approved_skeptic_prompt = next(item for item in approved_prompt_payload["role_prompts"] if item["role_key"] == "skeptic")
+    assert approved_skeptic_prompt["prompt_template"] == prompt_template_v2
+    assert approved_skeptic_prompt["effective_prompt_template"] == prompt_template_v2
+    assert approved_skeptic_prompt["pending_version_id"] is None
+    assert approved_skeptic_prompt["approval_state"] == "approved"
+    assert any(item["lifecycle_state"] == "superseded" for item in approved_skeptic_prompt["version_history"])
+    assert any(
+        event["category"] == "role_prompt" and event["action"] == "approve"
+        for event in approved_prompt_payload["audit_trail"]
+    )
+
+    restore_prompt = client.post(
+        "/api/v1/runtime/control-panel/role-prompt/restore",
+        json={"role_key": "skeptic", "version_id": saved_version_id},
+    )
+    assert restore_prompt.status_code == 200
+    restore_prompt_payload = restore_prompt.json()
+    restored_skeptic_prompt = next(item for item in restore_prompt_payload["role_prompts"] if item["role_key"] == "skeptic")
+    assert restored_skeptic_prompt["prompt_template"] == prompt_template_v1
+    assert restored_skeptic_prompt["control_mode"] == "editable"
+    assert restored_skeptic_prompt["effective_prompt_template"] == prompt_template_v2
+    assert restored_skeptic_prompt["pending_version_id"]
+    assert restored_skeptic_prompt["approval_state"] == "pending_approval"
+    assert any(
+        event["category"] == "role_prompt" and event["action"] == "draft_restore"
+        for event in restore_prompt_payload["audit_trail"]
+    )
+
+    approve_restored_prompt = client.post(
+        "/api/v1/runtime/control-panel/role-prompt/approve",
+        json={
+            "role_key": "skeptic",
+            "version_id": restored_skeptic_prompt["pending_version_id"],
+        },
+    )
+    assert approve_restored_prompt.status_code == 200
+    approve_restored_payload = approve_restored_prompt.json()
+    approve_restored_skeptic = next(
+        item for item in approve_restored_payload["role_prompts"] if item["role_key"] == "skeptic"
+    )
+    assert approve_restored_skeptic["prompt_template"] == prompt_template_v1
+    assert approve_restored_skeptic["effective_prompt_template"] == prompt_template_v1
+    assert approve_restored_skeptic["pending_version_id"] is None
+    assert approve_restored_skeptic["control_mode"] == "editable"
 
     update_policy = client.post(
         "/api/v1/runtime/control-panel/freshness-policy",
@@ -349,6 +631,29 @@ def test_runtime_control_panel_endpoints_support_update_reset_and_audit(client: 
     assert skeptic_route["model"] != "gpt-5.4-mini"
     assert any(event["action"] == "reset" for event in reset_payload["audit_trail"])
 
+    reset_prompt = client.post("/api/v1/runtime/control-panel/role-prompt/reset")
+    assert reset_prompt.status_code == 200
+    reset_prompt_payload = reset_prompt.json()
+    skeptic_prompt = next(item for item in reset_prompt_payload["role_prompts"] if item["role_key"] == "skeptic")
+    assert "Сначала ищи сильнейший сценарий отказа" in skeptic_prompt["prompt_template"]
+    assert "skeptic_verdict: pass | soft_fail | reject | human_review" in skeptic_prompt["prompt_template"]
+    assert "role_context_packet" in skeptic_prompt["variables"]
+    assert any(event["category"] == "role_prompt" and event["action"] == "reset" for event in reset_prompt_payload["audit_trail"])
+
+    rendered_snapshot = client.get("/api/v1/runtime/control-panel", params={"root": "Si"})
+    assert rendered_snapshot.status_code == 200
+    rendered_payload = rendered_snapshot.json()
+    rendered_skeptic = next(item for item in rendered_payload["role_prompts"] if item["role_key"] == "skeptic")
+    rendered_roll = next(item for item in rendered_payload["role_prompts"] if item["role_key"] == "oi_roll")
+    assert rendered_skeptic["rendered_prompt"]
+    assert rendered_skeptic["effective_rendered_prompt"]
+    assert "Si" in rendered_skeptic["rendered_prompt"]
+    assert "packet" in rendered_skeptic["rendered_prompt"]
+    assert "Confidence" in rendered_skeptic["rendered_prompt"]
+    assert "roll" in rendered_roll["rendered_prompt"].lower()
+    assert "наблюдаю" in rendered_skeptic["rendered_prompt"]
+    assert "активен" in rendered_skeptic["rendered_prompt"]
+
 
 def test_runtime_control_page_renders_html(client: TestClient) -> None:
     response = client.get("/workspace/runtime", params={"root": "Si"})
@@ -358,11 +663,234 @@ def test_runtime_control_page_renders_html(client: TestClient) -> None:
     assert 'lang="ru"' in response.text
     assert "Пульт управления runtime" in response.text
     assert "Редактируемая маршрутизация ролей" in response.text
+    assert "Промпты участников совета" in response.text
     assert "Политика актуальности" in response.text
     assert "Журнал изменений" in response.text
+    assert 'data-surface-state-strip="runtime"' in response.text
     assert "role_key" in response.text
     assert 'id="runtime-control-data"' in response.text
     assert 'data-runtime-policy-form' in response.text
+    assert 'id="runtime-prompts"' in response.text
+    assert 'data-runtime-prompt-form' in response.text
+    assert 'data-runtime-prompt-template' in response.text
+    assert 'data-runtime-prompt-preview' in response.text
+    assert 'data-runtime-prompt-diff-button' in response.text
+    assert 'data-runtime-prompt-diff' in response.text
+    assert 'data-runtime-prompt-diff-approval' in response.text
+    assert 'data-runtime-prompt-validation' in response.text
+    assert 'data-runtime-prompt-history' in response.text
+    assert 'data-runtime-prompt-restore' in response.text
+    assert 'data-runtime-prompt-current-version' in response.text
+    assert 'data-runtime-prompt-approved-version' in response.text
+    assert 'data-runtime-prompt-approval-state' in response.text
+    assert 'data-runtime-prompt-approval-reasons' in response.text
+    assert 'data-runtime-prompt-dismiss' in response.text
+    assert 'data-runtime-prompt-version-state' in response.text
+    assert 'data-runtime-prompt-release-note' in response.text
+
+
+def test_risky_editable_prompt_change_requires_approval(client: TestClient) -> None:
+    live_prompt = (
+        "Role={role_label}\n"
+        "Root={root_code}\n"
+        "Summary={signal_summary}\n"
+        "Confidence={confidence_final}\n"
+        "Skeptic={skeptic_score}\n"
+        "Packet={role_context_packet}\n"
+        "Task=blend the council into one operator-facing final call"
+    )
+    risky_prompt = (
+        "Role={role_label}\n"
+        "Desk={root_code}\n"
+        "Situation={signal_summary}\n"
+        "Confidence={confidence_final}\n"
+        "Skeptic={skeptic_score}\n"
+        "Packet={role_context_packet}\n"
+        "WhyNow={why_now}\n"
+        "Task=rebuild the arbiter narrative as a fresh decision memo with new framing"
+    )
+
+    save_live = client.post(
+        "/api/v1/runtime/control-panel/role-prompt",
+        json={
+            "role_key": "arbiter",
+            "prompt_template": live_prompt,
+            "control_mode": "editable",
+            "detail": "Live arbiter prompt",
+        },
+    )
+    assert save_live.status_code == 200
+
+    diff = client.post(
+        "/api/v1/runtime/control-panel/role-prompt/diff",
+        params={"root": "Si"},
+        json={
+            "role_key": "arbiter",
+            "prompt_template": risky_prompt,
+            "control_mode": "editable",
+            "detail": "Risky arbiter rewrite",
+        },
+    )
+    assert diff.status_code == 200
+    diff_payload = diff.json()
+    assert diff_payload["approval_required"] is True
+    assert diff_payload["can_save"] is True
+    assert diff_payload["approval_reasons"]
+    assert "approval trigger" in diff_payload["summary"].lower()
+    assert diff_payload["baseline_label"] == "approved_version"
+    assert diff_payload["release_note_preview"]
+
+    save_risky = client.post(
+        "/api/v1/runtime/control-panel/role-prompt",
+        json={
+            "role_key": "arbiter",
+            "prompt_template": risky_prompt,
+            "control_mode": "editable",
+            "detail": "Risky arbiter rewrite",
+        },
+    )
+    assert save_risky.status_code == 200
+    save_payload = save_risky.json()
+    arbiter_prompt = next(item for item in save_payload["role_prompts"] if item["role_key"] == "arbiter")
+    assert arbiter_prompt["approval_state"] == "pending_approval"
+    assert arbiter_prompt["pending_version_id"]
+    assert arbiter_prompt["effective_prompt_template"] == live_prompt
+    assert arbiter_prompt["prompt_template"] == risky_prompt
+    assert arbiter_prompt["approval_reasons"]
+    assert any(item["lifecycle_state"] == "draft" for item in arbiter_prompt["version_history"])
+
+
+def test_pending_draft_can_be_dismissed_without_resetting_effective_prompt(client: TestClient) -> None:
+    live_prompt = (
+        "Role={role_label}\n"
+        "Root={root_code}\n"
+        "Summary={signal_summary}\n"
+        "Confidence={confidence_final}\n"
+        "Skeptic={skeptic_score}\n"
+        "Packet={role_context_packet}\n"
+        "Task=live skeptic guardrail"
+    )
+    draft_prompt = (
+        "Role={role_label}\n"
+        "Root={root_code}\n"
+        "Summary={signal_summary}\n"
+        "Confidence={confidence_final}\n"
+        "Skeptic={skeptic_score}\n"
+        "Packet={role_context_packet}\n"
+        "Detail=review\n"
+        "Task=pending skeptic rewrite"
+    )
+
+    save_live = client.post(
+        "/api/v1/runtime/control-panel/role-prompt",
+        json={
+            "role_key": "skeptic",
+            "prompt_template": live_prompt,
+            "control_mode": "editable",
+            "detail": "Live skeptic prompt",
+        },
+    )
+    assert save_live.status_code == 200
+
+    save_draft = client.post(
+        "/api/v1/runtime/control-panel/role-prompt",
+        json={
+            "role_key": "skeptic",
+            "prompt_template": draft_prompt,
+            "control_mode": "fixed",
+            "detail": "Pending skeptic rewrite",
+        },
+    )
+    assert save_draft.status_code == 200
+    draft_payload = save_draft.json()
+    skeptic_prompt = next(item for item in draft_payload["role_prompts"] if item["role_key"] == "skeptic")
+    assert skeptic_prompt["pending_version_id"]
+
+    dismiss = client.post(
+        "/api/v1/runtime/control-panel/role-prompt/dismiss",
+        json={
+            "role_key": "skeptic",
+            "version_id": skeptic_prompt["pending_version_id"],
+        },
+    )
+    assert dismiss.status_code == 200
+    dismiss_payload = dismiss.json()
+    dismissed_skeptic = next(item for item in dismiss_payload["role_prompts"] if item["role_key"] == "skeptic")
+    assert dismissed_skeptic["pending_version_id"] is None
+    assert dismissed_skeptic["prompt_template"] == live_prompt
+    assert dismissed_skeptic["effective_prompt_template"] == live_prompt
+    assert dismissed_skeptic["approval_state"] == "live"
+    assert any(item["lifecycle_state"] == "dismissed" for item in dismissed_skeptic["version_history"])
+    assert any(item["action"] == "dismiss" for item in dismissed_skeptic["version_history"])
+    assert any(
+        event["category"] == "role_prompt" and event["action"] == "dismiss"
+        for event in dismiss_payload["audit_trail"]
+    )
+
+
+def test_council_page_uses_effective_prompt_until_draft_is_approved(client: TestClient) -> None:
+    prompt_template_live = (
+        "Role={role_label}\n"
+        "Root={root_code}\n"
+        "Summary={signal_summary}\n"
+        "Confidence={confidence_final}\n"
+        "Skeptic={skeptic_score}\n"
+        "Packet={role_context_packet}\n"
+        "Task=live skeptic packet"
+    )
+    prompt_template_draft = (
+        "Role={role_label}\n"
+        "Root={root_code}\n"
+        "Summary={signal_summary}\n"
+        "Confidence={confidence_final}\n"
+        "Skeptic={skeptic_score}\n"
+        "Packet={role_context_packet}\n"
+        "Task=draft skeptic packet pending approval"
+    )
+
+    save_live = client.post(
+        "/api/v1/runtime/control-panel/role-prompt",
+        json={
+            "role_key": "skeptic",
+            "prompt_template": prompt_template_live,
+            "control_mode": "editable",
+            "detail": "Live skeptic prompt",
+        },
+    )
+    assert save_live.status_code == 200
+
+    save_draft = client.post(
+        "/api/v1/runtime/control-panel/role-prompt",
+        json={
+            "role_key": "skeptic",
+            "prompt_template": prompt_template_draft,
+            "control_mode": "fixed",
+            "detail": "Pending skeptic draft",
+        },
+    )
+    assert save_draft.status_code == 200
+    draft_payload = save_draft.json()
+    skeptic_prompt = next(item for item in draft_payload["role_prompts"] if item["role_key"] == "skeptic")
+    assert skeptic_prompt["pending_version_id"]
+
+    council_before_approve = client.get("/workspace/council", params={"root": "Si"})
+    assert council_before_approve.status_code == 200
+    assert "live skeptic packet" in council_before_approve.text
+    assert "draft skeptic packet pending approval" not in council_before_approve.text
+    assert 'data-council-prompt-status' in council_before_approve.text
+
+    approve = client.post(
+        "/api/v1/runtime/control-panel/role-prompt/approve",
+        json={
+            "role_key": "skeptic",
+            "version_id": skeptic_prompt["pending_version_id"],
+        },
+    )
+    assert approve.status_code == 200
+
+    council_after_approve = client.get("/workspace/council", params={"root": "Si"})
+    assert council_after_approve.status_code == 200
+    assert "draft skeptic packet pending approval" in council_after_approve.text
 
 
 def test_workspace_journal_snapshot_returns_filtered_entries(client: TestClient) -> None:

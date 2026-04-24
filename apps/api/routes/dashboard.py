@@ -22,6 +22,11 @@ from libs.dashboard.contracts import (
     RuntimeControlSnapshot,
     RuntimeFreshnessPolicyUpdate,
     RuntimeModelRouteUpdate,
+    RuntimeRolePromptApproveRequest,
+    RuntimeRolePromptDismissRequest,
+    RuntimeRolePromptDiff,
+    RuntimeRolePromptRestoreRequest,
+    RuntimeRolePromptUpdate,
     SignalChangeSummary,
     WatchlistEntry,
     WatchlistEntryCreate,
@@ -102,6 +107,20 @@ def _page_hint(page_key: str, language: str) -> str:
             "ru": "Сначала проверьте маршрутизацию ролей и SLA по актуальности, затем просмотрите журнал изменений runtime и последние технические решения.",
             "en": "Start with role routing and freshness SLAs, then review the runtime audit trail and the latest technical decisions.",
         },
+        "tooltip_shift_intro": (
+            "Ð›Ð¸Ð´ÐµÑ€ ÑÐ¼ÐµÐ½Ð¸Ð»ÑÑ Ð¿Ð¾ÑÐ»Ðµ Ð¿ÐµÑ€ÐµÐºÐ»ÑŽÑ‡ÐµÐ½Ð¸Ñ Ñ‚Ð°Ð¹Ð¼Ñ„Ñ€ÐµÐ¹Ð¼Ð°."
+            if language == "ru"
+            else "Leader changed after timeframe switch."
+        ),
+        "tooltip_shift_stable": (
+            "ÐŸÐ¾ÑÐ»Ðµ Ð¿ÐµÑ€ÐµÐºÐ»ÑŽÑ‡ÐµÐ½Ð¸Ñ Ñ‚Ð°Ð¹Ð¼Ñ„Ñ€ÐµÐ¹Ð¼Ð° Ð»Ð¸Ð´ÐµÑ€ Ð¾ÑÑ‚Ð°Ð»ÑÑ Ñ‚ÐµÐ¼ Ð¶Ðµ."
+            if language == "ru"
+            else "Leader stayed the same after timeframe switch."
+        ),
+        "tooltip_shift_was": "Ð‘Ñ‹Ð»" if language == "ru" else "Was",
+        "tooltip_shift_now": "Ð¡ÐµÐ¹Ñ‡Ð°Ñ" if language == "ru" else "Now",
+        "tooltip_shift_frames": "Ð¢Ð°Ð¹Ð¼Ñ„Ñ€ÐµÐ¹Ð¼Ñ‹" if language == "ru" else "Frames",
+        "tooltip_shift_spread": "Ð Ð°Ð·Ñ€Ñ‹Ð² A-B" if language == "ru" else "A-B spread",
     }
     page_hints = hints.get(page_key, hints["workspace"])
     return page_hints["ru"] if language == "ru" else page_hints["en"]
@@ -705,6 +724,10 @@ def _decorate_html_page(html: str, *, language: str, page_key: str) -> str:
       const hintButton = document.querySelector("[data-hint-toggle]");
       const hintBox = document.querySelector("[data-hint-box]");
       const swapPage = async (nextUrl) => {{
+        if (window.__imoexMarketLiveRefreshStop) {{
+          window.__imoexMarketLiveRefreshStop();
+          window.__imoexMarketLiveRefreshStop = null;
+        }}
         try {{
           const response = await fetch(nextUrl, {{
             credentials: "same-origin",
@@ -1182,9 +1205,13 @@ async def update_workspace_preferences(payload: NotificationPreferenceUpdate) ->
 
 
 @router.get("/api/v1/runtime/control-panel", response_model=RuntimeControlSnapshot)
-async def get_runtime_control_snapshot() -> RuntimeControlSnapshot:
+async def get_runtime_control_snapshot(root: str | None = None) -> RuntimeControlSnapshot:
     _ensure_dashboard_enabled()
-    return get_app_container().runtime_control_service.get_snapshot()
+    prompt_context = None
+    if root is not None:
+        workspace_snapshot = get_app_container().dashboard_service.build_workspace_snapshot(root=root)
+        prompt_context = _build_council_prompt_context(workspace_snapshot, language="ru")
+    return get_app_container().runtime_control_service.get_snapshot(prompt_context=prompt_context)
 
 
 @router.post("/api/v1/runtime/control-panel/model-route", response_model=RuntimeControlSnapshot)
@@ -1199,6 +1226,67 @@ async def reset_runtime_model_routes() -> RuntimeControlSnapshot:
     return get_app_container().runtime_control_service.reset_model_routes()
 
 
+@router.post("/api/v1/runtime/control-panel/role-prompt", response_model=RuntimeControlSnapshot)
+async def update_runtime_role_prompt(payload: RuntimeRolePromptUpdate) -> RuntimeControlSnapshot:
+    _ensure_dashboard_enabled()
+    try:
+        return get_app_container().runtime_control_service.update_role_prompt(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/v1/runtime/control-panel/role-prompt/diff", response_model=RuntimeRolePromptDiff)
+async def preview_runtime_role_prompt_diff(
+    payload: RuntimeRolePromptUpdate,
+    root: str | None = None,
+) -> RuntimeRolePromptDiff:
+    _ensure_dashboard_enabled()
+    prompt_context = None
+    if root is not None:
+        workspace_snapshot = get_app_container().dashboard_service.build_workspace_snapshot(root=root)
+        prompt_context = _build_council_prompt_context(workspace_snapshot, language="ru")
+    try:
+        return get_app_container().runtime_control_service.preview_role_prompt_diff(
+            payload,
+            prompt_context=prompt_context,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/v1/runtime/control-panel/role-prompt/restore", response_model=RuntimeControlSnapshot)
+async def restore_runtime_role_prompt(payload: RuntimeRolePromptRestoreRequest) -> RuntimeControlSnapshot:
+    _ensure_dashboard_enabled()
+    try:
+        return get_app_container().runtime_control_service.restore_role_prompt(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/v1/runtime/control-panel/role-prompt/approve", response_model=RuntimeControlSnapshot)
+async def approve_runtime_role_prompt(payload: RuntimeRolePromptApproveRequest) -> RuntimeControlSnapshot:
+    _ensure_dashboard_enabled()
+    try:
+        return get_app_container().runtime_control_service.approve_role_prompt(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/v1/runtime/control-panel/role-prompt/dismiss", response_model=RuntimeControlSnapshot)
+async def dismiss_runtime_role_prompt(payload: RuntimeRolePromptDismissRequest) -> RuntimeControlSnapshot:
+    _ensure_dashboard_enabled()
+    try:
+        return get_app_container().runtime_control_service.dismiss_role_prompt(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/v1/runtime/control-panel/role-prompt/reset", response_model=RuntimeControlSnapshot)
+async def reset_runtime_role_prompts() -> RuntimeControlSnapshot:
+    _ensure_dashboard_enabled()
+    return get_app_container().runtime_control_service.reset_role_prompts()
+
+
 @router.post("/api/v1/runtime/control-panel/freshness-policy", response_model=RuntimeControlSnapshot)
 async def update_runtime_freshness_policy(payload: RuntimeFreshnessPolicyUpdate) -> RuntimeControlSnapshot:
     _ensure_dashboard_enabled()
@@ -1209,11 +1297,19 @@ async def update_runtime_freshness_policy(payload: RuntimeFreshnessPolicyUpdate)
 async def get_runtime_control_page(request: Request, root: str | None = None) -> HTMLResponse:
     _ensure_dashboard_enabled()
     language = _resolve_language(request)
-    dashboard_snapshot = get_app_container().dashboard_service.build_snapshot(root=root)
-    runtime_snapshot = get_app_container().runtime_control_service.get_snapshot()
+    container = get_app_container()
+    dashboard_snapshot = container.dashboard_service.build_snapshot(root=root)
+    workspace_snapshot = container.dashboard_service.build_workspace_snapshot(root=root)
+    prompt_context = _build_council_prompt_context(workspace_snapshot, language=language)
+    runtime_snapshot = container.runtime_control_service.get_snapshot(prompt_context=prompt_context)
     return HTMLResponse(
         _decorate_html_page(
-            _render_runtime_control_page(runtime_snapshot, dashboard_snapshot=dashboard_snapshot, language=language),
+            _render_runtime_control_page(
+                runtime_snapshot,
+                dashboard_snapshot=dashboard_snapshot,
+                workspace_snapshot=workspace_snapshot,
+                language=language,
+            ),
             language=language,
             page_key="runtime",
         )
@@ -1276,7 +1372,15 @@ async def get_workspace_council_page(
     _ensure_dashboard_enabled()
     language = _resolve_language(request)
     snapshot = _build_workspace_snapshot(root=root, signal_id=signal_id)
-    return HTMLResponse(_decorate_html_page(_render_council_page(snapshot, language=language), language=language, page_key="council"))
+    prompt_context = _build_council_prompt_context(snapshot, language=language)
+    runtime_snapshot = get_app_container().runtime_control_service.get_snapshot(prompt_context=prompt_context)
+    return HTMLResponse(
+        _decorate_html_page(
+            _render_council_page(snapshot, runtime_snapshot=runtime_snapshot, language=language),
+            language=language,
+            page_key="council",
+        )
+    )
 
 
 @router.get("/workspace/preferences", response_class=HTMLResponse)
@@ -1989,10 +2093,58 @@ def _render_dashboard(snapshot: DashboardSnapshot, *, language: str) -> str:
 </html>"""
 
 
+def _surface_state_palette(tone: str) -> tuple[str, str, str]:
+    if tone == "positive":
+        return ("rgba(47, 126, 87, 0.14)", "rgba(47, 126, 87, 0.28)", "#2f7e57")
+    if tone == "negative":
+        return ("rgba(180, 74, 61, 0.14)", "rgba(180, 74, 61, 0.28)", "#b44a3d")
+    if tone == "warning":
+        return ("rgba(186, 112, 33, 0.14)", "rgba(186, 112, 33, 0.28)", "#ba7021")
+    return ("rgba(23, 56, 79, 0.08)", "rgba(23, 56, 79, 0.12)", "#17384f")
+
+
+def _render_surface_state_strip(
+    *,
+    strip_key: str,
+    title: str,
+    note: str,
+    items: list[dict[str, str]],
+) -> str:
+    if not items:
+        return ""
+    cards = []
+    for item in items:
+        tone = item.get("tone", "neutral")
+        background, border, ink = _surface_state_palette(tone)
+        cards.append(
+            '<article data-surface-state-card '
+            f'data-state-tone="{escape(tone)}" '
+            f'style="padding:16px 18px;border-radius:20px;border:1px solid {border};background:{background};display:grid;gap:8px;align-content:start;">'
+            '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">'
+            f'<strong style="font-size:15px;line-height:1.35;">{escape(item.get("label", "State"))}</strong>'
+            f'<span style="display:inline-flex;align-items:center;justify-content:center;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,0.74);color:{ink};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">{escape(item.get("status", tone))}</span>'
+            "</div>"
+            f'<p class="muted" style="margin:0;line-height:1.55;">{escape(item.get("detail", ""))}</p>'
+            "</article>"
+        )
+    return (
+        f'<section class="panel" data-surface-state-strip="{escape(strip_key)}">'
+        '<div class="panel-head">'
+        f'<h2>{escape(title)}</h2>'
+        f'<p>{escape(note)}</p>'
+        "</div>"
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">'
+        f'{"".join(cards)}'
+        "</div>"
+        "</section>"
+    )
+
+
 def _render_runtime_control_page(
     snapshot: RuntimeControlSnapshot,
     *,
     dashboard_snapshot: DashboardSnapshot,
+    workspace_snapshot: WorkspaceSnapshot,
     language: str,
 ) -> str:
     sidebar = _render_page_sidebar("runtime", root=dashboard_snapshot.selected_root, roots=dashboard_snapshot.roots)
@@ -2013,16 +2165,139 @@ def _render_runtime_control_page(
         "open_workspace": "Open workspace" if not is_ru else "Открыть рабочее пространство",
         "summary": "Current runtime summary" if not is_ru else "Текущая сводка runtime",
         "routes": "Editable role routing" if not is_ru else "Редактируемая маршрутизация ролей",
+        "prompts": "Council prompts" if not is_ru else "Промпты участников совета",
         "freshness": "Freshness policy" if not is_ru else "Политика актуальности",
         "audit": "Audit trail" if not is_ru else "Журнал изменений",
         "save": "Save route" if not is_ru else "Сохранить маршрут",
+        "save_prompt": "Save prompt" if not is_ru else "Сохранить промпт",
+        "preview_diff": "Preview diff" if not is_ru else "Предпросмотр diff",
+        "diff_title": "Draft diff before save" if not is_ru else "Draft diff перед сохранением",
+        "history": "Prompt version history" if not is_ru else "История версий промпта",
+        "history_empty": "No saved prompt versions yet." if not is_ru else "Сохранённых версий промпта пока нет.",
+        "restore": "Restore this version" if not is_ru else "Восстановить версию",
+        "restore_default": "Restore default" if not is_ru else "Вернуть дефолт",
+        "default_available": "Built-in default is always available as a safe restore point." if not is_ru else "Встроенный дефолт всегда доступен как безопасная точка восстановления.",
+        "current_version": "Current version" if not is_ru else "Текущая версия",
+        "built_in_default": "built-in default" if not is_ru else "встроенный дефолт",
+        "restored_from": "Restored from" if not is_ru else "Восстановлено из",
+        "metadata_changes": "Metadata changes" if not is_ru else "Изменения метаданных",
+        "unresolved_variables": "Unresolved variables" if not is_ru else "Неразрешённые переменные",
+        "validation": "Validation issues" if not is_ru else "Проблемы валидации",
+        "blocking": "Blocking" if not is_ru else "Блокирует",
+        "warning": "Warning" if not is_ru else "Предупреждение",
+        "preview_before": "Current rendered prompt" if not is_ru else "Текущий rendered prompt",
+        "preview_after": "Draft rendered prompt" if not is_ru else "Черновой rendered prompt",
+        "diff_empty": "Run diff preview to compare the draft with the saved version." if not is_ru else "Запустите diff preview, чтобы сравнить черновик с сохранённой версией.",
         "reset": "Reset routes to defaults" if not is_ru else "Сбросить маршруты к умолчанию",
+        "reset_prompts": "Reset prompts to defaults" if not is_ru else "Сбросить промпты к умолчанию",
         "save_policy": "Save freshness policy" if not is_ru else "Сохранить политику",
         "status_idle": "Runtime control is ready." if not is_ru else "Пульт runtime готов к работе.",
         "status_saving": "Saving runtime change..." if not is_ru else "Сохраняем изменение runtime...",
         "status_saved": "Runtime control updated. Refreshing..." if not is_ru else "Runtime обновлён. Перезагружаем страницу...",
+        "status_previewed": "Prompt diff is ready below the form." if not is_ru else "Diff промпта готов и показан под формой.",
+        "status_preview_blocked": "Prompt diff is ready, but blocking issues must be fixed before save." if not is_ru else "Diff готов, но перед сохранением нужно исправить блокирующие проблемы.",
         "status_failed": "Runtime update failed." if not is_ru else "Не удалось обновить runtime.",
     }
+    copy.update(
+        {
+            "save_draft": "Save draft" if not is_ru else "Сохранить черновик",
+            "approve_draft": "Approve draft" if not is_ru else "Утвердить черновик",
+            "approved_version": "Approved version" if not is_ru else "Утверждённая версия",
+            "pending_version": "Pending draft" if not is_ru else "Черновик в ожидании",
+            "approval_state_live": "Live" if not is_ru else "Без ожидания",
+            "approval_state_approved": "Approved" if not is_ru else "Утверждено",
+            "approval_state_pending": "Pending approval" if not is_ru else "Ждёт утверждения",
+            "effective_preview": "Effective prompt preview" if not is_ru else "Боевой prompt preview",
+            "working_preview": "Working prompt preview" if not is_ru else "Рабочий prompt preview",
+            "approval_note": "Approval note" if not is_ru else "Режим утверждения",
+            "status_draft_saved": (
+                "Draft saved. Approved prompt stays live until you approve the draft."
+                if not is_ru
+                else "Черновик сохранён. Боевой prompt остаётся активным до явного утверждения."
+            ),
+            "status_approved": (
+                "Draft approved. Refreshing runtime..."
+                if not is_ru
+                else "Черновик утверждён. Перезагружаем runtime..."
+            ),
+        }
+    )
+    copy["approval_triggers"] = "Approval triggers" if not is_ru else "Причины для утверждения"
+    copy["release_note"] = "Release note" if not is_ru else "Короткая заметка"
+    copy["diff_baseline"] = "Diff baseline" if not is_ru else "База сравнения"
+    copy["version_state_approved"] = "Approved" if not is_ru else "Утверждено"
+    copy["version_state_draft"] = "Draft" if not is_ru else "Черновик"
+    copy["version_state_dismissed"] = "Dismissed" if not is_ru else "Отклонено"
+    copy["version_state_superseded"] = "Superseded" if not is_ru else "Заменено"
+    copy["dismiss_draft"] = "Dismiss draft" if not is_ru else "Отклонить черновик"
+    copy["status_dismissed"] = "Draft dismissed. Approved prompt stays active." if not is_ru else "Черновик отклонён. Боевой prompt остаётся активным."
+    rendered_prompts = sum(1 for item in snapshot.role_prompts if item.rendered_prompt)
+    runtime_state_strip = _render_surface_state_strip(
+        strip_key="runtime",
+        title="Runtime posture" if not is_ru else "Состояние runtime",
+        note=(
+            "This strip shows which runtime layers are ready, partial, or still waiting for live operator history."
+            if not is_ru
+            else "Здесь видно, какие слои runtime уже готовы, какие работают частично, а какие ещё ждут живой истории оператора."
+        ),
+        items=[
+            {
+                "label": "Role routing" if not is_ru else "Маршрутизация ролей",
+                "status": "ready" if len(snapshot.model_routes) >= 6 else "partial",
+                "tone": "positive" if len(snapshot.model_routes) >= 6 else "warning",
+                "detail": (
+                    f"{len(snapshot.model_routes)} role routes are configured for the council."
+                    if not is_ru
+                    else f"Для совета настроено {len(snapshot.model_routes)} ролевых маршрутов."
+                ),
+            },
+            {
+                "label": "Prompt coverage" if not is_ru else "Покрытие промптов",
+                "status": (
+                    "ready"
+                    if snapshot.role_prompts and rendered_prompts == len(snapshot.role_prompts)
+                    else "partial"
+                ),
+                "tone": (
+                    "positive"
+                    if snapshot.role_prompts and rendered_prompts == len(snapshot.role_prompts)
+                    else "warning"
+                ),
+                "detail": (
+                    f"{rendered_prompts} of {len(snapshot.role_prompts)} role prompts render with live context."
+                    if not is_ru
+                    else f"{rendered_prompts} из {len(snapshot.role_prompts)} промптов ролей рендерятся с живым контекстом."
+                ),
+            },
+            {
+                "label": "Audit trail" if not is_ru else "Журнал изменений",
+                "status": "ready" if snapshot.audit_trail else "empty",
+                "tone": "neutral" if snapshot.audit_trail else "warning",
+                "detail": (
+                    "Runtime changes are traceable through the audit trail."
+                    if snapshot.audit_trail
+                    else "No runtime changes have been recorded yet."
+                )
+                if not is_ru
+                else (
+                    "Изменения runtime можно проследить по журналу."
+                    if snapshot.audit_trail
+                    else "Изменения runtime ещё не записывались."
+                ),
+            },
+            {
+                "label": "Data posture" if not is_ru else "Рыночный режим",
+                "status": panel.data_mode,
+                "tone": "positive" if panel.data_mode == "live" else "warning",
+                "detail": panel.data_mode_detail
+                or (
+                    "Market-data posture is available from the control panel."
+                    if not is_ru
+                    else "Состояние рыночных данных видно из control panel."
+                ),
+            },
+        ],
+    )
     reference_line = (
         f"{_control_panel_reference_sync_label(panel.reference_sync.status)} · "
         f"{_control_panel_reference_sync_source(panel.reference_sync.source)}"
@@ -2063,6 +2338,234 @@ def _render_runtime_control_page(
         )
         for item in snapshot.model_routes
     ) or f'<p class="empty">{"No model routes configured yet." if not is_ru else "Маршруты ролей пока не настроены."}</p>'
+    def _render_prompt_history_entry(
+        item: object,
+        role_key: str,
+        current_version_id: str | None,
+        approved_version_id: str | None,
+        pending_version_id: str | None,
+    ) -> str:
+        badges: list[str] = []
+        version_id = getattr(item, "version_id", None)
+        if version_id == approved_version_id:
+            badges.append(f'<span class="badge prompt-current-badge">{escape(copy["approved_version"])}</span>')
+        if version_id == pending_version_id:
+            badges.append(f'<span class="badge prompt-pending-badge">{escape(copy["pending_version"])}</span>')
+        elif version_id == current_version_id:
+            badges.append(f'<span class="badge prompt-current-badge">{escape(copy["current_version"])}</span>')
+        restored_note = ""
+        restored_from_version_id = getattr(item, "restored_from_version_id", None)
+        if restored_from_version_id:
+            restored_note = (
+                f'<p class="muted">{escape(copy["restored_from"])} '
+                f'{escape(restored_from_version_id)}</p>'
+            )
+        version_state = str(getattr(item, "lifecycle_state", "superseded"))
+        version_state_label = escape(copy.get(f"version_state_{version_state}", version_state.replace("_", " ").title()))
+        badges.append(f'<span class="badge" data-runtime-prompt-version-state>{version_state_label}</span>')
+        release_note_markup = (
+            f'<p class="muted" data-runtime-prompt-release-note>{escape(copy["release_note"])}: '
+            f'{escape(getattr(item, "release_note"))}</p>'
+            if getattr(item, "release_note", None)
+            else ""
+        )
+        restore_button = (
+            f'<button class="button" type="button" data-runtime-prompt-restore '
+            f'data-role-key="{escape(role_key)}" data-version-id="{escape(getattr(item, "version_id"))}">'
+            f'{escape(copy["restore"])}</button>'
+            if getattr(item, "restorable", True)
+            else ""
+        )
+        return (
+            '<article class="prompt-version" data-runtime-prompt-version>'
+            f'<div class="route-head"><div><strong>{escape(getattr(item, "summary"))}</strong>'
+            f'<p class="muted">{escape(getattr(item, "action"))} · '
+            f'{escape(_format_timestamp(getattr(item, "created_at")))}</p></div>'
+            f'{"".join(badges)}</div>'
+            f'{restored_note}'
+            f'{release_note_markup}'
+            f'<div class="prompt-version-actions">{restore_button}</div>'
+            '</article>'
+        )
+
+    def _render_prompt_history(item: object) -> str:
+        default_version_id = f"default:{getattr(item, 'role_key')}"
+        history_cards = "".join(
+            _render_prompt_history_entry(
+                version,
+                getattr(item, "role_key"),
+                getattr(item, "current_version_id", None),
+                getattr(item, "approved_version_id", None),
+                getattr(item, "pending_version_id", None),
+            )
+            for version in getattr(item, "version_history", [])
+        )
+        if not history_cards:
+            history_cards = f'<p class="empty">{escape(copy["history_empty"])}</p>'
+        return (
+            f'<section class="prompt-history" data-runtime-prompt-history>'
+            f'<div class="panel-head"><h3>{escape(copy["history"])}</h3>'
+            f'<button class="button" type="button" data-runtime-prompt-restore '
+            f'data-role-key="{escape(getattr(item, "role_key"))}" '
+            f'data-version-id="{escape(default_version_id)}">'
+            f'{escape(copy["restore_default"])}</button></div>'
+            f'<p class="panel-note">{escape(copy["default_available"])}</p>'
+            '<div data-runtime-prompt-version-state hidden></div>'
+            '<div data-runtime-prompt-release-note hidden></div>'
+            f'{history_cards}'
+            '</section>'
+        )
+
+    def _approval_state_label(state: str) -> str:
+        mapping = {
+            "live": copy["approval_state_live"],
+            "approved": copy["approval_state_approved"],
+            "pending_approval": copy["approval_state_pending"],
+        }
+        return str(mapping.get(state, state.replace("_", " ").title()))
+
+    def _render_runtime_prompt_card(item: object) -> str:
+        approval_state = str(getattr(item, "approval_state", "live"))
+        save_label = copy["save_draft"] if bool(getattr(item, "approval_required", False)) else copy["save_prompt"]
+        current_version = getattr(item, "current_version_id", None) or copy["built_in_default"]
+        approved_version = getattr(item, "approved_version_id", None) or copy["built_in_default"]
+        pending_version = getattr(item, "pending_version_id", None)
+        approval_note = getattr(item, "approval_note", None)
+        approval_reasons = list(getattr(item, "approval_reasons", []) or [])
+        effective_prompt_template = getattr(item, "effective_prompt_template", None) or getattr(item, "prompt_template")
+        effective_rendered_prompt = getattr(item, "effective_rendered_prompt", None) or effective_prompt_template
+        working_rendered_prompt = getattr(item, "rendered_prompt", None) or getattr(item, "prompt_template")
+        approve_button = (
+            f'<button class="button" type="button" data-runtime-prompt-approve '
+            f'data-role-key="{escape(getattr(item, "role_key"))}" '
+            f'data-version-id="{escape(pending_version)}">{escape(copy["approve_draft"])}</button>'
+            if pending_version
+            else ""
+        )
+        dismiss_button = (
+            f'<button class="button" type="button" data-runtime-prompt-dismiss '
+            f'data-role-key="{escape(getattr(item, "role_key"))}" '
+            f'data-version-id="{escape(pending_version)}">{escape(copy["dismiss_draft"])}</button>'
+            if pending_version
+            else ""
+        )
+        effective_preview = (
+            f'<label class="detail-field" data-runtime-prompt-effective-preview><span>{escape(copy["effective_preview"])}</span>'
+            f'<pre>{escape(effective_rendered_prompt)}</pre></label>'
+            if pending_version
+            else ""
+        )
+        approval_note_markup = (
+            f'<p class="panel-note" data-runtime-prompt-approval-note>{escape(copy["approval_note"])}: '
+            f'{escape(str(approval_note))}</p>'
+            if approval_note
+            else ""
+        )
+        approval_reasons_markup = (
+            f'<div class="prompt-validation-list" data-runtime-prompt-approval-reasons>'
+            f'<article class="prompt-validation-item" data-severity="warning">'
+            f'<strong>{escape(copy["approval_triggers"])}</strong>'
+            f'<p class="muted">{escape(" | ".join(str(reason) for reason in approval_reasons))}</p>'
+            f'</article></div>'
+            if approval_reasons
+            else '<div data-runtime-prompt-approval-reasons hidden></div>'
+        )
+        pending_version_markup = (
+            f'<p class="muted" data-runtime-prompt-pending-version>{escape(copy["pending_version"])}: '
+            f'{escape(pending_version)}</p>'
+            if pending_version
+            else ""
+        )
+        return (
+            '<article class="route-card" data-runtime-prompt-card>'
+            f'<div class="route-head"><div><strong>{escape(getattr(item, "role_label"))}</strong>'
+            f'<p class="muted">{escape(getattr(item, "role_key"))} Â· {escape(workspace_snapshot.selected_root)}</p></div>'
+            f'<div class="action-row">'
+            f'<span class="badge">{escape(getattr(item, "control_mode"))}</span>'
+            f'<span class="badge prompt-approval-badge" data-runtime-prompt-approval-state>{escape(_approval_state_label(approval_state))}</span>'
+            f'</div></div>'
+            f'<form class="route-form" data-runtime-prompt-form>'
+            f'<input type="hidden" name="role_key" value="{escape(getattr(item, "role_key"))}">'
+            '<div class="field-grid">'
+            f'<label><span>{"Control mode" if not is_ru else "Ð ÐµÐ¶Ð¸Ð¼ ÑƒÐ¿Ñ€Ð°Ð²Ð»ÐµÐ½Ð¸Ñ"}</span>'
+            f'<select name="control_mode"><option value="editable"{" selected" if getattr(item, "control_mode") == "editable" else ""}>editable</option>'
+            f'<option value="fixed"{" selected" if getattr(item, "control_mode") == "fixed" else ""}>fixed</option></select></label>'
+            f'<label><span>{"Variables" if not is_ru else "ÐŸÐµÑ€ÐµÐ¼ÐµÐ½Ð½Ñ‹Ðµ"}</span>'
+            f'<input value="{escape(", ".join(getattr(item, "variables", [])) or "n/a")}" readonly></label>'
+            "</div>"
+            f'{approval_note_markup}'
+            f'{approval_reasons_markup}'
+            f'<label><span>{"Prompt template" if not is_ru else "Ð¨Ð°Ð±Ð»Ð¾Ð½ Ð¿Ñ€Ð¾Ð¼Ð¿Ñ‚Ð°"}</span>'
+            f'<textarea name="prompt_template" rows="12" data-runtime-prompt-template>{escape(getattr(item, "prompt_template"))}</textarea></label>'
+            f'<label class="detail-field"><span>{"Detail" if not is_ru else "ÐŸÐ¾ÑÑÐ½ÐµÐ½Ð¸Ðµ"}</span>'
+            f'<textarea name="detail" rows="2">{escape(getattr(item, "detail", "") or "")}</textarea></label>'
+            f'<label class="detail-field"><span>{escape(copy["working_preview"])}</span>'
+            f'<pre data-runtime-prompt-preview>{escape(working_rendered_prompt)}</pre></label>'
+            f'{effective_preview}'
+            f'<p class="muted" data-runtime-prompt-current-version>{escape(copy["current_version"])}: '
+            f'{escape(str(current_version))}</p>'
+            f'<p class="muted" data-runtime-prompt-approved-version>{escape(copy["approved_version"])}: '
+            f'{escape(str(approved_version))}</p>'
+            f'{pending_version_markup}'
+            '<div class="action-row">'
+            f'<button class="button primary" type="submit">{escape(save_label)}</button>'
+            f'{approve_button}'
+            f'{dismiss_button}'
+            f'<button class="button" type="button" data-runtime-prompt-diff-button>{escape(copy["preview_diff"])}</button>'
+            '</div>'
+            f'<section class="prompt-diff" data-runtime-prompt-diff hidden>'
+            f'<div class="panel-head"><h3>{escape(copy["diff_title"])}</h3></div>'
+            f'<div data-runtime-prompt-diff-body><p class="empty">{escape(copy["diff_empty"])}</p></div>'
+            '<div data-runtime-prompt-diff-approval hidden></div>'
+            '<div data-runtime-prompt-validation hidden></div>'
+            '</section>'
+            f'{_render_prompt_history(item)}'
+            "</form>"
+            "</article>"
+        )
+
+    prompt_cards = "".join(
+        _render_runtime_prompt_card(item)
+        for item in snapshot.role_prompts
+    ) or f'<p class="empty">{"No council prompts configured yet." if not is_ru else "ÐŸÑ€Ð¾Ð¼Ð¿Ñ‚Ñ‹ ÑÐ¾Ð²ÐµÑ‚Ð° Ð¿Ð¾ÐºÐ° Ð½Ðµ Ð½Ð°ÑÑ‚Ñ€Ð¾ÐµÐ½Ñ‹."}</p>'
+    legacy_prompt_cards = "".join(
+        (
+            '<article class="route-card" data-runtime-prompt-card>'
+            f'<div class="route-head"><div><strong>{escape(item.role_label)}</strong>'
+            f'<p class="muted">{escape(item.role_key)} · {escape(workspace_snapshot.selected_root)}</p></div>'
+            f'<span class="badge">{escape(item.control_mode)}</span></div>'
+            f'<form class="route-form" data-runtime-prompt-form>'
+            f'<input type="hidden" name="role_key" value="{escape(item.role_key)}">'
+            '<div class="field-grid">'
+            f'<label><span>{"Control mode" if not is_ru else "Режим управления"}</span>'
+            f'<select name="control_mode"><option value="editable"{" selected" if item.control_mode == "editable" else ""}>editable</option>'
+            f'<option value="fixed"{" selected" if item.control_mode == "fixed" else ""}>fixed</option></select></label>'
+            f'<label><span>{"Variables" if not is_ru else "Переменные"}</span>'
+            f'<input value="{escape(", ".join(item.variables) or "n/a")}" readonly></label>'
+            "</div>"
+            f'<label><span>{"Prompt template" if not is_ru else "Шаблон промпта"}</span>'
+            f'<textarea name="prompt_template" rows="12" data-runtime-prompt-template>{escape(item.prompt_template)}</textarea></label>'
+            f'<label class="detail-field"><span>{"Detail" if not is_ru else "Пояснение"}</span>'
+            f'<textarea name="detail" rows="2">{escape(item.detail or "")}</textarea></label>'
+            f'<label class="detail-field"><span>{"Current prompt preview" if not is_ru else "Текущий prompt preview"}</span>'
+            f'<pre data-runtime-prompt-preview>{escape(item.rendered_prompt or item.prompt_template)}</pre></label>'
+            f'<p class="muted" data-runtime-prompt-current-version>{escape(copy["current_version"])}: '
+            f'{escape(item.current_version_id or copy["built_in_default"])}</p>'
+            '<div class="action-row">'
+            f'<button class="button primary" type="submit">{escape(copy["save_prompt"])}</button>'
+            f'<button class="button" type="button" data-runtime-prompt-diff-button>{escape(copy["preview_diff"])}</button>'
+            '</div>'
+            f'<section class="prompt-diff" data-runtime-prompt-diff hidden>'
+            f'<div class="panel-head"><h3>{escape(copy["diff_title"])}</h3></div>'
+            f'<div data-runtime-prompt-diff-body><p class="empty">{escape(copy["diff_empty"])}</p></div>'
+            '<div data-runtime-prompt-validation hidden></div>'
+            '</section>'
+            f'{_render_prompt_history(item)}'
+            "</form>"
+            "</article>"
+        )
+        for item in snapshot.role_prompts
+    ) or f'<p class="empty">{"No council prompts configured yet." if not is_ru else "Промпты совета пока не настроены."}</p>'
     freshness = snapshot.freshness_policy
     audit_cards = "".join(
         (
@@ -2215,6 +2718,12 @@ def _render_runtime_control_page(
       display: grid;
       gap: 12px;
     }}
+    .action-row, .prompt-version-actions, .prompt-diff-meta {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }}
     .field-grid {{
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }}
@@ -2267,6 +2776,86 @@ def _render_runtime_control_page(
       color: var(--muted);
       line-height: 1.55;
     }}
+    .prompt-history, .prompt-diff {{
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: rgba(24, 34, 43, 0.03);
+      padding: 16px;
+    }}
+    .prompt-version + .prompt-version {{
+      margin-top: 12px;
+    }}
+    .prompt-current-badge {{
+      background: rgba(23, 56, 79, 0.1);
+      color: var(--navy);
+    }}
+    .prompt-pending-badge, .prompt-approval-badge {{
+      background: rgba(186, 112, 33, 0.12);
+      color: var(--amber);
+    }}
+    .prompt-diff {{
+      display: grid;
+      gap: 12px;
+    }}
+    .prompt-diff-lines {{
+      display: grid;
+      gap: 6px;
+    }}
+    .prompt-diff-line {{
+      display: grid;
+      grid-template-columns: 24px minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.8);
+      font-family: "Consolas", "SFMono-Regular", monospace;
+      font-size: 12px;
+      line-height: 1.5;
+    }}
+    .prompt-diff-line[data-kind="add"] {{
+      background: rgba(17, 104, 102, 0.1);
+      color: var(--teal);
+    }}
+    .prompt-diff-line[data-kind="remove"] {{
+      background: rgba(180, 74, 61, 0.1);
+      color: var(--red);
+    }}
+    .prompt-diff-line code {{
+      white-space: pre-wrap;
+      word-break: break-word;
+    }}
+    .prompt-diff-preview-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }}
+    .prompt-diff-preview-grid article {{
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.68);
+      padding: 12px;
+    }}
+    .prompt-validation-list {{
+      display: grid;
+      gap: 8px;
+    }}
+    .prompt-validation-item {{
+      display: grid;
+      gap: 4px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.78);
+      border: 1px solid var(--line);
+    }}
+    .prompt-validation-item[data-severity="blocking"] {{
+      border-color: rgba(180, 74, 61, 0.34);
+      background: rgba(180, 74, 61, 0.08);
+    }}
+    .prompt-validation-item[data-severity="warning"] {{
+      border-color: rgba(186, 112, 33, 0.34);
+      background: rgba(186, 112, 33, 0.08);
+    }}
     @media (max-width: 980px) {{
       .hero {{
         grid-template-columns: 1fr;
@@ -2288,7 +2877,7 @@ def _render_runtime_control_page(
         <h1>{escape(copy["title"])}</h1>
         <p class="muted">{escape(copy["intro"])}</p>
         <div class="hero-actions">
-          <a class="button primary" href="/api/v1/runtime/control-panel" data-swap-link>{escape(copy["open_json"])}</a>
+          <a class="button primary" href="/api/v1/runtime/control-panel?root={escape(dashboard_snapshot.selected_root)}" data-swap-link>{escape(copy["open_json"])}</a>
           <a class="button" href="/dashboard?root={escape(dashboard_snapshot.selected_root)}" data-swap-link>{escape(copy["open_dashboard"])}</a>
           <a class="button" href="/workspace?root={escape(dashboard_snapshot.selected_root)}" data-swap-link>{escape(copy["open_workspace"])}</a>
         </div>
@@ -2298,6 +2887,7 @@ def _render_runtime_control_page(
         <div class="summary-grid">{summary_cards}</div>
       </aside>
     </section>
+    {runtime_state_strip}
     <section class="panel">
       <div class="panel-head">
         <h2>{escape(copy["routes"])}</h2>
@@ -2305,6 +2895,14 @@ def _render_runtime_control_page(
       </div>
       <p class="panel-note">{"Roles can be edited one by one and each save writes to the runtime audit trail." if not is_ru else "Роли редактируются по одной, и каждое сохранение попадает в журнал runtime."}</p>
       <div class="route-grid">{route_cards}</div>
+    </section>
+    <section class="panel" id="runtime-prompts">
+      <div class="panel-head">
+        <h2>{escape(copy["prompts"])}</h2>
+        <button class="button" type="button" data-runtime-prompt-reset>{escape(copy["reset_prompts"])}</button>
+      </div>
+      <p class="panel-note">{"Each council role can have its own prompt template. Below you can edit the template and see the live prompt preview for the selected root." if not is_ru else "У каждой роли совета может быть свой шаблон промпта. Ниже можно редактировать шаблон и сразу видеть живой prompt preview по выбранной серии."}</p>
+      <div class="route-grid">{prompt_cards}</div>
     </section>
     <section class="panel">
       <div class="panel-head"><h2>{escape(copy["freshness"])}</h2></div>
@@ -2351,9 +2949,97 @@ def _render_runtime_control_page(
           body: JSON.stringify(payload),
         }});
         if (!response.ok) {{
-          throw new Error(await response.text());
+          const rawText = await response.text();
+          let message = rawText;
+          try {{
+            const parsed = JSON.parse(rawText);
+            message = parsed.detail || parsed.message || rawText;
+          }} catch {{
+            message = rawText;
+          }}
+          throw new Error(message || {json.dumps(copy["status_failed"], ensure_ascii=False)});
         }}
         return await response.json();
+      }};
+      const selectedRoot = {json.dumps(workspace_snapshot.selected_root, ensure_ascii=False)};
+      const escapeHtml = (value) =>
+        String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      const renderPromptDiff = (host, diff) => {{
+        if (!host) {{
+          return;
+        }}
+        const body = host.querySelector("[data-runtime-prompt-diff-body]");
+        const approvalHost = host.querySelector("[data-runtime-prompt-diff-approval]");
+        const validationHost = host.querySelector("[data-runtime-prompt-validation]");
+        if (!body) {{
+          return;
+        }}
+        const metadataHtml = diff.metadata_changes?.length
+          ? `<div><strong>${{escapeHtml({json.dumps(copy["metadata_changes"], ensure_ascii=False)})}}</strong><ul>${{diff.metadata_changes.map((item) => `<li>${{escapeHtml(item)}}</li>`).join("")}}</ul></div>`
+          : "";
+        const baselineLabel = diff.baseline_label === "approved_version"
+          ? {json.dumps(copy["approved_version"], ensure_ascii=False)}
+          : diff.baseline_label === "built_in_default"
+            ? {json.dumps(copy["built_in_default"], ensure_ascii=False)}
+            : (diff.baseline_label || "");
+        const baselineHtml = diff.baseline_version_id
+          ? `<div><strong>${{escapeHtml({json.dumps(copy["diff_baseline"], ensure_ascii=False)})}}</strong><p class="muted">${{escapeHtml(baselineLabel)}}: ${{escapeHtml(diff.baseline_version_id)}}</p></div>`
+          : "";
+        const releaseNoteHtml = diff.release_note_preview
+          ? `<div><strong>${{escapeHtml({json.dumps(copy["release_note"], ensure_ascii=False)})}}</strong><p class="muted">${{escapeHtml(diff.release_note_preview)}}</p></div>`
+          : "";
+        const unresolvedHtml = diff.unresolved_variables?.length
+          ? `<div><strong>${{escapeHtml({json.dumps(copy["unresolved_variables"], ensure_ascii=False)})}}</strong><p class="muted">${{diff.unresolved_variables.map((item) => escapeHtml(item)).join(", ")}}</p></div>`
+          : "";
+        const linesHtml = (diff.lines || []).map((line) => {{
+          const prefix = line.kind === "add" ? "+" : line.kind === "remove" ? "-" : "·";
+          const text = line.text && line.text.length ? escapeHtml(line.text) : "&nbsp;";
+          return `<div class="prompt-diff-line" data-kind="${{escapeHtml(line.kind)}}"><span>${{prefix}}</span><code>${{text}}</code></div>`;
+        }}).join("");
+        const previewCards = [];
+        if (diff.before_rendered_prompt) {{
+          previewCards.push(
+            `<article><span>${{escapeHtml({json.dumps(copy["preview_before"], ensure_ascii=False)})}}</span><pre>${{escapeHtml(diff.before_rendered_prompt)}}</pre></article>`
+          );
+        }}
+        if (diff.after_rendered_prompt) {{
+          previewCards.push(
+            `<article><span>${{escapeHtml({json.dumps(copy["preview_after"], ensure_ascii=False)})}}</span><pre>${{escapeHtml(diff.after_rendered_prompt)}}</pre></article>`
+          );
+        }}
+        body.innerHTML = `
+          <p class="muted">${{escapeHtml(diff.summary || "")}}</p>
+          <div class="prompt-diff-meta">${{baselineHtml}}${{releaseNoteHtml}}${{metadataHtml}}${{unresolvedHtml}}</div>
+          <div class="prompt-diff-lines">${{linesHtml || `<p class="empty">${{escapeHtml({json.dumps(copy["diff_empty"], ensure_ascii=False)})}}</p>`}}</div>
+          ${{previewCards.length ? `<div class="prompt-diff-preview-grid">${{previewCards.join("")}}</div>` : ""}}
+        `;
+        if (approvalHost) {{
+          const approvalItems = (diff.approval_reasons || []).map((item) =>
+            `<article class="prompt-validation-item" data-severity="warning"><strong>${{escapeHtml({json.dumps(copy["approval_triggers"], ensure_ascii=False)})}}</strong><p class="muted">${{escapeHtml(item)}}</p></article>`
+          ).join("");
+          approvalHost.innerHTML = approvalItems
+            ? `<div class="panel-head"><h3>${{escapeHtml({json.dumps(copy["approval_triggers"], ensure_ascii=False)})}}</h3></div><div class="prompt-validation-list">${{approvalItems}}</div>`
+            : "";
+          approvalHost.hidden = !approvalItems;
+        }}
+        if (validationHost) {{
+          const validationItems = (diff.validation_issues || []).map((item) => {{
+            const severityLabel = item.severity === "blocking"
+              ? {json.dumps(copy["blocking"], ensure_ascii=False)}
+              : {json.dumps(copy["warning"], ensure_ascii=False)};
+            return `<article class="prompt-validation-item" data-severity="${{escapeHtml(item.severity)}}"><strong>${{escapeHtml(severityLabel)}} · ${{escapeHtml(item.code)}}</strong><p class="muted">${{escapeHtml(item.message)}}</p></article>`;
+          }}).join("");
+          validationHost.innerHTML = validationItems
+            ? `<div class="panel-head"><h3>${{escapeHtml({json.dumps(copy["validation"], ensure_ascii=False)})}}</h3></div><div class="prompt-validation-list">${{validationItems}}</div>`
+            : "";
+          validationHost.hidden = !validationItems;
+        }}
+        host.hidden = false;
       }};
       document.querySelectorAll("[data-runtime-route-form]").forEach((form) => {{
         form.addEventListener("submit", async (event) => {{
@@ -2365,8 +3051,121 @@ def _render_runtime_control_page(
             await postJson("/api/v1/runtime/control-panel/model-route", payload);
             setStatus({json.dumps(copy["status_saved"], ensure_ascii=False)});
             await window.__imoexRefreshPage();
-          }} catch {{
-            setStatus({json.dumps(copy["status_failed"], ensure_ascii=False)}, "error");
+          }} catch (error) {{
+            setStatus(error?.message || {json.dumps(copy["status_failed"], ensure_ascii=False)}, "error");
+          }}
+        }});
+      }});
+      document.querySelectorAll("[data-runtime-prompt-form]").forEach((form) => {{
+        form.addEventListener("submit", async (event) => {{
+          event.preventDefault();
+          const formData = new FormData(form);
+          const payload = Object.fromEntries(formData.entries());
+          setStatus({json.dumps(copy["status_saving"], ensure_ascii=False)});
+          try {{
+            const snapshot = await postJson("/api/v1/runtime/control-panel/role-prompt", payload);
+            const promptProfile = (snapshot.role_prompts || []).find((item) => item.role_key === payload.role_key);
+            setStatus(
+              promptProfile && promptProfile.pending_version_id
+                ? {json.dumps(copy["status_draft_saved"], ensure_ascii=False)}
+                : {json.dumps(copy["status_saved"], ensure_ascii=False)}
+            );
+            await window.__imoexRefreshPage();
+          }} catch (error) {{
+            setStatus(error?.message || {json.dumps(copy["status_failed"], ensure_ascii=False)}, "error");
+          }}
+        }});
+      }});
+      document.querySelectorAll("[data-runtime-prompt-diff-button]").forEach((button) => {{
+        button.addEventListener("click", async () => {{
+          const card = button.closest("[data-runtime-prompt-card]");
+          const form = button.closest("[data-runtime-prompt-form]");
+          if (!card || !form) {{
+            return;
+          }}
+          const formData = new FormData(form);
+          const payload = Object.fromEntries(formData.entries());
+          const diffHost = card.querySelector("[data-runtime-prompt-diff]");
+          setStatus({json.dumps(copy["status_saving"], ensure_ascii=False)});
+          try {{
+            const diffUrl = selectedRoot
+              ? `/api/v1/runtime/control-panel/role-prompt/diff?root=${{encodeURIComponent(selectedRoot)}}`
+              : "/api/v1/runtime/control-panel/role-prompt/diff";
+            const diff = await postJson(diffUrl, payload);
+            renderPromptDiff(diffHost, diff);
+            setStatus(
+              diff.can_save
+                ? {json.dumps(copy["status_previewed"], ensure_ascii=False)}
+                : {json.dumps(copy["status_preview_blocked"], ensure_ascii=False)},
+              diff.can_save ? "ok" : "error"
+            );
+          }} catch (error) {{
+            setStatus(error?.message || {json.dumps(copy["status_failed"], ensure_ascii=False)}, "error");
+          }}
+        }});
+      }});
+      document.querySelectorAll("[data-runtime-prompt-restore]").forEach((button) => {{
+        button.addEventListener("click", async () => {{
+          const roleKey = button.dataset.roleKey;
+          const versionId = button.dataset.versionId;
+          if (!roleKey || !versionId) {{
+            return;
+          }}
+          setStatus({json.dumps(copy["status_saving"], ensure_ascii=False)});
+          try {{
+            const snapshot = await postJson("/api/v1/runtime/control-panel/role-prompt/restore", {{
+              role_key: roleKey,
+              version_id: versionId,
+            }});
+            const promptProfile = (snapshot.role_prompts || []).find((item) => item.role_key === roleKey);
+            setStatus(
+              promptProfile && promptProfile.pending_version_id
+                ? {json.dumps(copy["status_draft_saved"], ensure_ascii=False)}
+                : {json.dumps(copy["status_saved"], ensure_ascii=False)}
+            );
+            await window.__imoexRefreshPage();
+          }} catch (error) {{
+            setStatus(error?.message || {json.dumps(copy["status_failed"], ensure_ascii=False)}, "error");
+          }}
+        }});
+      }});
+      document.querySelectorAll("[data-runtime-prompt-approve]").forEach((button) => {{
+        button.addEventListener("click", async () => {{
+          const roleKey = button.dataset.roleKey;
+          const versionId = button.dataset.versionId;
+          if (!roleKey) {{
+            return;
+          }}
+          setStatus({json.dumps(copy["status_saving"], ensure_ascii=False)});
+          try {{
+            await postJson("/api/v1/runtime/control-panel/role-prompt/approve", {{
+              role_key: roleKey,
+              version_id: versionId || null,
+            }});
+            setStatus({json.dumps(copy["status_approved"], ensure_ascii=False)});
+            await window.__imoexRefreshPage();
+          }} catch (error) {{
+            setStatus(error?.message || {json.dumps(copy["status_failed"], ensure_ascii=False)}, "error");
+          }}
+        }});
+      }});
+      document.querySelectorAll("[data-runtime-prompt-dismiss]").forEach((button) => {{
+        button.addEventListener("click", async () => {{
+          const roleKey = button.dataset.roleKey;
+          const versionId = button.dataset.versionId;
+          if (!roleKey) {{
+            return;
+          }}
+          setStatus({json.dumps(copy["status_saving"], ensure_ascii=False)});
+          try {{
+            await postJson("/api/v1/runtime/control-panel/role-prompt/dismiss", {{
+              role_key: roleKey,
+              version_id: versionId || null,
+            }});
+            setStatus({json.dumps(copy["status_dismissed"], ensure_ascii=False)});
+            await window.__imoexRefreshPage();
+          }} catch (error) {{
+            setStatus(error?.message || {json.dumps(copy["status_failed"], ensure_ascii=False)}, "error");
           }}
         }});
       }});
@@ -2378,8 +3177,21 @@ def _render_runtime_control_page(
             await postJson("/api/v1/runtime/control-panel/model-route/reset", {{}});
             setStatus({json.dumps(copy["status_saved"], ensure_ascii=False)});
             await window.__imoexRefreshPage();
-          }} catch {{
-            setStatus({json.dumps(copy["status_failed"], ensure_ascii=False)}, "error");
+          }} catch (error) {{
+            setStatus(error?.message || {json.dumps(copy["status_failed"], ensure_ascii=False)}, "error");
+          }}
+        }});
+      }}
+      const resetPromptsButton = document.querySelector("[data-runtime-prompt-reset]");
+      if (resetPromptsButton) {{
+        resetPromptsButton.addEventListener("click", async () => {{
+          setStatus({json.dumps(copy["status_saving"], ensure_ascii=False)});
+          try {{
+            await postJson("/api/v1/runtime/control-panel/role-prompt/reset", {{}});
+            setStatus({json.dumps(copy["status_saved"], ensure_ascii=False)});
+            await window.__imoexRefreshPage();
+          }} catch (error) {{
+            setStatus(error?.message || {json.dumps(copy["status_failed"], ensure_ascii=False)}, "error");
           }}
         }});
       }}
@@ -2396,8 +3208,8 @@ def _render_runtime_control_page(
             await postJson("/api/v1/runtime/control-panel/freshness-policy", payload);
             setStatus({json.dumps(copy["status_saved"], ensure_ascii=False)});
             await window.__imoexRefreshPage();
-          }} catch {{
-            setStatus({json.dumps(copy["status_failed"], ensure_ascii=False)}, "error");
+          }} catch (error) {{
+            setStatus(error?.message || {json.dumps(copy["status_failed"], ensure_ascii=False)}, "error");
           }}
         }});
       }}
@@ -2505,7 +3317,127 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
     confidence_block = _render_confidence_decomposition(snapshot.focus_confidence)
     decision_preview = _render_decision_timeline(snapshot.decision_log_preview, title="Decision log preview")
     review_bundle = _render_review_bundle(snapshot.review_bundle)
-    market_panel = _render_market_snapshot(snapshot.market_snapshot, language=language)
+    market_panel = _render_market_snapshot(
+        snapshot.market_snapshot,
+        language=language,
+        root_code=snapshot.selected_root,
+        signal_id=focus.signal_id if focus is not None else None,
+    )
+    workspace_state_strip = _render_surface_state_strip(
+        strip_key="workspace",
+        title="Workspace posture" if language != "ru" else "Состояние рабочего экрана",
+        note=(
+            "This strip makes the current operator posture explicit: focus coverage, live market truth, and runtime caution."
+            if language != "ru"
+            else "Здесь явно показано текущее состояние рабочего экрана: есть ли фокус, доступны ли живые цены и где нужна осторожность."
+        ),
+        items=[
+            {
+                "label": "Focus signal" if language != "ru" else "Сигнал в фокусе",
+                "status": "ready" if focus is not None else "waiting",
+                "tone": "positive" if focus is not None else "warning",
+                "detail": (
+                    focus.summary
+                    if focus is not None
+                    else (
+                        "No focus signal is pinned yet; stay in scan mode until the next usable setup appears."
+                        if language != "ru"
+                        else "Фокусный сигнал пока не выбран; оставайтесь в режиме scan, пока не появится следующий пригодный сетап."
+                    )
+                ),
+            },
+            {
+                "label": "Market truth" if language != "ru" else "Слой цен и графиков",
+                "status": (
+                    snapshot.market_snapshot.status
+                    if snapshot.market_snapshot is not None
+                    else ("hidden" if language != "ru" else "скрыт")
+                ),
+                "tone": (
+                    "positive"
+                    if snapshot.market_snapshot is not None and snapshot.market_snapshot.status == "fresh"
+                    else "warning"
+                ),
+                "detail": (
+                    "Live quote and candles are visible for the selected instrument."
+                    if snapshot.market_snapshot is not None
+                    else (
+                        "Charts are hidden until live quote and candle data are available."
+                        if language != "ru"
+                        else "Графики скрыты, пока не появятся живые котировки и свечи."
+                    )
+                ),
+            },
+            {
+                "label": "Runtime caution" if language != "ru" else "Режим данных",
+                "status": snapshot.control_panel.data_mode,
+                "tone": "positive" if snapshot.control_panel.data_mode == "live" else "warning",
+                "detail": snapshot.control_panel.data_mode_detail,
+            },
+            {
+                "label": "Watchlist memory" if language != "ru" else "Память watchlist",
+                "status": "ready" if snapshot.watchlist else "empty",
+                "tone": "neutral" if snapshot.watchlist else "warning",
+                "detail": (
+                    f"{len(snapshot.watchlist)} promoted root or signal item(s) are pinned between cycles."
+                    if snapshot.watchlist
+                    else (
+                        "No promoted roots or signals are pinned yet."
+                        if language != "ru"
+                        else "Пока не закреплено ни одной серии или сигнала."
+                    )
+                ),
+            },
+        ],
+    )
+    market_overlay_labels = json.dumps(_market_overlay_copy(language), ensure_ascii=False)
+    market_panel_copy = json.dumps(
+        {
+            "title": "Текущая цена и графики" if language == "ru" else "Current price and charts",
+            "subtitle": (
+                "По выбранному инструменту: текущая цена и три масштаба просмотра без переключения страниц."
+                if language == "ru"
+                else "Current price plus day, week, and month views for the selected instrument."
+            ),
+            "current_price": "Последняя цена" if language == "ru" else "Last",
+            "daily_change": "Дневное изменение" if language == "ru" else "Daily change",
+            "day_high": "Дневной максимум" if language == "ru" else "Day high",
+            "day_low": "Дневной минимум" if language == "ru" else "Day low",
+            "updated": "Обновлено" if language == "ru" else "Updated",
+            "source": "Источник" if language == "ru" else "Source",
+            "warning_title": "Поток цены требует внимания" if language == "ru" else "Price feed needs attention",
+            "warning_body": (
+                "Данные выглядят несвежими или деградировавшими, поэтому цену стоит читать с осторожностью."
+                if language == "ru"
+                else "The feed looks stale or degraded, so treat the displayed price with caution."
+            ),
+            "status": "Статус" if language == "ru" else "Status",
+            "levels": "Уровни" if language == "ru" else "Levels",
+            "hover_hint": "Наведите на свечу, чтобы увидеть OHLC." if language == "ru" else "Hover a candle to inspect OHLC.",
+            "range_day": "Сессия" if language == "ru" else "Session",
+            "range_week": "Неделя" if language == "ru" else "Week",
+            "range_month": "Месяц" if language == "ru" else "Month",
+            "range_focus": "Фокус" if language == "ru" else "Focus",
+            "range_tight": "Импульс" if language == "ru" else "Impulse",
+            "level_legend": "Уровни идеи" if language == "ru" else "Setup levels",
+            "level_hint": "Нажмите на уровень, чтобы зафиксировать подсветку." if language == "ru" else "Click a level to lock the highlight.",
+            "level_distance": "До цены" if language == "ru" else "From price",
+            "level_entry_note": "Базовый вход в сетап." if language == "ru" else "Primary setup entry.",
+            "level_invalidation_note": "Уровень, после которого идея ломается." if language == "ru" else "Level that breaks the setup.",
+            "level_target_note": "Основная цель для идеи." if language == "ru" else "Primary target for the setup.",
+            "measure_hint": (
+                "Протяните по графику, чтобы измерить дельту между свечами."
+                if language == "ru"
+                else "Drag across the chart to measure the delta between candles."
+            ),
+            "measure_title": "Замер" if language == "ru" else "Measure",
+            "measure_delta": "Δ close",
+            "measure_pct": "Δ %",
+            "measure_bars": "Свечи" if language == "ru" else "Bars",
+            "measure_bars_short": "св." if language == "ru" else "bars",
+        },
+        ensure_ascii=False,
+    )
     root_preview_messages = json.dumps(
         {
             "loading": "Загружаем мини-график..." if language == "ru" else "Loading preview...",
@@ -2547,6 +3479,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         },
         ensure_ascii=False,
     )
+    market_level_messages = json.dumps(_market_level_copy(language), ensure_ascii=False)
     compare_copy = {
         "title": "Compare mode",
         "subtitle": (
@@ -2598,7 +3531,129 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         "change": "Изменение" if language == "ru" else "Change",
         "range": "Диапазон" if language == "ru" else "Range",
         "updated": "Обновлено" if language == "ru" else "Updated",
+        "cursor_idle": (
+            "Наведите на график, чтобы синхронно читать свечу."
+            if language == "ru"
+            else "Hover a chart to sync the cursor."
+        ),
+        "measure_idle": (
+            "Протяните по графику, чтобы синхронно измерить окно A/B."
+            if language == "ru"
+            else "Drag on a chart to sync a measure across A/B."
+        ),
+        "regime_title": "Цена vs идея" if language == "ru" else "Price vs setup",
+        "regime_same": (
+            "Обе стороны в одном режиме."
+            if language == "ru"
+            else "Both sides are in the same regime."
+        ),
+        "regime_split": (
+            "Режимы A и B расходятся."
+            if language == "ru"
+            else "A and B are in different regimes."
+        ),
+        "regime_drift_changed": (
+            "Режим только что сменился."
+            if language == "ru"
+            else "The regime just changed."
+        ),
+        "regime_drift_crossed": (
+            "Пересечён уровень"
+            if language == "ru"
+            else "Crossed"
+        ),
+        "root_regime_waiting": (
+            "Заполните A и B в root-секции, чтобы увидеть price regime."
+            if language == "ru"
+            else "Fill A and B in the root section to see the price regime."
+        ),
+        "signal_regime_waiting": (
+            "Заполните A и B в signal-секции, чтобы увидеть price regime."
+            if language == "ru"
+            else "Fill A and B in the signal section to see the price regime."
+        ),
+        "zoom_full": "Полный" if language == "ru" else "Full",
+        "zoom_focus": "Фокус" if language == "ru" else "Focus",
+        "zoom_tight": "Импульс" if language == "ru" else "Impulse",
+        "root_delta_waiting": (
+            "Заполните A и B в root-секции, чтобы увидеть срез различий."
+            if language == "ru"
+            else "Fill A and B in the root section to see the delta strip."
+        ),
+        "signal_delta_waiting": (
+            "Заполните A и B в signal-секции, чтобы увидеть разницу по conviction."
+            if language == "ru"
+            else "Fill A and B in the signal section to see conviction deltas."
+        ),
+        "delta_last": "Δ last",
+        "delta_change": "Δ change",
+        "delta_leader": "Лидер" if language == "ru" else "Leader",
+        "delta_status": "Статус" if language == "ru" else "Status",
+        "delta_confidence": "Δ confidence",
+        "delta_skeptic": "Δ skeptic",
+        "delta_priority": "Δ priority",
+        "delta_workflow": "Workflow A/B",
+        "delta_tie": "Паритет" if language == "ru" else "Tie",
+        "tooltip_root_last": (
+            "Разница последней цены считается как A минус B."
+            if language == "ru"
+            else "Last-price delta is calculated as A minus B."
+        ),
+        "tooltip_root_change": (
+            "Разница изменения считается как A минус B в процентных пунктах."
+            if language == "ru"
+            else "Change delta is calculated as A minus B in percentage points."
+        ),
+        "tooltip_root_leader": (
+            "Лидер определяется по более сильному изменению на выбранном таймфрейме."
+            if language == "ru"
+            else "Leader is picked by the stronger move on the selected timeframe."
+        ),
+        "tooltip_root_status": (
+            "Показывает статус feed для A и B, чтобы быстро заметить расхождение."
+            if language == "ru"
+            else "Shows feed status for A and B so you can spot mismatches quickly."
+        ),
+        "tooltip_signal_confidence": (
+            "Confidence delta считается как A минус B."
+            if language == "ru"
+            else "Confidence delta is calculated as A minus B."
+        ),
+        "tooltip_signal_skeptic": (
+            "Skeptic delta считается как A минус B."
+            if language == "ru"
+            else "Skeptic delta is calculated as A minus B."
+        ),
+        "tooltip_signal_priority": (
+            "Priority delta считается как A минус B."
+            if language == "ru"
+            else "Priority delta is calculated as A minus B."
+        ),
+        "tooltip_signal_leader": (
+            "Лидер определяется по более высокому confidence."
+            if language == "ru"
+            else "Leader is picked by the higher confidence."
+        ),
+        "tooltip_signal_workflow": (
+            "Показывает текущее workflow-состояние слева и справа."
+            if language == "ru"
+            else "Shows the current workflow state on the left and right."
+        ),
     }
+    compare_copy["tooltip_shift_intro"] = (
+        "Ð›Ð¸Ð´ÐµÑ€ ÑÐ¼ÐµÐ½Ð¸Ð»ÑÑ Ð¿Ð¾ÑÐ»Ðµ Ð¿ÐµÑ€ÐµÐºÐ»ÑŽÑ‡ÐµÐ½Ð¸Ñ Ñ‚Ð°Ð¹Ð¼Ñ„Ñ€ÐµÐ¹Ð¼Ð°."
+        if language == "ru"
+        else "Leader changed after timeframe switch."
+    )
+    compare_copy["tooltip_shift_stable"] = (
+        "ÐŸÐ¾ÑÐ»Ðµ Ð¿ÐµÑ€ÐµÐºÐ»ÑŽÑ‡ÐµÐ½Ð¸Ñ Ñ‚Ð°Ð¹Ð¼Ñ„Ñ€ÐµÐ¹Ð¼Ð° Ð»Ð¸Ð´ÐµÑ€ Ð¾ÑÑ‚Ð°Ð»ÑÑ Ñ‚ÐµÐ¼ Ð¶Ðµ."
+        if language == "ru"
+        else "Leader stayed the same after timeframe switch."
+    )
+    compare_copy["tooltip_shift_was"] = "Ð‘Ñ‹Ð»" if language == "ru" else "Was"
+    compare_copy["tooltip_shift_now"] = "Ð¡ÐµÐ¹Ñ‡Ð°Ñ" if language == "ru" else "Now"
+    compare_copy["tooltip_shift_frames"] = "Ð¢Ð°Ð¹Ð¼Ñ„Ñ€ÐµÐ¹Ð¼Ñ‹" if language == "ru" else "Frames"
+    compare_copy["tooltip_shift_spread"] = "Ð Ð°Ð·Ñ€Ñ‹Ð² A-B" if language == "ru" else "A-B spread"
     compare_messages = json.dumps(compare_copy, ensure_ascii=False)
 
     return f"""<!DOCTYPE html>
@@ -2777,6 +3832,40 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
     .rail-card span {{ color: var(--muted); font-size: 14px; }}
     .rail-card small {{ line-height: 1.45; min-height: 44px; }}
     .rail-card em {{ font-style: normal; color: var(--navy); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }}
+    .market-level-chip {{
+      display: grid;
+      gap: 2px;
+      padding: 9px 10px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.76);
+      min-height: 0;
+    }}
+    .market-level-chip strong {{
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }}
+    .market-level-chip span {{
+      color: inherit;
+      font-size: 12px;
+      line-height: 1.35;
+    }}
+    .market-level-chip.tone-positive {{
+      border-color: rgba(47, 125, 91, 0.24);
+      background: rgba(47, 125, 91, 0.12);
+      color: var(--green);
+    }}
+    .market-level-chip.tone-neutral {{
+      border-color: rgba(23, 54, 77, 0.18);
+      background: rgba(23, 54, 77, 0.08);
+      color: var(--navy);
+    }}
+    .market-level-chip.tone-warning {{
+      border-color: rgba(180, 74, 61, 0.24);
+      background: rgba(180, 74, 61, 0.11);
+      color: var(--red);
+    }}
     .rail-card-footer {{
       display: flex;
       align-items: center;
@@ -3054,6 +4143,131 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       display: grid;
       gap: 12px;
     }}
+    .compare-delta-strip {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 8px;
+    }}
+    .compare-regime-row {{
+      display: grid;
+      grid-template-columns: minmax(220px, 1.3fr) repeat(2, minmax(170px, 1fr));
+      gap: 8px;
+      align-items: start;
+    }}
+    .compare-regime-row .compare-delta-empty {{
+      grid-column: 1 / -1;
+    }}
+    .compare-regime-summary {{
+      min-height: 100%;
+    }}
+    .compare-regime-note {{
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
+    }}
+    .compare-delta-chip {{
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.76);
+      display: grid;
+      gap: 4px;
+      position: relative;
+      cursor: help;
+      outline: none;
+    }}
+    .compare-delta-chip[data-tooltip]::before {{
+      content: "";
+      position: absolute;
+      left: 18px;
+      bottom: calc(100% + 2px);
+      border-width: 6px;
+      border-style: solid;
+      border-color: rgba(17, 27, 34, 0.92) transparent transparent transparent;
+      opacity: 0;
+      transform: translateY(6px);
+      pointer-events: none;
+      transition: opacity 0.16s ease, transform 0.16s ease;
+      z-index: 6;
+    }}
+    .compare-delta-chip[data-tooltip]::after {{
+      content: attr(data-tooltip);
+      position: absolute;
+      left: 0;
+      bottom: calc(100% + 12px);
+      max-width: 260px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(17, 27, 34, 0.92);
+      color: #f7f4ef;
+      font-size: 12px;
+      line-height: 1.45;
+      letter-spacing: normal;
+      text-transform: none;
+      white-space: normal;
+      box-shadow: 0 14px 30px rgba(17, 27, 34, 0.22);
+      opacity: 0;
+      transform: translateY(6px);
+      pointer-events: none;
+      transition: opacity 0.16s ease, transform 0.16s ease;
+      z-index: 7;
+    }}
+    .compare-delta-chip[data-tooltip]:hover::before,
+    .compare-delta-chip[data-tooltip]:hover::after,
+    .compare-delta-chip[data-tooltip]:focus-visible::before,
+    .compare-delta-chip[data-tooltip]:focus-visible::after {{
+      opacity: 1;
+      transform: translateY(0);
+    }}
+    .compare-delta-chip[data-tooltip]:focus-visible {{
+      box-shadow: 0 0 0 3px rgba(17, 27, 34, 0.14);
+    }}
+    .compare-delta-chip span {{
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }}
+    .compare-delta-chip strong {{
+      font-size: 15px;
+      color: var(--ink);
+    }}
+    .compare-delta-note {{
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
+      text-transform: none;
+      letter-spacing: normal;
+    }}
+    .compare-delta-chip.is-positive {{
+      border-color: rgba(47, 125, 91, 0.24);
+      background: rgba(47, 125, 91, 0.12);
+    }}
+    .compare-delta-chip.is-positive strong {{
+      color: var(--mint);
+    }}
+    .compare-delta-chip.is-warning {{
+      border-color: rgba(182, 109, 31, 0.24);
+      background: rgba(182, 109, 31, 0.11);
+    }}
+    .compare-delta-chip.is-warning strong {{
+      color: var(--amber);
+    }}
+    .compare-delta-chip.is-neutral {{
+      border-color: rgba(25, 58, 82, 0.18);
+      background: rgba(25, 58, 82, 0.08);
+    }}
+    .compare-delta-chip.is-neutral strong {{
+      color: var(--navy);
+    }}
+    .compare-delta-empty {{
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px dashed var(--line);
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--muted);
+      text-align: center;
+    }}
     .compare-toolbar {{
       display: flex;
       flex-wrap: wrap;
@@ -3104,6 +4318,12 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       gap: 6px;
       flex-wrap: wrap;
     }}
+    .compare-range-toolbar {{
+      display: inline-flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+    }}
     .compare-chart {{
       min-height: 120px;
     }}
@@ -3123,6 +4343,20 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       border-radius: 16px;
       background: rgba(255, 255, 255, 0.74);
       border: 1px dashed var(--line);
+    }}
+    .compare-chart-readout {{
+      min-height: 18px;
+      margin: -4px 0 0;
+      color: var(--navy);
+      font-size: 12px;
+      line-height: 1.45;
+    }}
+    .compare-chart-measure {{
+      min-height: 18px;
+      margin: -8px 0 0;
+      color: var(--navy);
+      font-size: 12px;
+      line-height: 1.45;
     }}
     .compare-meta {{
       display: grid;
@@ -3424,6 +4658,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       </aside>
     </section>
     {trust_ribbon}
+    {workspace_state_strip}
     <section class="panel">
       <div class="panel-head">
         <h2>Root lane</h2>
@@ -3452,6 +4687,8 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
               <p>{escape(compare_copy["root_section_note"])}</p>
             </div>
           </div>
+          <div class="compare-delta-strip" data-compare-root-delta></div>
+          <div class="compare-regime-row" data-compare-root-regime></div>
           <div class="compare-grid">
             <article class="compare-card" data-compare-root-slot="a"></article>
             <article class="compare-card" data-compare-root-slot="b"></article>
@@ -3464,6 +4701,8 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
               <p>{escape(compare_copy["signal_section_note"])}</p>
             </div>
           </div>
+          <div class="compare-delta-strip" data-compare-signal-delta></div>
+          <div class="compare-regime-row" data-compare-signal-regime></div>
           <div class="compare-grid">
             <article class="compare-card" data-compare-signal-slot="a"></article>
             <article class="compare-card" data-compare-signal-slot="b"></article>
@@ -3740,14 +4979,207 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       }}
       return snapshot.daily;
     }};
+    const marketOverlayLabels = {market_overlay_labels};
+    const marketPanelCopy = {market_panel_copy};
+    const marketLevelCopy = {market_level_messages};
+    const marketOverlayStyle = (key) => {{
+      if (key === "entry") {{
+        return {{ stroke: "#17364d", dasharray: "4 3" }};
+      }}
+      if (key === "invalidation") {{
+        return {{ stroke: "#bb7122", dasharray: "5 4" }};
+      }}
+      if (key === "target") {{
+        return {{ stroke: "#116966", dasharray: "6 4" }};
+      }}
+      return {{ stroke: "#5c6970", dasharray: "4 3" }};
+    }};
+    const renderOverlaySummary = (series, unit = "") => {{
+      if (!series || !Array.isArray(series.overlays) || series.overlays.length === 0) {{
+        return "";
+      }}
+      const unitSuffix = unit ? ` ${{unit}}` : "";
+      return series.overlays.map((overlay) => `${{marketOverlayLabels[overlay.key] || overlay.key}} ${{formatPreviewPrice(overlay.value)}}${{unitSuffix}}`).join(" | ");
+    }};
+    const overlayRecordFromSeries = (series) => {{
+      const record = {{}};
+      if (!series || !Array.isArray(series.overlays)) {{
+        return record;
+      }}
+      for (const overlay of series.overlays) {{
+        if (overlay && typeof overlay.value === "number" && Number.isFinite(overlay.value)) {{
+          record[String(overlay.key || "")] = overlay.value;
+        }}
+      }}
+      return record;
+    }};
+    const formatLevelDistance = (fromValue, toValue) => {{
+      if (
+        typeof fromValue !== "number"
+        || Number.isNaN(fromValue)
+        || typeof toValue !== "number"
+        || Number.isNaN(toValue)
+      ) {{
+        return "n/a";
+      }}
+      const base = Math.max(Math.abs(fromValue), 0.01);
+      return `${{(Math.abs(toValue - fromValue) / base * 100).toFixed(2)}}%`;
+    }};
+    const buildMarketLevelState = (marketSnapshot, directionValue = "") => {{
+      const currentPrice = marketSnapshot && typeof marketSnapshot.current_price === "number"
+        ? marketSnapshot.current_price
+        : null;
+      const overlays = overlayRecordFromSeries(marketSnapshot && marketSnapshot.daily ? marketSnapshot.daily : null);
+      const entry = overlays.entry;
+      const invalidation = overlays.invalidation;
+      const target = overlays.target;
+      if (
+        typeof currentPrice !== "number"
+        || typeof entry !== "number"
+        || typeof invalidation !== "number"
+        || typeof target !== "number"
+      ) {{
+        return {{
+          tone: "neutral",
+          stateKey: "pending",
+          anchorKey: "",
+          label: marketLevelCopy.pending,
+          detail: marketLevelCopy.pending_detail,
+        }};
+      }}
+      let direction = String(directionValue || "").toLowerCase();
+      if (direction !== "bullish" && direction !== "bearish") {{
+        direction = target >= entry ? "bullish" : "bearish";
+      }}
+      if (direction === "bullish") {{
+        if (currentPrice >= target) {{
+          return {{
+            tone: "positive",
+            stateKey: "target_hit",
+            anchorKey: "target",
+            label: marketLevelCopy.target_hit,
+            detail: `${{marketLevelCopy.past_target}} ${{formatLevelDistance(currentPrice, target)}}`,
+          }};
+        }}
+        if (currentPrice <= invalidation) {{
+          return {{
+            tone: "warning",
+            stateKey: "below_invalidation",
+            anchorKey: "invalidation",
+            label: marketLevelCopy.below_invalidation,
+            detail: `${{marketLevelCopy.beyond_invalidation}} ${{formatLevelDistance(currentPrice, invalidation)}}`,
+          }};
+        }}
+        if (currentPrice >= entry) {{
+          return {{
+            tone: "positive",
+            stateKey: "above_entry",
+            anchorKey: "entry",
+            label: marketLevelCopy.above_entry,
+            detail: `${{marketLevelCopy.to_target}} ${{formatLevelDistance(currentPrice, target)}}`,
+          }};
+        }}
+        return {{
+          tone: "neutral",
+          stateKey: "below_entry",
+          anchorKey: "entry",
+          label: marketLevelCopy.below_entry,
+          detail: `${{marketLevelCopy.to_entry}} ${{formatLevelDistance(currentPrice, entry)}}`,
+        }};
+      }}
+      if (currentPrice <= target) {{
+        return {{
+          tone: "positive",
+          stateKey: "target_hit",
+          anchorKey: "target",
+          label: marketLevelCopy.target_hit,
+          detail: `${{marketLevelCopy.past_target}} ${{formatLevelDistance(currentPrice, target)}}`,
+        }};
+      }}
+      if (currentPrice >= invalidation) {{
+        return {{
+          tone: "warning",
+          stateKey: "above_invalidation",
+          anchorKey: "invalidation",
+          label: marketLevelCopy.above_invalidation,
+          detail: `${{marketLevelCopy.beyond_invalidation}} ${{formatLevelDistance(currentPrice, invalidation)}}`,
+        }};
+      }}
+      if (currentPrice <= entry) {{
+        return {{
+          tone: "positive",
+          stateKey: "below_entry",
+          anchorKey: "entry",
+          label: marketLevelCopy.below_entry,
+          detail: `${{marketLevelCopy.to_target}} ${{formatLevelDistance(currentPrice, target)}}`,
+        }};
+      }}
+      return {{
+        tone: "neutral",
+        stateKey: "above_entry",
+        anchorKey: "entry",
+        label: marketLevelCopy.above_entry,
+        detail: `${{marketLevelCopy.to_entry}} ${{formatLevelDistance(currentPrice, entry)}}`,
+      }};
+    }};
+    const applyMarketLevelState = (node, state) => {{
+      if (!node) {{
+        return;
+      }}
+      const resolvedState = state || {{
+        tone: "neutral",
+        label: marketLevelCopy.pending,
+        detail: marketLevelCopy.pending_detail,
+      }};
+      node.className = `market-level-chip tone-${{resolvedState.tone || "neutral"}}`;
+      node.innerHTML = `<strong>${{escapePreviewText(resolvedState.label || marketLevelCopy.pending)}}</strong><span>${{escapePreviewText(resolvedState.detail || marketLevelCopy.pending_detail)}}</span>`;
+    }};
+    const buildMarketDistanceBar = (series, unit = "") => {{
+      if (!series) {{
+        return "";
+      }}
+      const overlays = overlayRecordFromSeries(series);
+      if (
+        typeof overlays.entry !== "number"
+        || typeof overlays.target !== "number"
+        || typeof overlays.invalidation !== "number"
+        || typeof series.current_price !== "number"
+      ) {{
+        return "";
+      }}
+      const points = [
+        {{ key: "invalidation", label: marketLevelCopy.invalidation_short, value: overlays.invalidation, color: "#bb7122" }},
+        {{ key: "entry", label: marketLevelCopy.entry_short, value: overlays.entry, color: "#17364d" }},
+        {{ key: "price", label: marketLevelCopy.price_short, value: series.current_price, color: "#15202a" }},
+        {{ key: "target", label: marketLevelCopy.target_short, value: overlays.target, color: "#116966" }},
+      ];
+      const low = Math.min(...points.map((point) => point.value));
+      const high = Math.max(...points.map((point) => point.value));
+      const span = Math.max(high - low, Math.max(Math.abs(series.current_price), 0.01) * 0.001, 0.01);
+      const positionPct = (value) => ((value - low) / span) * 100;
+      const unitSuffix = unit ? ` ${{escapePreviewText(unit)}}` : "";
+      const markers = points.map((point) => {{
+        const left = Math.max(0, Math.min(100, positionPct(point.value)));
+        const size = point.key === "price" ? 12 : 9;
+        return `<div style="position:absolute;left:calc(${{left.toFixed(2)}}% - ${{(size / 2).toFixed(1)}}px);top:${{point.key === "price" ? "4px" : "8px"}};display:grid;justify-items:center;gap:3px;"><span style="font-size:10px;line-height:1;color:${{point.color}};font-weight:700;">${{escapePreviewText(point.label)}}</span><span style="width:${{size}}px;height:${{size}}px;border-radius:999px;background:${{point.color}};box-shadow:0 0 0 2px rgba(255,255,255,0.94);"></span></div>`;
+      }}).join("");
+      const chips = points.map((point) => {{
+        const detail = point.key === "price"
+          ? `${{formatPreviewPrice(point.value)}}${{unitSuffix}}`
+          : formatLevelDistance(series.current_price, point.value);
+        return `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 8px;border-radius:999px;background:rgba(255,255,255,0.82);border:1px solid rgba(21,32,42,0.08);font-size:11px;color:#5c6970;"><span style="width:7px;height:7px;border-radius:999px;background:${{point.color}};"></span>${{escapePreviewText(point.label)}} ${{escapePreviewText(detail)}}</span>`;
+      }}).join("");
+      return `<div data-market-distance-bar style="display:grid;gap:8px;"><div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#5c6970;">${{escapePreviewText(marketLevelCopy.distance_bar)}}</div><div style="position:relative;height:34px;"><div style="position:absolute;left:0;right:0;top:18px;height:4px;border-radius:999px;background:linear-gradient(90deg, rgba(187,113,34,0.22), rgba(23,54,77,0.18), rgba(17,105,102,0.22));"></div>${{markers}}</div><div style="display:flex;flex-wrap:wrap;gap:8px;">${{chips}}</div></div>`;
+    }};
     const renderRootPreviewChart = (series) => {{
       if (!series || !Array.isArray(series.points) || series.points.length === 0) {{
         return `<div class="empty">${{rootPreviewMessages.unavailable}}</div>`;
       }}
       const width = 248;
       const height = 96;
-      const lows = series.points.map((point) => typeof point.low === "number" ? point.low : point.value);
-      const highs = series.points.map((point) => typeof point.high === "number" ? point.high : point.value);
+      const overlayValues = Array.isArray(series.overlays) ? series.overlays.map((overlay) => overlay.value) : [];
+      const lows = series.points.map((point) => typeof point.low === "number" ? point.low : point.value).concat(overlayValues, [series.current_price]);
+      const highs = series.points.map((point) => typeof point.high === "number" ? point.high : point.value).concat(overlayValues, [series.current_price]);
       const low = Math.min(...lows);
       const high = Math.max(...highs);
       const span = Math.max(high - low, 0.0001);
@@ -3768,7 +5200,742 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         const tone = closeValue >= openValue ? "#2f7e57" : "#b44a3d";
         return `<line x1="${{x.toFixed(1)}}" y1="${{highY.toFixed(1)}}" x2="${{x.toFixed(1)}}" y2="${{lowY.toFixed(1)}}" stroke="${{tone}}" stroke-width="1.8" stroke-linecap="round"></line><rect x="${{(x - (bodyWidth / 2)).toFixed(1)}}" y="${{bodyTop.toFixed(1)}}" width="${{bodyWidth.toFixed(1)}}" height="${{bodyHeight.toFixed(1)}}" rx="2" fill="${{tone}}" fill-opacity="0.92"></rect>`;
       }}).join("");
-      return `<svg viewBox="0 0 248 96" preserveAspectRatio="none"><line x1="0" y1="${{mapPriceY(series.open_price).toFixed(1)}}" x2="248" y2="${{mapPriceY(series.open_price).toFixed(1)}}" stroke="rgba(21,32,42,0.08)" stroke-width="1" stroke-dasharray="4 4"></line>${{candles}}</svg>`;
+      const overlays = Array.isArray(series.overlays) ? series.overlays.map((overlay) => {{
+        const style = marketOverlayStyle(overlay.key);
+        const y = mapPriceY(overlay.value);
+        const label = escapePreviewText(marketOverlayLabels[overlay.key] || overlay.key);
+        return `<line x1="0" y1="${{y.toFixed(1)}}" x2="${{width.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="${{style.stroke}}" stroke-width="1.2" stroke-dasharray="${{style.dasharray}}" opacity="0.95" data-market-overlay-line data-overlay-key="${{escapePreviewText(overlay.key)}}" style="cursor:pointer;"></line><line x1="0" y1="${{y.toFixed(1)}}" x2="${{width.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="transparent" stroke-width="10" data-market-overlay-hit data-overlay-key="${{escapePreviewText(overlay.key)}}" style="cursor:pointer;"></line><text x="${{(width - 6).toFixed(1)}}" y="${{Math.max(12, Math.min(height - 4, y - 2)).toFixed(1)}}" text-anchor="end" fill="${{style.stroke}}" font-size="10" font-weight="700" data-market-overlay-label data-overlay-key="${{escapePreviewText(overlay.key)}}" style="cursor:pointer;">${{label}}</text>`;
+      }}).join("") : "";
+      const currentPriceY = mapPriceY(series.current_price);
+      const currentLine = `<line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{width.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="#15202a" stroke-width="1.3" opacity="0.78" data-market-current-line></line><line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{width.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="transparent" stroke-width="10" data-market-current-hit data-market-snap-key="price"></line><circle cx="${{(width - 6).toFixed(1)}}" cy="${{currentPriceY.toFixed(1)}}" r="3.4" fill="#15202a"></circle><text x="6" y="${{Math.max(12, Math.min(height - 4, currentPriceY - 4)).toFixed(1)}}" fill="#15202a" font-size="10" font-weight="700">${{escapePreviewText(marketLevelCopy.price_short)}}</text>`;
+      const measureLayer = `<g data-market-measure-layer style="display:none;pointer-events:none;"><line x1="0" y1="0" x2="0" y2="0" stroke="#17364d" stroke-width="1.8" stroke-dasharray="5 4" opacity="0.92" data-market-measure-line></line><circle cx="0" cy="0" r="3.2" fill="#17364d" data-market-measure-start-dot></circle><circle cx="0" cy="0" r="3.2" fill="#17364d" data-market-measure-end-dot></circle><text x="0" y="0" text-anchor="middle" fill="#17364d" font-size="10" font-weight="800" data-market-measure-label></text></g>`;
+      const crosshairLayer = `<g data-market-crosshair-layer style="display:none;"><line x1="0" y1="0" x2="0" y2="${{height.toFixed(1)}}" stroke="rgba(21,32,42,0.22)" stroke-width="1" stroke-dasharray="3 3" data-market-crosshair-x></line><line x1="0" y1="0" x2="${{width.toFixed(1)}}" y2="0" stroke="rgba(21,32,42,0.18)" stroke-width="1" stroke-dasharray="3 3" data-market-crosshair-y></line><circle cx="0" cy="0" r="3.2" fill="#15202a" data-market-crosshair-dot></circle></g>`;
+      return `<svg viewBox="0 0 248 96" preserveAspectRatio="none" data-market-chart-svg><line x1="0" y1="${{mapPriceY(series.open_price).toFixed(1)}}" x2="248" y2="${{mapPriceY(series.open_price).toFixed(1)}}" stroke="rgba(21,32,42,0.08)" stroke-width="1" stroke-dasharray="4 4"></line>${{overlays}}${{currentLine}}${{candles}}${{measureLayer}}${{crosshairLayer}}</svg>`;
+    }};
+    const setRootLanePriceLine = (rootCode, snapshot) => {{
+      const card = document.querySelector(`[data-root-preview-card][data-root-code="${{rootCode}}"]`);
+      const lineNode = card ? card.querySelector("[data-root-price-line]") : null;
+      if (!lineNode) {{
+        return;
+      }}
+      const activeSignals = lineNode.dataset.activeSignals || "0";
+      const rollShare = lineNode.dataset.rollShare || "0%";
+      if (!snapshot) {{
+        lineNode.textContent = `${{activeSignals}} active | roll ${{rollShare}}`;
+        return;
+      }}
+      const unitSuffix = snapshot.unit ? ` ${{snapshot.unit}}` : "";
+      lineNode.textContent = `L ${{formatPreviewPrice(snapshot.current_price)}}${{unitSuffix}} | D ${{formatPreviewPct(snapshot.price_change_pct)}} | ${{activeSignals}} active | roll ${{rollShare}}`;
+    }};
+    const setRootLevelState = (rootCode, snapshot) => {{
+      const card = document.querySelector(`[data-root-preview-card][data-root-code="${{rootCode}}"]`);
+      const node = card ? card.querySelector("[data-root-level-chip]") : null;
+      applyMarketLevelState(node, buildMarketLevelState(snapshot));
+    }};
+    const setSignalLaneLevelState = (signalId, snapshot) => {{
+      const card = document.querySelector(`[data-signal-preview-card][data-signal-id="${{signalId}}"]`);
+      const node = card ? card.querySelector("[data-signal-level-chip]") : null;
+      const signal = snapshot && snapshot.signal ? snapshot.signal : null;
+      const marketSnapshot = snapshot && snapshot.market_snapshot ? snapshot.market_snapshot : null;
+      applyMarketLevelState(node, buildMarketLevelState(marketSnapshot, signal ? signal.direction_final : ""));
+    }};
+    const renderMarketOhlcReadout = (point, unit = "", chartTitle = "") => {{
+      if (!point) {{
+        return "";
+      }}
+      const unitSuffix = unit ? ` ${{escapePreviewText(unit)}}` : "";
+      const heading = [chartTitle, point.label].filter(Boolean).join(" · ");
+      const closeTone = typeof point.close === "number" && typeof point.open === "number" && point.close >= point.open
+        ? "#2f7e57"
+        : "#b44a3d";
+      return `<strong style="color:#15202a;">${{escapePreviewText(heading)}}</strong><span>O ${{formatPreviewPrice(point.open)}}${{unitSuffix}}</span><span>H ${{formatPreviewPrice(point.high)}}${{unitSuffix}}</span><span>L ${{formatPreviewPrice(point.low)}}${{unitSuffix}}</span><span style="color:${{closeTone}};font-weight:700;">C ${{formatPreviewPrice(point.close)}}${{unitSuffix}}</span>`;
+    }};
+    const attachInteractiveMarketCharts = (container, seriesEntries, titleResolver, scaleRange, scaleOffset) => {{
+      if (!container || !Array.isArray(seriesEntries)) {{
+        return;
+      }}
+      const cards = Array.from(container.querySelectorAll("article")).slice(-seriesEntries.length);
+      let persistedRangeState = {{}};
+      try {{
+        persistedRangeState = JSON.parse(container.dataset.marketRangeState || "{{}}");
+      }} catch (_error) {{
+        persistedRangeState = {{}};
+      }}
+      let persistedOverlayState = {{}};
+      try {{
+        persistedOverlayState = JSON.parse(container.dataset.marketOverlayState || "{{}}");
+      }} catch (_error) {{
+        persistedOverlayState = {{}};
+      }}
+      const buildRangePresets = (series) => {{
+        const total = Array.isArray(series.points) ? series.points.length : 0;
+        const focusRatio = series.label === "1D" ? 0.5 : series.label === "1W" ? 0.45 : 0.5;
+        const tightRatio = series.label === "1D" ? 0.22 : series.label === "1W" ? 0.2 : 0.25;
+        const focusMinimum = series.label === "1D" ? 10 : 6;
+        const tightMinimum = series.label === "1D" ? 6 : 4;
+        const fullLabel = series.label === "1D"
+          ? (marketPanelCopy.range_day || "Day")
+          : series.label === "1W"
+            ? (marketPanelCopy.range_week || "Week")
+            : (marketPanelCopy.range_month || "Month");
+        const presets = [
+          {{ key: "full", label: fullLabel, count: total }},
+          {{ key: "focus", label: marketPanelCopy.range_focus || "Focus", count: Math.min(total, Math.max(focusMinimum, Math.ceil(total * focusRatio))) }},
+          {{ key: "tight", label: marketPanelCopy.range_tight || "Tight", count: Math.min(total, Math.max(tightMinimum, Math.ceil(total * tightRatio))) }},
+        ];
+        return presets.filter((item, index) => index === 0 || item.count < presets[index - 1].count);
+      }};
+      cards.forEach((card, index) => {{
+        const series = seriesEntries[index];
+        if (!card || !series || !Array.isArray(series.points) || series.points.length === 0) {{
+          return;
+        }}
+        const svg = card.querySelector("[data-market-chart-svg]") || card.querySelector("svg");
+        if (!svg) {{
+          return;
+        }}
+        let toolbarNode = card.querySelector("[data-market-range-toolbar]");
+        if (!toolbarNode) {{
+          toolbarNode = document.createElement("div");
+          toolbarNode.setAttribute("data-market-range-toolbar", "");
+          toolbarNode.style.display = "flex";
+          toolbarNode.style.flexWrap = "wrap";
+          toolbarNode.style.gap = "6px";
+          toolbarNode.style.marginTop = "-2px";
+          toolbarNode.style.marginBottom = "2px";
+          card.insertBefore(toolbarNode, svg);
+        }}
+        let windowNode = card.querySelector("[data-market-range-window]");
+        if (!windowNode) {{
+          windowNode = document.createElement("p");
+          windowNode.className = "muted";
+          windowNode.setAttribute("data-market-range-window", "");
+          if (toolbarNode.nextSibling) {{
+            card.insertBefore(windowNode, toolbarNode.nextSibling);
+          }} else {{
+            card.appendChild(windowNode);
+          }}
+        }}
+        let readoutNode = card.querySelector("[data-market-ohlc-readout]");
+        if (!readoutNode) {{
+          readoutNode = document.createElement("div");
+          readoutNode.setAttribute("data-market-ohlc-readout", "");
+          readoutNode.style.display = "flex";
+          readoutNode.style.flexWrap = "wrap";
+          readoutNode.style.gap = "8px";
+          readoutNode.style.fontSize = "12px";
+          readoutNode.style.color = "#5c6970";
+          const firstMuted = card.querySelector("p.muted");
+          if (firstMuted) {{
+            card.insertBefore(readoutNode, firstMuted);
+          }} else {{
+            card.appendChild(readoutNode);
+          }}
+        }}
+        let hintNode = card.querySelector("[data-market-hover-hint]");
+        if (!hintNode) {{
+          hintNode = document.createElement("p");
+          hintNode.className = "muted";
+          hintNode.setAttribute("data-market-hover-hint", "");
+          hintNode.textContent = marketPanelCopy.hover_hint;
+          if (readoutNode.nextSibling) {{
+            card.insertBefore(hintNode, readoutNode.nextSibling);
+          }} else {{
+            card.appendChild(hintNode);
+          }}
+        }}
+        let levelLegendNode = card.querySelector("[data-market-level-legend]");
+        if (!levelLegendNode) {{
+          levelLegendNode = document.createElement("div");
+          levelLegendNode.setAttribute("data-market-level-legend", "");
+          levelLegendNode.style.display = "flex";
+          levelLegendNode.style.flexWrap = "wrap";
+          levelLegendNode.style.gap = "8px";
+          if (readoutNode) {{
+            card.insertBefore(levelLegendNode, readoutNode);
+          }} else {{
+            card.appendChild(levelLegendNode);
+          }}
+        }}
+        let levelDetailNode = card.querySelector("[data-market-level-detail]");
+        if (!levelDetailNode) {{
+          levelDetailNode = document.createElement("p");
+          levelDetailNode.className = "muted";
+          levelDetailNode.setAttribute("data-market-level-detail", "");
+          if (readoutNode) {{
+            card.insertBefore(levelDetailNode, readoutNode);
+          }} else {{
+            card.appendChild(levelDetailNode);
+          }}
+        }}
+        let measureNode = card.querySelector("[data-market-measure-readout]");
+        if (!measureNode) {{
+          measureNode = document.createElement("p");
+          measureNode.className = "muted";
+          measureNode.setAttribute("data-market-measure-readout", "");
+          measureNode.style.minHeight = "18px";
+          measureNode.style.color = "#17364d";
+          if (readoutNode) {{
+            card.insertBefore(measureNode, readoutNode);
+          }} else {{
+            card.appendChild(measureNode);
+          }}
+        }}
+        const chartTitle = typeof titleResolver === "function" ? titleResolver(series) : String(series.label || "");
+        const unit = container.dataset.marketUnit || "";
+        const unitSuffix = unit ? ` ${{escapePreviewText(unit)}}` : "";
+        const viewBox = svg.viewBox && svg.viewBox.baseVal ? svg.viewBox.baseVal : null;
+        const viewWidth = viewBox && viewBox.width ? viewBox.width : 248;
+        const viewHeight = viewBox && viewBox.height ? viewBox.height : 96;
+        const overlayItems = (Array.isArray(series.overlays) ? series.overlays : [])
+          .filter((overlay) => overlay && ["entry", "invalidation", "target"].includes(String(overlay.key || "")));
+        const overlayNote = (overlayKey) => {{
+          if (overlayKey === "entry") {{
+            return marketPanelCopy.level_entry_note || "";
+          }}
+          if (overlayKey === "invalidation") {{
+            return marketPanelCopy.level_invalidation_note || "";
+          }}
+          if (overlayKey === "target") {{
+            return marketPanelCopy.level_target_note || "";
+          }}
+          return "";
+        }};
+        const overlayKeyForSeries = series.label || String(index);
+        const overlayValueMap = Object.fromEntries(overlayItems.map((overlay) => [overlay.key, overlay]));
+        const resolveOverlayKey = (overlayKey) => overlayValueMap[overlayKey] ? overlayKey : (overlayItems[0] ? overlayItems[0].key : "");
+        const presets = buildRangePresets(series);
+        const subsetForRange = (rangeKey) => {{
+          const preset = presets.find((item) => item.key === rangeKey) || presets[0];
+          return series.points.slice(-preset.count);
+        }};
+        const buildSvgMarkup = (points) => {{
+          const overlayValues = Array.isArray(series.overlays) ? series.overlays.map((overlay) => overlay.value) : [];
+          const lows = points.map((point) => typeof point.low === "number" ? point.low : point.value).concat(overlayValues, [series.current_price]);
+          const highs = points.map((point) => typeof point.high === "number" ? point.high : point.value).concat(overlayValues, [series.current_price]);
+          const low = Math.min(...lows);
+          const high = Math.max(...highs);
+          const span = Math.max(high - low, 0.0001);
+          const bodyWidth = Math.max(6, Math.min(16, viewWidth / Math.max(points.length * 1.9, 1)));
+          const mapPriceY = (value) => viewHeight - (((value - low) / span) * (viewHeight - scaleRange)) - scaleOffset;
+          const candles = points.map((point, pointIndex) => {{
+            const x = points.length === 1 ? viewWidth / 2 : (pointIndex / (points.length - 1)) * viewWidth;
+            const openValue = typeof point.open === "number" ? point.open : point.value;
+            const closeValue = typeof point.close === "number" ? point.close : point.value;
+            const highValue = typeof point.high === "number" ? point.high : Math.max(openValue, closeValue);
+            const lowValue = typeof point.low === "number" ? point.low : Math.min(openValue, closeValue);
+            const openY = mapPriceY(openValue);
+            const closeY = mapPriceY(closeValue);
+            const highY = mapPriceY(highValue);
+            const lowY = mapPriceY(lowValue);
+            const bodyTop = Math.min(openY, closeY);
+            const bodyHeight = Math.max(Math.abs(closeY - openY), 3);
+            const tone = closeValue >= openValue ? "#2f7e57" : "#b44a3d";
+            return `<line x1="${{x.toFixed(1)}}" y1="${{highY.toFixed(1)}}" x2="${{x.toFixed(1)}}" y2="${{lowY.toFixed(1)}}" stroke="${{tone}}" stroke-width="1.8" stroke-linecap="round"></line><rect x="${{(x - (bodyWidth / 2)).toFixed(1)}}" y="${{bodyTop.toFixed(1)}}" width="${{bodyWidth.toFixed(1)}}" height="${{bodyHeight.toFixed(1)}}" rx="2" fill="${{tone}}" fill-opacity="0.92"></rect>`;
+          }}).join("");
+          const overlays = Array.isArray(series.overlays) ? series.overlays.map((overlay) => {{
+            const style = marketOverlayStyle(overlay.key);
+            const y = mapPriceY(overlay.value);
+            const label = escapePreviewText(marketOverlayLabels[overlay.key] || overlay.key);
+            return `<line x1="0" y1="${{y.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="${{style.stroke}}" stroke-width="1.2" stroke-dasharray="${{style.dasharray}}" opacity="0.95" data-market-overlay-line data-overlay-key="${{escapePreviewText(overlay.key)}}" style="cursor:pointer;"></line><line x1="0" y1="${{y.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="transparent" stroke-width="10" data-market-overlay-hit data-overlay-key="${{escapePreviewText(overlay.key)}}" style="cursor:pointer;"></line><text x="${{(viewWidth - 6).toFixed(1)}}" y="${{Math.max(12, Math.min(viewHeight - 4, y - 2)).toFixed(1)}}" text-anchor="end" fill="${{style.stroke}}" font-size="10" font-weight="700" data-market-overlay-label data-overlay-key="${{escapePreviewText(overlay.key)}}">${{label}}</text>`;
+          }}).join("") : "";
+          const baselineValue = points[0] && typeof points[0].open === "number" ? points[0].open : series.open_price;
+          const currentPriceY = mapPriceY(series.current_price);
+          const currentLine = `<line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="#15202a" stroke-width="1.3" opacity="0.78" data-market-current-line></line><line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="transparent" stroke-width="10" data-market-current-hit data-market-snap-key="price"></line><circle cx="${{(viewWidth - 6).toFixed(1)}}" cy="${{currentPriceY.toFixed(1)}}" r="3.4" fill="#15202a"></circle><text x="6" y="${{Math.max(12, Math.min(viewHeight - 4, currentPriceY - 4)).toFixed(1)}}" fill="#15202a" font-size="10" font-weight="700">${{escapePreviewText(marketLevelCopy.price_short)}}</text>`;
+          const measureLayer = `<g data-market-measure-layer style="display:none;pointer-events:none;"><line x1="0" y1="0" x2="0" y2="0" stroke="#17364d" stroke-width="1.8" stroke-dasharray="5 4" opacity="0.92" data-market-measure-line></line><circle cx="0" cy="0" r="3.2" fill="#17364d" data-market-measure-start-dot></circle><circle cx="0" cy="0" r="3.2" fill="#17364d" data-market-measure-end-dot></circle><text x="0" y="0" text-anchor="middle" fill="#17364d" font-size="10" font-weight="800" data-market-measure-label></text></g>`;
+          const crosshair = `<g data-market-crosshair-layer style="display:none;"><line x1="0" y1="0" x2="0" y2="${{viewHeight.toFixed(1)}}" stroke="rgba(21,32,42,0.22)" stroke-width="1" stroke-dasharray="3 3" data-market-crosshair-x></line><line x1="0" y1="0" x2="${{viewWidth.toFixed(1)}}" y2="0" stroke="rgba(21,32,42,0.18)" stroke-width="1" stroke-dasharray="3 3" data-market-crosshair-y></line><circle cx="0" cy="0" r="3.2" fill="#15202a" data-market-crosshair-dot></circle></g>`;
+          return {{
+            markup: `<line x1="0" y1="${{mapPriceY(baselineValue).toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{mapPriceY(baselineValue).toFixed(1)}}" stroke="rgba(21,32,42,0.08)" stroke-width="1" stroke-dasharray="4 4"></line>${{overlays}}${{currentLine}}${{candles}}${{measureLayer}}${{crosshair}}`,
+            mapPriceY,
+          }};
+        }};
+        let activePoints = subsetForRange(persistedRangeState[series.label || String(index)] || card.dataset.marketRangeKey || "full");
+        let activeMapPriceY = (value) => value;
+        let crosshairLayer = null;
+        let crosshairX = null;
+        let crosshairY = null;
+        let crosshairDot = null;
+        let measureLayerNode = null;
+        let measureLineNode = null;
+        let measureStartDotNode = null;
+        let measureEndDotNode = null;
+        let measureLabelNode = null;
+        let measureState = null;
+        let measurePointerId = null;
+        let measureDragging = false;
+        let measureMoved = false;
+        let activeOverlayKey = resolveOverlayKey(card.dataset.marketOverlayKey || persistedOverlayState[overlayKeyForSeries] || "");
+        if (!activeOverlayKey && overlayItems[0]) {{
+          activeOverlayKey = overlayItems[0].key;
+        }}
+        const pointCloseValue = (point) => {{
+          if (point && typeof point.close === "number") {{
+            return point.close;
+          }}
+          if (point && typeof point.value === "number") {{
+            return point.value;
+          }}
+          return null;
+        }};
+        const snapTolerancePx = 10;
+        const resolveMeasurementSnap = (localY, preferredSnapKey = "") => {{
+          const candidates = overlayItems.map((overlay) => {{
+            return {{
+              key: String(overlay.key || ""),
+              label: String(marketOverlayLabels[overlay.key] || overlay.key || ""),
+              value: overlay.value,
+            }};
+          }});
+          if (typeof series.current_price === "number") {{
+            candidates.push({{
+              key: "price",
+              label: String(marketLevelCopy.price_short || "Price"),
+              value: series.current_price,
+            }});
+          }}
+          if (preferredSnapKey) {{
+            const preferred = candidates.find((candidate) => candidate.key === preferredSnapKey);
+            if (preferred) {{
+              return preferred;
+            }}
+          }}
+          if (typeof localY !== "number") {{
+            return null;
+          }}
+          let best = null;
+          let bestDistance = snapTolerancePx;
+          for (const candidate of candidates) {{
+            const distance = Math.abs(activeMapPriceY(candidate.value) - localY);
+            if (distance <= bestDistance) {{
+              best = candidate;
+              bestDistance = distance;
+            }}
+          }}
+          return best;
+        }};
+        const buildMeasureAnchor = (resolved) => {{
+          if (!resolved) {{
+            return null;
+          }}
+          if (resolved.snapTarget) {{
+            return {{
+              label: resolved.snapTarget.label,
+              value: resolved.snapTarget.value,
+              x: resolved.x,
+              y: activeMapPriceY(resolved.snapTarget.value),
+              pointIndex: resolved.pointIndex,
+            }};
+          }}
+          const value = pointCloseValue(resolved.point);
+          if (typeof value !== "number") {{
+            return null;
+          }}
+          return {{
+            label: resolved.point && resolved.point.label ? resolved.point.label : "n/a",
+            value,
+            x: resolved.x,
+            y: activeMapPriceY(value),
+            pointIndex: resolved.pointIndex,
+          }};
+        }};
+        const persistOverlayKey = (overlayKey) => {{
+          const resolvedKey = resolveOverlayKey(overlayKey);
+          if (!resolvedKey) {{
+            return;
+          }}
+          activeOverlayKey = resolvedKey;
+          card.dataset.marketOverlayKey = resolvedKey;
+          persistedOverlayState[overlayKeyForSeries] = resolvedKey;
+          container.dataset.marketOverlayState = JSON.stringify(persistedOverlayState);
+        }};
+        const resetMeasurement = (preserveReadout = false) => {{
+          measureState = null;
+          measurePointerId = null;
+          measureDragging = false;
+          measureMoved = false;
+          if (measureLayerNode) {{
+            measureLayerNode.style.display = "none";
+          }}
+          if (!preserveReadout) {{
+            measureNode.textContent = marketPanelCopy.measure_hint || "";
+          }}
+        }};
+        const syncMeasurement = () => {{
+          if (
+            !measureState
+            || !measureState.startAnchor
+            || !measureState.endAnchor
+            || !measureLayerNode
+            || !measureLineNode
+            || !measureStartDotNode
+            || !measureEndDotNode
+            || !measureLabelNode
+          ) {{
+            if (measureLayerNode) {{
+              measureLayerNode.style.display = "none";
+            }}
+            measureNode.textContent = marketPanelCopy.measure_hint || "";
+            return;
+          }}
+          const startClose = measureState.startAnchor.value;
+          const endClose = measureState.endAnchor.value;
+          if (typeof startClose !== "number" || typeof endClose !== "number") {{
+            resetMeasurement();
+            return;
+          }}
+          const startY = measureState.startAnchor.y;
+          const endY = measureState.endAnchor.y;
+          const delta = endClose - startClose;
+          const base = Math.max(Math.abs(startClose), 0.0001);
+          const deltaPct = delta / base;
+          const bars = Math.abs((measureState.endAnchor.pointIndex ?? 0) - (measureState.startAnchor.pointIndex ?? 0)) + 1;
+          const deltaText = `${{delta >= 0 ? "+" : ""}}${{formatPreviewPrice(delta)}}${{unitSuffix}}`;
+          const pctText = formatPreviewPct(deltaPct);
+          const labelText = `${{pctText}} | ${{bars}} ${{marketPanelCopy.measure_bars_short || "bars"}}`;
+          const labelX = Math.max(18, Math.min(viewWidth - 18, (measureState.startAnchor.x + measureState.endAnchor.x) / 2));
+          const labelY = Math.max(14, Math.min(viewHeight - 8, (startY + endY) / 2 - 8));
+          measureLayerNode.style.display = "";
+          measureLineNode.setAttribute("x1", measureState.startAnchor.x.toFixed(1));
+          measureLineNode.setAttribute("y1", startY.toFixed(1));
+          measureLineNode.setAttribute("x2", measureState.endAnchor.x.toFixed(1));
+          measureLineNode.setAttribute("y2", endY.toFixed(1));
+          measureStartDotNode.setAttribute("cx", measureState.startAnchor.x.toFixed(1));
+          measureStartDotNode.setAttribute("cy", startY.toFixed(1));
+          measureEndDotNode.setAttribute("cx", measureState.endAnchor.x.toFixed(1));
+          measureEndDotNode.setAttribute("cy", endY.toFixed(1));
+          measureLabelNode.setAttribute("x", labelX.toFixed(1));
+          measureLabelNode.setAttribute("y", labelY.toFixed(1));
+          measureLabelNode.textContent = labelText;
+          measureNode.innerHTML = `<strong>${{escapePreviewText(marketPanelCopy.measure_title || "Measure")}}:</strong> ${{escapePreviewText(measureState.startAnchor.label || "n/a")}} -> ${{escapePreviewText(measureState.endAnchor.label || "n/a")}} | ${{escapePreviewText(marketPanelCopy.measure_delta || "Δ close")}} ${{escapePreviewText(deltaText)}} | ${{escapePreviewText(marketPanelCopy.measure_pct || "Δ %")}} ${{escapePreviewText(pctText)}} | ${{escapePreviewText(marketPanelCopy.measure_bars || "Bars")}} ${{bars}}`;
+        }};
+        const startMeasurement = (resolved, pointerId) => {{
+          const anchor = buildMeasureAnchor(resolved);
+          if (!resolved || !anchor) {{
+            return;
+          }}
+          measurePointerId = pointerId;
+          measureDragging = true;
+          measureMoved = false;
+          measureState = {{
+            startAnchor: anchor,
+            endAnchor: anchor,
+          }};
+          syncMeasurement();
+        }};
+        const updateMeasurement = (resolved) => {{
+          const anchor = buildMeasureAnchor(resolved);
+          if (!measureDragging || !measureState || !resolved || !anchor) {{
+            return;
+          }}
+          measureState.endAnchor = anchor;
+          if (
+            anchor.pointIndex !== measureState.startAnchor.pointIndex
+            || Math.abs(anchor.x - measureState.startAnchor.x) > 1
+            || Math.abs(anchor.value - measureState.startAnchor.value) > 0.0001
+            || anchor.label !== measureState.startAnchor.label
+          ) {{
+            measureMoved = true;
+          }}
+          syncMeasurement();
+        }};
+        const finishMeasurement = () => {{
+          if (!measureDragging) {{
+            return;
+          }}
+          measureDragging = false;
+          measurePointerId = null;
+          if (!measureMoved) {{
+            resetMeasurement();
+            return;
+          }}
+          syncMeasurement();
+        }};
+        const syncToolbar = (rangeKey) => {{
+          toolbarNode.innerHTML = presets.map((preset) => `<button type="button" data-market-range-button data-range-key="${{preset.key}}" style="padding:6px 10px;border-radius:999px;border:1px solid rgba(21,32,42,0.1);background:${{preset.key === rangeKey ? "#17364d" : "rgba(255,255,255,0.82)"}};color:${{preset.key === rangeKey ? "#f7f4ef" : "#15202a"}};font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;cursor:pointer;">${{escapePreviewText(preset.label)}}</button>`).join("");
+        }};
+        const syncLevelLegend = (overlayKey) => {{
+          if (!overlayItems.length) {{
+            levelLegendNode.style.display = "none";
+            levelLegendNode.innerHTML = "";
+            return;
+          }}
+          levelLegendNode.style.display = "flex";
+          levelLegendNode.innerHTML = overlayItems.map((overlay) => {{
+            const label = escapePreviewText(marketOverlayLabels[overlay.key] || overlay.key);
+            const value = `${{formatPreviewPrice(overlay.value)}}${{unitSuffix}}`;
+            const distance = typeof series.current_price === "number"
+              ? formatLevelDistance(series.current_price, overlay.value)
+              : "n/a";
+            const active = overlay.key === overlayKey;
+            return `<button type="button" data-market-level-button data-overlay-key="${{escapePreviewText(overlay.key)}}" title="${{escapePreviewText(`${{label}} | ${{value}} | ${{marketPanelCopy.level_distance || "Distance"}}: ${{distance}}`)}}" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid ${{active ? "rgba(23,54,77,0.24)" : "rgba(21,32,42,0.12)"}};background:${{active ? "rgba(23,54,77,0.12)" : "rgba(255,255,255,0.78)"}};color:${{active ? "#17364d" : "#3c4b56"}};font-size:11px;font-weight:700;cursor:pointer;"><span>${{label}}</span><span style="font-weight:600;color:${{active ? "#17364d" : "#5c6970"}};">${{escapePreviewText(value)}}</span></button>`;
+          }}).join("");
+        }};
+        const syncLevelFocus = (overlayKey) => {{
+          if (!overlayItems.length) {{
+            levelDetailNode.textContent = marketPanelCopy.level_hint || "";
+            levelDetailNode.style.display = "";
+            levelLegendNode.style.display = "none";
+            return;
+          }}
+          const resolvedKey = resolveOverlayKey(overlayKey);
+          const overlay = overlayValueMap[resolvedKey];
+          if (!overlay) {{
+            levelDetailNode.textContent = marketPanelCopy.level_hint || "";
+            levelDetailNode.style.display = "";
+            syncLevelLegend(activeOverlayKey);
+            return;
+          }}
+          const label = marketOverlayLabels[overlay.key] || overlay.key;
+          const distance = typeof series.current_price === "number"
+            ? formatLevelDistance(series.current_price, overlay.value)
+            : "n/a";
+          const note = overlayNote(overlay.key);
+          levelDetailNode.style.display = "";
+          levelDetailNode.innerHTML = `<strong>${{escapePreviewText(marketPanelCopy.level_legend || "Level")}}:</strong> ${{escapePreviewText(label)}} | ${{escapePreviewText(formatPreviewPrice(overlay.value) + unitSuffix)}} | ${{escapePreviewText(marketPanelCopy.level_distance || "Distance")}}: ${{escapePreviewText(distance)}}${{note ? ` | ${{escapePreviewText(note)}}` : ""}}`;
+          syncLevelLegend(resolvedKey);
+          Array.from(svg.querySelectorAll("[data-market-overlay-line]")).forEach((node) => {{
+            const currentKey = node.getAttribute("data-overlay-key") || "";
+            const active = currentKey === resolvedKey;
+            node.setAttribute("opacity", active ? "1" : "0.42");
+            node.setAttribute("stroke-width", active ? "2.3" : "1.2");
+          }});
+          Array.from(svg.querySelectorAll("[data-market-overlay-hit]")).forEach((node) => {{
+            const currentKey = node.getAttribute("data-overlay-key") || "";
+            node.setAttribute("stroke-width", currentKey === resolvedKey ? "12" : "10");
+          }});
+          Array.from(svg.querySelectorAll("[data-market-overlay-label]")).forEach((node) => {{
+            const currentKey = node.getAttribute("data-overlay-key") || "";
+            const active = currentKey === resolvedKey;
+            node.setAttribute("opacity", active ? "1" : "0.56");
+            node.setAttribute("font-weight", active ? "800" : "700");
+          }});
+        }};
+        const updateReadout = (point) => {{
+          readoutNode.innerHTML = renderMarketOhlcReadout(point, unit, chartTitle);
+        }};
+        const updateWindow = (points) => {{
+          const start = points[0] ? points[0].label : "n/a";
+          const end = points[points.length - 1] ? points[points.length - 1].label : "n/a";
+          windowNode.textContent = `${{escapePreviewText(start)}} → ${{escapePreviewText(end)}} | ${{points.length}} bars`;
+        }};
+        const renderRange = (rangeKey) => {{
+          card.dataset.marketRangeKey = rangeKey;
+          persistedRangeState[series.label || String(index)] = rangeKey;
+          container.dataset.marketRangeState = JSON.stringify(persistedRangeState);
+          activePoints = subsetForRange(rangeKey);
+          const chart = buildSvgMarkup(activePoints);
+          svg.innerHTML = chart.markup;
+          activeMapPriceY = chart.mapPriceY;
+          crosshairLayer = svg.querySelector("[data-market-crosshair-layer]");
+          crosshairX = svg.querySelector("[data-market-crosshair-x]");
+          crosshairY = svg.querySelector("[data-market-crosshair-y]");
+          crosshairDot = svg.querySelector("[data-market-crosshair-dot]");
+          measureLayerNode = svg.querySelector("[data-market-measure-layer]");
+          measureLineNode = svg.querySelector("[data-market-measure-line]");
+          measureStartDotNode = svg.querySelector("[data-market-measure-start-dot]");
+          measureEndDotNode = svg.querySelector("[data-market-measure-end-dot]");
+          measureLabelNode = svg.querySelector("[data-market-measure-label]");
+          syncToolbar(rangeKey);
+          updateWindow(activePoints);
+          updateReadout(activePoints[activePoints.length - 1] || null);
+          resetMeasurement();
+          if (activeOverlayKey) {{
+            persistOverlayKey(activeOverlayKey);
+          }}
+          syncLevelFocus(activeOverlayKey);
+        }};
+        const showPoint = (point, x) => {{
+          if (!crosshairLayer || !crosshairX || !crosshairY || !crosshairDot) {{
+            return;
+          }}
+          const y = activeMapPriceY(typeof point.close === "number" ? point.close : point.value);
+          crosshairLayer.style.display = "";
+          crosshairX.setAttribute("x1", x.toFixed(1));
+          crosshairX.setAttribute("x2", x.toFixed(1));
+          crosshairX.setAttribute("y1", "0");
+          crosshairX.setAttribute("y2", viewHeight.toFixed(1));
+          crosshairY.setAttribute("x1", "0");
+          crosshairY.setAttribute("x2", viewWidth.toFixed(1));
+          crosshairY.setAttribute("y1", y.toFixed(1));
+          crosshairY.setAttribute("y2", y.toFixed(1));
+          crosshairDot.setAttribute("cx", x.toFixed(1));
+          crosshairDot.setAttribute("cy", y.toFixed(1));
+          updateReadout(point);
+        }};
+        const resetChart = () => {{
+          if (crosshairLayer) {{
+            crosshairLayer.style.display = "none";
+          }}
+          updateReadout(activePoints[activePoints.length - 1] || null);
+        }};
+        const resolvePoint = (clientX, clientY = null, preferredSnapKey = "") => {{
+          const rect = svg.getBoundingClientRect();
+          if (!rect.width) {{
+            return null;
+          }}
+          const localX = ((clientX - rect.left) / rect.width) * viewWidth;
+          const localY = rect.height && typeof clientY === "number"
+            ? ((clientY - rect.top) / rect.height) * viewHeight
+            : null;
+          const pointIndex = activePoints.length === 1
+            ? 0
+            : Math.max(0, Math.min(activePoints.length - 1, Math.round((localX / viewWidth) * (activePoints.length - 1))));
+          const point = activePoints[pointIndex];
+          const x = activePoints.length === 1 ? viewWidth / 2 : (pointIndex / (activePoints.length - 1)) * viewWidth;
+          const snapTarget = resolveMeasurementSnap(localY, preferredSnapKey);
+          return {{ point, x, pointIndex, snapTarget }};
+        }};
+        if (card.dataset.marketInteractiveBound !== "1") {{
+          svg.style.cursor = "crosshair";
+          svg.addEventListener("pointerenter", (event) => {{
+            const overlayTarget = event.target.closest("[data-market-overlay-hit],[data-market-overlay-line],[data-market-overlay-label]");
+            if (overlayTarget) {{
+              syncLevelFocus(overlayTarget.getAttribute("data-overlay-key") || activeOverlayKey);
+            }} else {{
+              syncLevelFocus(activeOverlayKey);
+            }}
+            const resolved = resolvePoint(event.clientX, event.clientY);
+            if (!resolved) {{
+              return;
+            }}
+            if (measureDragging && (measurePointerId === null || measurePointerId === event.pointerId)) {{
+              updateMeasurement(resolved);
+            }}
+            showPoint(resolved.point, resolved.x);
+          }});
+          svg.addEventListener("pointermove", (event) => {{
+            const overlayTarget = event.target.closest("[data-market-overlay-hit],[data-market-overlay-line],[data-market-overlay-label]");
+            if (overlayTarget) {{
+              syncLevelFocus(overlayTarget.getAttribute("data-overlay-key") || activeOverlayKey);
+            }} else {{
+              syncLevelFocus(activeOverlayKey);
+            }}
+            const resolved = resolvePoint(event.clientX, event.clientY);
+            if (!resolved) {{
+              return;
+            }}
+            if (measureDragging && (measurePointerId === null || measurePointerId === event.pointerId)) {{
+              updateMeasurement(resolved);
+            }}
+            showPoint(resolved.point, resolved.x);
+          }});
+          svg.addEventListener("pointerleave", () => {{
+            if (measureDragging) {{
+              return;
+            }}
+            resetChart();
+            syncLevelFocus(activeOverlayKey);
+          }});
+          svg.addEventListener("pointerdown", (event) => {{
+            const overlayTarget = event.target.closest("[data-market-overlay-hit],[data-market-overlay-line],[data-market-overlay-label]");
+            const currentTarget = event.target.closest("[data-market-current-hit]");
+            const preferredSnapKey = overlayTarget
+              ? (overlayTarget.getAttribute("data-overlay-key") || "")
+              : currentTarget
+                ? (currentTarget.getAttribute("data-market-snap-key") || "price")
+                : "";
+            if (overlayTarget) {{
+              event.preventDefault();
+              persistOverlayKey(preferredSnapKey || activeOverlayKey);
+              syncLevelFocus(activeOverlayKey);
+            }}
+            const resolved = resolvePoint(event.clientX, event.clientY, preferredSnapKey);
+            if (!resolved) {{
+              return;
+            }}
+            if (typeof svg.setPointerCapture === "function") {{
+              try {{
+                svg.setPointerCapture(event.pointerId);
+              }} catch (_error) {{
+              }}
+            }}
+            startMeasurement(resolved, event.pointerId);
+            showPoint(resolved.point, resolved.x);
+          }});
+          svg.addEventListener("pointerup", (event) => {{
+            if (!measureDragging || (measurePointerId !== null && event.pointerId !== measurePointerId)) {{
+              return;
+            }}
+            if (typeof svg.releasePointerCapture === "function") {{
+              try {{
+                svg.releasePointerCapture(event.pointerId);
+              }} catch (_error) {{
+              }}
+            }}
+            finishMeasurement();
+          }});
+          svg.addEventListener("pointercancel", () => {{
+            resetMeasurement();
+          }});
+          svg.addEventListener("dblclick", (event) => {{
+            event.preventDefault();
+            resetMeasurement();
+          }});
+          toolbarNode.addEventListener("click", (event) => {{
+            const button = event.target.closest("[data-market-range-button]");
+            if (!button) {{
+              return;
+            }}
+            event.preventDefault();
+            renderRange(button.dataset.rangeKey || "full");
+          }});
+          levelLegendNode.addEventListener("pointerover", (event) => {{
+            const button = event.target.closest("[data-market-level-button]");
+            if (!button) {{
+              return;
+            }}
+            syncLevelFocus(button.dataset.overlayKey || activeOverlayKey);
+          }});
+          levelLegendNode.addEventListener("pointerleave", () => {{
+            syncLevelFocus(activeOverlayKey);
+          }});
+          levelLegendNode.addEventListener("focusin", (event) => {{
+            const button = event.target.closest("[data-market-level-button]");
+            if (!button) {{
+              return;
+            }}
+            syncLevelFocus(button.dataset.overlayKey || activeOverlayKey);
+          }});
+          levelLegendNode.addEventListener("focusout", (event) => {{
+            if (levelLegendNode.contains(event.relatedTarget)) {{
+              return;
+            }}
+            syncLevelFocus(activeOverlayKey);
+          }});
+          levelLegendNode.addEventListener("click", (event) => {{
+            const button = event.target.closest("[data-market-level-button]");
+            if (!button) {{
+              return;
+            }}
+            event.preventDefault();
+            persistOverlayKey(button.dataset.overlayKey || activeOverlayKey);
+            syncLevelFocus(activeOverlayKey);
+          }});
+          card.dataset.marketInteractiveBound = "1";
+        }}
+        card.setAttribute("data-market-chart-card", "");
+        card.dataset.marketChartTitle = chartTitle;
+        renderRange(card.dataset.marketRangeKey || "full");
+      }});
+    }};
+    const renderMarketPanelUnavailable = () => `<div class="panel-head"><h2>${{escapePreviewText(marketPanelCopy.title)}}</h2><p>${{escapePreviewText(marketPanelCopy.subtitle)}}</p></div><div class="metric-list" data-market-unavailable><article class="action-card tone-warning"><strong>${{escapePreviewText(marketPanelCopy.unavailable_title || marketPanelCopy.warning_title)}}</strong><p class="muted">${{escapePreviewText(marketPanelCopy.unavailable_body || marketPanelCopy.warning_body)}}</p></article></div>`;
+    const renderMarketPanelBody = (snapshot) => {{
+      if (!snapshot) {{
+        return renderMarketPanelUnavailable();
+      }}
+      const unitSuffix = snapshot.unit ? ` ${{escapePreviewText(snapshot.unit)}}` : "";
+      const warning = snapshot.status && snapshot.status !== "fresh"
+        ? `<div class="metric-list" style="margin-bottom:12px;"><article class="action-card tone-${{escapePreviewText(snapshot.status === "degraded" ? "warning" : "neutral")}}"><strong>${{escapePreviewText(marketPanelCopy.warning_title)}}</strong><p class="muted">${{escapePreviewText(snapshot.status)}} | ${{escapePreviewText(snapshot.status_detail || marketPanelCopy.warning_body)}}</p></article></div>`
+        : "";
+      const renderPanelChart = (series) => {{
+        if (!series) {{
+          return "";
+        }}
+        const overlaySummary = renderOverlaySummary(series, snapshot.unit);
+        const distanceBar = buildMarketDistanceBar(series, snapshot.unit);
+        return `<article style="padding:14px 16px;border-radius:18px;border:1px solid rgba(21, 32, 42, 0.1);background:rgba(255,255,255,0.72);display:grid;gap:10px;"><div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;"><strong>${{escapePreviewText(rootPreviewTimeframes[series.label] || series.label)}} · ${{escapePreviewText(series.label)}}</strong><span style="font-weight:700;color:${{series.change_abs >= 0 ? "#2f7e57" : "#b44a3d"}};">${{formatPreviewPrice(series.current_price)}}${{unitSuffix}}</span></div>${{renderRootPreviewChart(series)}}<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#5c6970;"><span>${{escapePreviewText(series.points[0] ? series.points[0].label : series.label)}}</span><span>${{escapePreviewText(series.points[series.points.length - 1] ? series.points[series.points.length - 1].label : series.label)}}</span></div><p class="muted">${{escapePreviewText(rootPreviewMessages.open)}} ${{formatPreviewPrice(series.open_price)}}${{unitSuffix}} | ${{escapePreviewText(rootPreviewMessages.change)}} ${{formatPreviewPrice(series.change_abs)}}${{unitSuffix}} (${{formatPreviewPct(series.change_pct)}})</p><p class="muted">${{escapePreviewText(rootPreviewMessages.range)}} ${{formatPreviewPrice(series.low_price)}}${{unitSuffix}} - ${{formatPreviewPrice(series.high_price)}}${{unitSuffix}}</p>${{distanceBar}}${{overlaySummary ? `<p class="muted">${{escapePreviewText(marketPanelCopy.levels)}} ${{escapePreviewText(overlaySummary)}}</p>` : ""}}</article>`;
+      }};
+      return `<div class="panel-head"><h2>${{escapePreviewText(marketPanelCopy.title)}}</h2><p>${{escapePreviewText(marketPanelCopy.subtitle)}}</p></div>${{warning}}<div class="metric-list" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));"><article><span>${{escapePreviewText(marketPanelCopy.current_price)}}</span><strong>${{formatPreviewPrice(snapshot.current_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.root_code)}} · ${{escapePreviewText(snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.daily_change)}}</span><strong>${{snapshot.price_change_abs >= 0 ? "+" : ""}}${{formatPreviewPrice(snapshot.price_change_abs)}}${{unitSuffix}}</strong><p class="muted">${{formatPreviewPct(snapshot.price_change_pct)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.day_high)}}</span><strong>${{formatPreviewPrice(snapshot.daily.high_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.daily.points[snapshot.daily.points.length - 1] ? snapshot.daily.points[snapshot.daily.points.length - 1].label : snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.day_low)}}</span><strong>${{formatPreviewPrice(snapshot.daily.low_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.daily.points[0] ? snapshot.daily.points[0].label : snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.updated)}}</span><strong>${{escapePreviewText(formatPreviewTime(snapshot.as_of))}}</strong><p class="muted">${{escapePreviewText(marketPanelCopy.status)}}: ${{escapePreviewText(snapshot.status || "n/a")}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.source)}}</span><strong>${{escapePreviewText(snapshot.price_source)}}</strong><p class="muted">${{escapePreviewText(snapshot.base_asset)}}</p></article></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:16px;">${{renderPanelChart(snapshot.daily)}}${{renderPanelChart(snapshot.weekly)}}${{renderPanelChart(snapshot.monthly)}}</div>`;
     }};
     const setRootPreviewContent = (rootCode, timeframe, snapshot) => {{
       const card = document.querySelector(`[data-root-preview-card][data-root-code="${{rootCode}}"]`);
@@ -3794,6 +5961,8 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         snapshot.status || "n/a"
       }}`;
       chartNode.innerHTML = renderRootPreviewChart(series);
+      const overlaySummary = renderOverlaySummary(series, snapshot.unit);
+      const levelState = buildMarketLevelState(snapshot);
       metaNode.innerHTML = `<span>${{rootPreviewMessages.last}} ${{
         formatPreviewPrice(snapshot.current_price)
       }}${{
@@ -3806,7 +5975,9 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         formatPreviewPrice(series.low_price)
       }} - ${{
         formatPreviewPrice(series.high_price)
-      }}</span>`;
+      }}</span><span>${{escapePreviewText(marketLevelCopy.price_map)}} ${{escapePreviewText(levelState.label)}} | ${{escapePreviewText(levelState.detail)}}</span>${{overlaySummary ? `<span>${{escapePreviewText(marketPanelCopy.levels)}} ${{escapePreviewText(overlaySummary)}}</span>` : ""}}`;
+      setRootLanePriceLine(rootCode, snapshot);
+      setRootLevelState(rootCode, snapshot);
       for (const pinButton of card.querySelectorAll("[data-pin-root-preview]")) {{
         pinButton.dataset.timeframe = timeframe;
       }}
@@ -3833,6 +6004,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       updatedNode.textContent = message;
       chartNode.innerHTML = `<div class="empty">${{message}}</div>`;
       metaNode.textContent = rootPreviewMessages.pick;
+      setRootLevelState(rootCode, null);
       for (const pinButton of card.querySelectorAll("[data-pin-root-preview]")) {{
         pinButton.dataset.timeframe = timeframe;
       }}
@@ -3847,31 +6019,38 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         popover.hidden = true;
       }}
     }};
-    const fetchRootPreviewSnapshot = async (rootCode) => {{
-      if (rootPreviewCache.has(rootCode)) {{
+    const fetchRootPreviewSnapshot = async (rootCode, options = {{}}) => {{
+      const force = Boolean(options.force);
+      if (!force && rootPreviewCache.has(rootCode)) {{
         return rootPreviewCache.get(rootCode);
       }}
-      const response = await fetch(`/api/v1/workspace/market-preview?root=${{encodeURIComponent(rootCode)}}`);
+      const response = await fetch(`/api/v1/workspace/market-preview?root=${{encodeURIComponent(rootCode)}}`, {{ cache: "no-store" }});
       if (!response.ok) {{
         throw new Error("preview request failed");
       }}
       const payload = await response.json();
-      if (!payload) {{
-        throw new Error("preview payload missing");
-      }}
-      rootPreviewCache.set(rootCode, payload);
-      return payload;
+      rootPreviewCache.set(rootCode, payload || null);
+      return payload || null;
     }};
     const openRootPreview = async (rootCode, timeframe) => {{
       hideRootPreviews(rootCode);
       if (rootPreviewCache.has(rootCode)) {{
-        setRootPreviewContent(rootCode, timeframe, rootPreviewCache.get(rootCode));
+        const cached = rootPreviewCache.get(rootCode);
+        if (cached) {{
+          setRootPreviewContent(rootCode, timeframe, cached);
+        }} else {{
+          setRootPreviewMessage(rootCode, timeframe, rootPreviewMessages.unavailable);
+        }}
         return;
       }}
       setRootPreviewMessage(rootCode, timeframe, rootPreviewMessages.loading);
       try {{
         const payload = await fetchRootPreviewSnapshot(rootCode);
-        setRootPreviewContent(rootCode, timeframe, payload);
+        if (payload) {{
+          setRootPreviewContent(rootCode, timeframe, payload);
+        }} else {{
+          setRootPreviewMessage(rootCode, timeframe, rootPreviewMessages.unavailable);
+        }}
       }} catch (_error) {{
         setRootPreviewMessage(rootCode, timeframe, rootPreviewMessages.unavailable);
       }}
@@ -3906,15 +6085,36 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       a: document.querySelector('[data-compare-root-slot="a"]'),
       b: document.querySelector('[data-compare-root-slot="b"]'),
     }};
+    const compareRootDeltaNode = document.querySelector("[data-compare-root-delta]");
+    const compareRootRegimeNode = document.querySelector("[data-compare-root-regime]");
     const compareSignalNodes = {{
       a: document.querySelector('[data-compare-signal-slot="a"]'),
       b: document.querySelector('[data-compare-signal-slot="b"]'),
     }};
+    const compareSignalDeltaNode = document.querySelector("[data-compare-signal-delta]");
+    const compareSignalRegimeNode = document.querySelector("[data-compare-signal-regime]");
     const compareStatusNode = document.querySelector("[data-compare-status]");
     const compareClearAllButton = document.querySelector("[data-compare-clear-all]");
+    const liveMarketPanelNode = document.querySelector("[data-market-panel]");
     const compareState = {{
       roots: {{ a: null, b: null }},
       signals: {{ a: null, b: null }},
+    }};
+    const compareRangeState = {{
+      root: "full",
+      signal: "full",
+    }};
+    const compareOverlayState = {{
+      root: "",
+      signal: "",
+    }};
+    const compareLeaderHistory = {{
+      roots: null,
+      signals: null,
+    }};
+    const compareRegimeHistory = {{
+      roots: null,
+      signals: null,
     }};
     const setSignalPreviewMessage = (signalId, timeframe, message) => {{
       const card = document.querySelector(`[data-signal-preview-card][data-signal-id="${{signalId}}"]`);
@@ -3938,6 +6138,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       chartNode.innerHTML = `<div class="empty">${{escapePreviewText(message)}}</div>`;
       gridNode.innerHTML = "";
       summaryNode.textContent = signalPreviewMessages.unavailable;
+      setSignalLaneLevelState(signalId, null);
       for (const pinButton of card.querySelectorAll("[data-pin-signal-preview]")) {{
         pinButton.dataset.timeframe = timeframe;
       }}
@@ -3964,6 +6165,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       const diffSummary = snapshot && snapshot.signal_diff && snapshot.signal_diff.summary
         ? snapshot.signal_diff.summary
         : signalPreviewMessages.none;
+      const levelState = buildMarketLevelState(marketSnapshot, signal ? signal.direction_final : "");
       const latestEvent = snapshot && Array.isArray(snapshot.decision_log) && snapshot.decision_log.length > 0
         ? `${{snapshot.decision_log[0].title}} | ${{previewExcerpt(snapshot.decision_log[0].detail, 120)}}`
         : signalPreviewMessages.none;
@@ -3982,6 +6184,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         `<article><span>${{escapePreviewText(signalPreviewMessages.skeptic)}}</span><strong>${{signal && typeof signal.skeptic_score === "number" ? signal.skeptic_score.toFixed(2) : "n/a"}}</strong></article>`,
         `<article><span>${{escapePreviewText(signalPreviewMessages.priority)}}</span><strong>${{signal && signal.priority_score !== undefined ? escapePreviewText(signal.priority_score) : "n/a"}}</strong></article>`,
         `<article><span>${{escapePreviewText(signalPreviewMessages.price)}}</span><strong>${{marketSnapshot ? `${{formatPreviewPrice(marketSnapshot.current_price)}}${{marketSnapshot.unit ? ` ${{escapePreviewText(marketSnapshot.unit)}}` : ""}}` : "n/a"}}</strong></article>`,
+        `<article><span>${{escapePreviewText(marketLevelCopy.price_map)}}</span><strong>${{escapePreviewText(levelState.label)}}</strong><p class="muted">${{escapePreviewText(levelState.detail)}}</p></article>`,
       ].join("");
       summaryNode.innerHTML = `<strong>${{
         escapePreviewText(signal ? `${{signal.direction_final}} | ${{signal.horizon}} | ${{signal.workflow_state}}` : signalPreviewMessages.none)
@@ -3992,6 +6195,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       }}</p><p><strong>${{escapePreviewText(signalPreviewMessages.timeline)}}:</strong> ${{
         escapePreviewText(latestEvent)
       }}</p>`;
+      setSignalLaneLevelState(signalId, snapshot);
       for (const pinButton of card.querySelectorAll("[data-pin-signal-preview]")) {{
         pinButton.dataset.timeframe = timeframe;
       }}
@@ -4006,11 +6210,12 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         popover.hidden = true;
       }}
     }};
-    const fetchSignalPreviewSnapshot = async (signalId) => {{
-      if (signalPreviewCache.has(signalId)) {{
+    const fetchSignalPreviewSnapshot = async (signalId, options = {{}}) => {{
+      const force = Boolean(options.force);
+      if (!force && signalPreviewCache.has(signalId)) {{
         return signalPreviewCache.get(signalId);
       }}
-      const response = await fetch(`/api/v1/workspace/signals/${{encodeURIComponent(signalId)}}`);
+      const response = await fetch(`/api/v1/workspace/signals/${{encodeURIComponent(signalId)}}`, {{ cache: "no-store" }});
       if (!response.ok) {{
         throw new Error("signal preview request failed");
       }}
@@ -4055,10 +6260,64 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       }});
     }}
     const normalizeCompareTimeframe = (value) => rootPreviewTimeframes[value] ? value : "1D";
+    const normalizeCompareRange = (value) => ["full", "focus", "tight"].includes(String(value || "").toLowerCase())
+      ? String(value).toLowerCase()
+      : "full";
     const normalizeCompareSlot = (value) => compareSlots.includes(String(value || "").toLowerCase())
       ? String(value).toLowerCase()
       : "a";
     const slotTitle = (kind, slot) => `${{kind === "root" ? compareMessages.root_slot : compareMessages.signal_slot}} ${{slot.toUpperCase()}}`;
+    const buildCompareRangePresets = (series) => {{
+      const total = Array.isArray(series && series.points) ? series.points.length : 0;
+      const focusRatio = series && series.label === "1D" ? 0.5 : series && series.label === "1W" ? 0.45 : 0.5;
+      const tightRatio = series && series.label === "1D" ? 0.22 : series && series.label === "1W" ? 0.2 : 0.25;
+      const focusMinimum = series && series.label === "1D" ? 10 : 6;
+      const tightMinimum = series && series.label === "1D" ? 6 : 4;
+      const presets = [
+        {{ key: "full", label: compareMessages.zoom_full || "Full", count: total }},
+        {{ key: "focus", label: compareMessages.zoom_focus || "Focus", count: Math.min(total, Math.max(focusMinimum, Math.ceil(total * focusRatio))) }},
+        {{ key: "tight", label: compareMessages.zoom_tight || "Impulse", count: Math.min(total, Math.max(tightMinimum, Math.ceil(total * tightRatio))) }},
+      ];
+      return presets.filter((item, index) => index === 0 || item.count < presets[index - 1].count);
+    }};
+    const sliceSeriesForCompareRange = (series, rangeKey) => {{
+      if (!series || !Array.isArray(series.points) || series.points.length === 0) {{
+        return series;
+      }}
+      const presets = buildCompareRangePresets(series);
+      const resolvedRange = normalizeCompareRange(rangeKey);
+      const preset = presets.find((item) => item.key === resolvedRange) || presets[0];
+      const points = series.points.slice(-preset.count);
+      if (!points.length) {{
+        return series;
+      }}
+      const openPrice = typeof points[0].open === "number" ? points[0].open : points[0].value;
+      const currentPrice = typeof points[points.length - 1].close === "number"
+        ? points[points.length - 1].close
+        : points[points.length - 1].value;
+      const lows = points.map((point) => typeof point.low === "number" ? point.low : point.value);
+      const highs = points.map((point) => typeof point.high === "number" ? point.high : point.value);
+      const changeAbs = currentPrice - openPrice;
+      const base = Math.max(Math.abs(openPrice), 0.0001);
+      return {{
+        ...series,
+        points,
+        open_price: openPrice,
+        current_price: currentPrice,
+        low_price: Math.min(...lows),
+        high_price: Math.max(...highs),
+        change_abs: changeAbs,
+        change_pct: changeAbs / base,
+        compare_range_key: preset.key,
+      }};
+    }};
+    const buildCompareRangeToolbar = (kind, activeRange, series) => {{
+      const presets = buildCompareRangePresets(series);
+      return presets.map((preset) => {{
+        const activeClass = preset.key === activeRange ? " is-active" : "";
+        return `<button class="rail-preview-button${{activeClass}}" type="button" data-compare-range-button data-compare-kind="${{kind}}" data-range-key="${{preset.key}}">${{escapePreviewText(preset.label)}}</button>`;
+      }}).join("");
+    }};
     const serializeCompareCollection = (collection, idKey) => {{
       const payload = {{}};
       for (const slot of compareSlots) {{
@@ -4099,6 +6358,14 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         const payload = {{
           roots: serializeCompareCollection(compareState.roots, "rootCode"),
           signals: serializeCompareCollection(compareState.signals, "signalId"),
+          ranges: {{
+            root: normalizeCompareRange(compareRangeState.root),
+            signal: normalizeCompareRange(compareRangeState.signal),
+          }},
+          overlays: {{
+            root: String(compareOverlayState.root || ""),
+            signal: String(compareOverlayState.signal || ""),
+          }},
         }};
         window.localStorage.setItem(compareStorageKey, JSON.stringify(payload));
       }} catch (_error) {{
@@ -4117,6 +6384,10 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
           compareState.roots[slot] = restoredRoots[slot];
           compareState.signals[slot] = restoredSignals[slot];
         }}
+        compareRangeState.root = normalizeCompareRange(parsed && parsed.ranges ? parsed.ranges.root : compareRangeState.root);
+        compareRangeState.signal = normalizeCompareRange(parsed && parsed.ranges ? parsed.ranges.signal : compareRangeState.signal);
+        compareOverlayState.root = parsed && parsed.overlays ? String(parsed.overlays.root || "") : compareOverlayState.root;
+        compareOverlayState.signal = parsed && parsed.overlays ? String(parsed.overlays.signal || "") : compareOverlayState.signal;
       }} catch (_error) {{
       }}
     }};
@@ -4178,6 +6449,351 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       }}
       compareStatusNode.textContent = parts.length ? parts.join(" | ") : compareMessages.status_empty;
     }};
+    const formatSignedDelta = (value, digits = 2) => {{
+      if (typeof value !== "number" || Number.isNaN(value)) {{
+        return "n/a";
+      }}
+      return `${{value >= 0 ? "+" : ""}}${{value.toFixed(digits)}}`;
+    }};
+    const pickDeltaTone = (value) => {{
+      if (typeof value !== "number" || Number.isNaN(value)) {{
+        return "is-neutral";
+      }}
+      if (value === 0) {{
+        return "is-neutral";
+      }}
+      return "is-positive";
+    }};
+    const buildCompareTooltip = (summary, leftLabel, rightLabel) =>
+      `${{summary}} A: ${{leftLabel}}. B: ${{rightLabel}}.`;
+    const renderDeltaChip = (label, value, tone, tooltip, note = "") =>
+      `<article class="compare-delta-chip ${{tone}}" data-tooltip="${{escapePreviewText(tooltip)}}" title="${{escapePreviewText(tooltip)}}" tabindex="0"><span>${{escapePreviewText(label)}}</span><strong>${{escapePreviewText(value)}}</strong>${{note ? `<small class="compare-delta-note">${{escapePreviewText(note)}}</small>` : ""}}</article>`;
+    const buildLeaderShiftNote = (previous, current) => {{
+      if (!previous || !current || previous.timeframeSignature === current.timeframeSignature) {{
+        return "";
+      }}
+      const parts = [
+        previous.leaderKey === current.leaderKey
+          ? compareMessages.tooltip_shift_stable
+          : compareMessages.tooltip_shift_intro,
+        `${{compareMessages.tooltip_shift_was}} ${{previous.leaderLabel}}.`,
+        `${{compareMessages.tooltip_shift_now}} ${{current.leaderLabel}}.`,
+        `${{compareMessages.tooltip_shift_frames}} ${{previous.timeframeSignature}} -> ${{current.timeframeSignature}}.`,
+      ];
+      if (previous.spreadLabel && current.spreadLabel) {{
+        parts.push(`${{compareMessages.tooltip_shift_spread}} ${{previous.spreadLabel}} -> ${{current.spreadLabel}}.`);
+      }}
+      return parts.join(" ");
+    }};
+    const buildLeaderShiftCallout = (previous, current) => {{
+      if (!previous || !current || previous.timeframeSignature === current.timeframeSignature) {{
+        return "";
+      }}
+      return `${{compareMessages.tooltip_shift_was}}: ${{previous.leaderLabel}} -> ${{compareMessages.tooltip_shift_now}}: ${{current.leaderLabel}}`;
+    }};
+    const buildPairMismatchCallout = (leftLabel, rightLabel) => {{
+      if (leftLabel === rightLabel) {{
+        return "";
+      }}
+      return `A: ${{leftLabel}} | B: ${{rightLabel}}`;
+    }};
+    const pickRegimeTone = (leftState, rightState) => {{
+      const tones = [leftState && leftState.tone ? leftState.tone : "neutral", rightState && rightState.tone ? rightState.tone : "neutral"];
+      if (tones.includes("warning")) {{
+        return "warning";
+      }}
+      if (tones.every((tone) => tone === "positive")) {{
+        return "positive";
+      }}
+      return "neutral";
+    }};
+    const snapshotCompareRegimeState = (state) => state
+      ? {{
+          stateKey: String(state.stateKey || ""),
+          anchorKey: String(state.anchorKey || ""),
+          label: String(state.label || ""),
+          detail: String(state.detail || ""),
+          tone: String(state.tone || "neutral"),
+        }}
+      : null;
+    const buildCompareRegimeDriftNote = (previous, current) => {{
+      if (!previous || !current || previous.signature !== current.signature) {{
+        return "";
+      }}
+      const parts = [];
+      for (const slot of compareSlots) {{
+        const prevState = previous.states[slot];
+        const nextState = current.states[slot];
+        if (!prevState || !nextState || !prevState.stateKey || !nextState.stateKey || prevState.stateKey === nextState.stateKey) {{
+          continue;
+        }}
+        const levelKey = nextState.anchorKey || prevState.anchorKey || "";
+        const levelLabel = levelKey ? (marketOverlayLabels[levelKey] || levelKey) : "";
+        const prefix = levelLabel
+          ? `${{slot.toUpperCase()}}: ${{compareMessages.regime_drift_crossed || "Crossed"}} ${{levelLabel}}.`
+          : `${{slot.toUpperCase()}}: ${{compareMessages.regime_drift_changed || "The regime just changed."}}`;
+        parts.push(`${{prefix}} ${{compareMessages.tooltip_shift_was}}: ${{prevState.label}}. ${{compareMessages.tooltip_shift_now}}: ${{nextState.label}}.`);
+      }}
+      return parts.join(" ");
+    }};
+    const renderCompareRegimeStrip = (node, leftState, rightState, waitingMessage, driftNote = "") => {{
+      if (!node) {{
+        return;
+      }}
+      if (!leftState || !rightState) {{
+        node.innerHTML = `<div class="compare-delta-empty">${{escapePreviewText(waitingMessage)}}</div>`;
+        return;
+      }}
+      const sameLabel = leftState.label === rightState.label;
+      const summaryTone = pickRegimeTone(leftState, rightState);
+      const summaryLine = sameLabel
+        ? `${{compareMessages.regime_same}} ${{leftState.label}}`
+        : `${{compareMessages.regime_split}} A: ${{leftState.label}} | B: ${{rightState.label}}`;
+      const detailLine = (leftState.detail || "") === (rightState.detail || "")
+        ? (leftState.detail || "")
+        : `A: ${{leftState.detail || "n/a"}} | B: ${{rightState.detail || "n/a"}}`;
+      const buildSideCard = (slot, state) => `<article class="market-level-chip tone-${{state && state.tone ? state.tone : "neutral"}}" data-compare-regime-chip="${{slot}}"><strong>${{slot.toUpperCase()}} · ${{escapePreviewText(state && state.label ? state.label : "n/a")}}</strong><span>${{escapePreviewText(state && state.detail ? state.detail : "n/a")}}</span></article>`;
+      const noteMarkup = driftNote ? `<small class="compare-regime-note">${{escapePreviewText(driftNote)}}</small>` : "";
+      node.innerHTML = `<article class="market-level-chip tone-${{summaryTone}} compare-regime-summary" data-compare-regime-summary><strong>${{escapePreviewText(compareMessages.regime_title || "Price vs setup")}}</strong><span>${{escapePreviewText(summaryLine)}}</span><span>${{escapePreviewText(detailLine || "")}}</span>${{noteMarkup}}</article>${{buildSideCard("a", leftState)}}${{buildSideCard("b", rightState)}}`;
+    }};
+    const renderRootDeltaStrip = () => {{
+      if (!compareRootDeltaNode) {{
+        return;
+      }}
+      const left = compareState.roots.a;
+      const right = compareState.roots.b;
+      if (!left || !right) {{
+        compareLeaderHistory.roots = null;
+        compareRootDeltaNode.innerHTML = `<div class="compare-delta-empty">${{escapePreviewText(compareMessages.root_delta_waiting)}}</div>`;
+        return;
+      }}
+      const leftSnapshot = rootPreviewCache.get(left.rootCode);
+      const rightSnapshot = rootPreviewCache.get(right.rootCode);
+      if (!leftSnapshot || !rightSnapshot) {{
+        compareLeaderHistory.roots = null;
+        compareRootDeltaNode.innerHTML = `<div class="compare-delta-empty">${{escapePreviewText(compareMessages.loading)}}</div>`;
+        return;
+      }}
+      const leftSeries = sliceSeriesForCompareRange(resolvePreviewSeries(leftSnapshot, left.timeframe), compareRangeState.root);
+      const rightSeries = sliceSeriesForCompareRange(resolvePreviewSeries(rightSnapshot, right.timeframe), compareRangeState.root);
+      const priceDiff = (leftSnapshot.current_price ?? NaN) - (rightSnapshot.current_price ?? NaN);
+      const changeDiff = ((leftSeries && typeof leftSeries.change_pct === "number" ? leftSeries.change_pct : NaN) - (rightSeries && typeof rightSeries.change_pct === "number" ? rightSeries.change_pct : NaN)) * 100;
+      const leftChange = leftSeries && typeof leftSeries.change_pct === "number" ? leftSeries.change_pct : NaN;
+      const rightChange = rightSeries && typeof rightSeries.change_pct === "number" ? rightSeries.change_pct : NaN;
+      const leader = Number.isNaN(leftChange) || Number.isNaN(rightChange)
+        ? "n/a"
+        : leftChange === rightChange
+          ? compareMessages.delta_tie
+          : `${{leftChange > rightChange ? leftSnapshot.root_code : rightSnapshot.root_code}} ${{formatPreviewPct(Math.max(leftChange, rightChange))}}`;
+      const leaderTone = Number.isNaN(leftChange) || Number.isNaN(rightChange)
+        ? "is-neutral"
+        : leftChange === rightChange
+          ? "is-neutral"
+          : "is-positive";
+      const statusTone = leftSnapshot.status === rightSnapshot.status ? "is-neutral" : "is-warning";
+      const priceUnit = leftSnapshot.unit ? ` ${{leftSnapshot.unit}}` : "";
+      const priceTooltip = buildCompareTooltip(
+        compareMessages.tooltip_root_last,
+        `${{leftSnapshot.root_code}} ${{formatPreviewPrice(leftSnapshot.current_price)}}${{priceUnit}}`,
+        `${{rightSnapshot.root_code}} ${{formatPreviewPrice(rightSnapshot.current_price)}}${{priceUnit}}`,
+      );
+      const changeTooltip = buildCompareTooltip(
+        compareMessages.tooltip_root_change,
+        `${{leftSnapshot.root_code}} ${{left.timeframe}} ${{formatPreviewPct(leftChange)}}`,
+        `${{rightSnapshot.root_code}} ${{right.timeframe}} ${{formatPreviewPct(rightChange)}}`,
+      );
+      const leaderTooltip = buildCompareTooltip(
+        compareMessages.tooltip_root_leader,
+        `${{leftSnapshot.root_code}} ${{formatPreviewPct(leftChange)}}`,
+        `${{rightSnapshot.root_code}} ${{formatPreviewPct(rightChange)}}`,
+      );
+      const leaderContext = {{
+        timeframeSignature: `${{left.timeframe}}/${{right.timeframe}}/${{compareRangeState.root}}`,
+        leaderKey: Number.isNaN(leftChange) || Number.isNaN(rightChange)
+          ? "n/a"
+          : leftChange === rightChange
+            ? "tie"
+            : leftChange > rightChange
+              ? "a"
+              : "b",
+        leaderLabel: leader,
+        spreadLabel: Number.isNaN(changeDiff) ? "" : `${{formatSignedDelta(changeDiff)}}pp`,
+      }};
+      const leaderShiftNote = buildLeaderShiftNote(compareLeaderHistory.roots, leaderContext);
+      const leaderShiftCallout = buildLeaderShiftCallout(compareLeaderHistory.roots, leaderContext);
+      compareLeaderHistory.roots = leaderContext;
+      const statusCallout = buildPairMismatchCallout(leftSnapshot.status || "n/a", rightSnapshot.status || "n/a");
+      const statusTooltip = buildCompareTooltip(
+        compareMessages.tooltip_root_status,
+        `${{leftSnapshot.root_code}} ${{leftSnapshot.status || "n/a"}}`,
+        `${{rightSnapshot.root_code}} ${{rightSnapshot.status || "n/a"}}`,
+      );
+      compareRootDeltaNode.innerHTML = [
+        renderDeltaChip(compareMessages.delta_last, `${{formatSignedDelta(priceDiff)}}${{priceUnit}}`, pickDeltaTone(priceDiff), priceTooltip),
+        renderDeltaChip(compareMessages.delta_change, `${{formatSignedDelta(changeDiff)}}pp`, pickDeltaTone(changeDiff), changeTooltip),
+        renderDeltaChip(compareMessages.delta_leader, leader, leaderTone, leaderShiftNote ? `${{leaderTooltip}} ${{leaderShiftNote}}` : leaderTooltip, leaderShiftCallout),
+        renderDeltaChip(compareMessages.delta_status, `${{leftSnapshot.status || "n/a"}} vs ${{rightSnapshot.status || "n/a"}}`, statusTone, statusTooltip, statusCallout),
+      ].join("");
+    }};
+    const renderRootRegimeStrip = () => {{
+      if (!compareRootRegimeNode) {{
+        return;
+      }}
+      const left = compareState.roots.a;
+      const right = compareState.roots.b;
+      if (!left || !right) {{
+        compareRegimeHistory.roots = null;
+        renderCompareRegimeStrip(compareRootRegimeNode, null, null, compareMessages.root_regime_waiting || compareMessages.root_delta_waiting);
+        return;
+      }}
+      const leftSnapshot = rootPreviewCache.get(left.rootCode);
+      const rightSnapshot = rootPreviewCache.get(right.rootCode);
+      if (!leftSnapshot || !rightSnapshot) {{
+        compareRegimeHistory.roots = null;
+        renderCompareRegimeStrip(compareRootRegimeNode, null, null, compareMessages.loading);
+        return;
+      }}
+      const leftState = buildMarketLevelState(leftSnapshot);
+      const rightState = buildMarketLevelState(rightSnapshot);
+      const regimeContext = {{
+        signature: `${{left.rootCode}}/${{right.rootCode}}/${{left.timeframe}}/${{right.timeframe}}/${{compareRangeState.root}}`,
+        states: {{
+          a: snapshotCompareRegimeState(leftState),
+          b: snapshotCompareRegimeState(rightState),
+        }},
+      }};
+      const driftNote = buildCompareRegimeDriftNote(compareRegimeHistory.roots, regimeContext);
+      compareRegimeHistory.roots = regimeContext;
+      renderCompareRegimeStrip(
+        compareRootRegimeNode,
+        leftState,
+        rightState,
+        compareMessages.root_regime_waiting || compareMessages.root_delta_waiting,
+        driftNote,
+      );
+    }};
+    const renderSignalDeltaStrip = () => {{
+      if (!compareSignalDeltaNode) {{
+        return;
+      }}
+      const left = compareState.signals.a;
+      const right = compareState.signals.b;
+      if (!left || !right) {{
+        compareLeaderHistory.signals = null;
+        compareSignalDeltaNode.innerHTML = `<div class="compare-delta-empty">${{escapePreviewText(compareMessages.signal_delta_waiting)}}</div>`;
+        return;
+      }}
+      const leftSnapshot = signalPreviewCache.get(left.signalId);
+      const rightSnapshot = signalPreviewCache.get(right.signalId);
+      if (!leftSnapshot || !rightSnapshot || !leftSnapshot.signal || !rightSnapshot.signal) {{
+        compareLeaderHistory.signals = null;
+        compareSignalDeltaNode.innerHTML = `<div class="compare-delta-empty">${{escapePreviewText(compareMessages.loading)}}</div>`;
+        return;
+      }}
+      const leftSignal = leftSnapshot.signal;
+      const rightSignal = rightSnapshot.signal;
+      const confidenceDiff = (leftSignal.confidence_final ?? NaN) - (rightSignal.confidence_final ?? NaN);
+      const skepticDiff = (leftSignal.skeptic_score ?? NaN) - (rightSignal.skeptic_score ?? NaN);
+      const priorityDiff = (Number(leftSignal.priority_score) || 0) - (Number(rightSignal.priority_score) || 0);
+      const leader = typeof leftSignal.confidence_final === "number" && typeof rightSignal.confidence_final === "number"
+        ? leftSignal.confidence_final === rightSignal.confidence_final
+          ? compareMessages.delta_tie
+          : `${{leftSignal.confidence_final > rightSignal.confidence_final ? `${{leftSignal.root}} ${{leftSignal.horizon}}` : `${{rightSignal.root}} ${{rightSignal.horizon}}`}} · ${{
+              Math.max(leftSignal.confidence_final, rightSignal.confidence_final).toFixed(2)
+            }}`
+        : "n/a";
+      const leaderTone = leader === "n/a" || leader === compareMessages.delta_tie ? "is-neutral" : "is-positive";
+      const workflowTone = leftSignal.workflow_state === rightSignal.workflow_state ? "is-neutral" : "is-warning";
+      const confidenceTooltip = buildCompareTooltip(
+        compareMessages.tooltip_signal_confidence,
+        `${{leftSignal.root}} ${{leftSignal.horizon}} ${{typeof leftSignal.confidence_final === "number" ? leftSignal.confidence_final.toFixed(2) : "n/a"}}`,
+        `${{rightSignal.root}} ${{rightSignal.horizon}} ${{typeof rightSignal.confidence_final === "number" ? rightSignal.confidence_final.toFixed(2) : "n/a"}}`,
+      );
+      const skepticTooltip = buildCompareTooltip(
+        compareMessages.tooltip_signal_skeptic,
+        `${{leftSignal.root}} ${{leftSignal.horizon}} ${{typeof leftSignal.skeptic_score === "number" ? leftSignal.skeptic_score.toFixed(2) : "n/a"}}`,
+        `${{rightSignal.root}} ${{rightSignal.horizon}} ${{typeof rightSignal.skeptic_score === "number" ? rightSignal.skeptic_score.toFixed(2) : "n/a"}}`,
+      );
+      const priorityTooltip = buildCompareTooltip(
+        compareMessages.tooltip_signal_priority,
+        `${{leftSignal.root}} ${{leftSignal.horizon}} ${{Number.isFinite(Number(leftSignal.priority_score)) ? Number(leftSignal.priority_score).toFixed(0) : "n/a"}}`,
+        `${{rightSignal.root}} ${{rightSignal.horizon}} ${{Number.isFinite(Number(rightSignal.priority_score)) ? Number(rightSignal.priority_score).toFixed(0) : "n/a"}}`,
+      );
+      const signalLeaderTooltip = buildCompareTooltip(
+        compareMessages.tooltip_signal_leader,
+        `${{leftSignal.root}} ${{leftSignal.horizon}} ${{typeof leftSignal.confidence_final === "number" ? leftSignal.confidence_final.toFixed(2) : "n/a"}}`,
+        `${{rightSignal.root}} ${{rightSignal.horizon}} ${{typeof rightSignal.confidence_final === "number" ? rightSignal.confidence_final.toFixed(2) : "n/a"}}`,
+      );
+      const leaderContext = {{
+        timeframeSignature: `${{left.timeframe}}/${{right.timeframe}}/${{compareRangeState.signal}}`,
+        leaderKey: typeof leftSignal.confidence_final !== "number" || typeof rightSignal.confidence_final !== "number"
+          ? "n/a"
+          : leftSignal.confidence_final === rightSignal.confidence_final
+            ? "tie"
+            : leftSignal.confidence_final > rightSignal.confidence_final
+              ? "a"
+              : "b",
+        leaderLabel: leader,
+        spreadLabel: (typeof confidenceDiff === "number" && !Number.isNaN(confidenceDiff)) ? formatSignedDelta(confidenceDiff) : "",
+      }};
+      const leaderShiftNote = buildLeaderShiftNote(compareLeaderHistory.signals, leaderContext);
+      const leaderShiftCallout = buildLeaderShiftCallout(compareLeaderHistory.signals, leaderContext);
+      compareLeaderHistory.signals = leaderContext;
+      const workflowCallout = buildPairMismatchCallout(leftSignal.workflow_state, rightSignal.workflow_state);
+      const workflowTooltip = buildCompareTooltip(
+        compareMessages.tooltip_signal_workflow,
+        `${{leftSignal.root}} ${{leftSignal.workflow_state}}`,
+        `${{rightSignal.root}} ${{rightSignal.workflow_state}}`,
+      );
+      compareSignalDeltaNode.innerHTML = [
+        renderDeltaChip(compareMessages.delta_confidence, formatSignedDelta(confidenceDiff), pickDeltaTone(confidenceDiff), confidenceTooltip),
+        renderDeltaChip(compareMessages.delta_skeptic, formatSignedDelta(skepticDiff), pickDeltaTone(skepticDiff), skepticTooltip),
+        renderDeltaChip(compareMessages.delta_priority, formatSignedDelta(priorityDiff, 0), pickDeltaTone(priorityDiff), priorityTooltip),
+        renderDeltaChip(compareMessages.delta_leader, leader, leaderTone, leaderShiftNote ? `${{signalLeaderTooltip}} ${{leaderShiftNote}}` : signalLeaderTooltip, leaderShiftCallout),
+        renderDeltaChip(compareMessages.delta_workflow, `${{leftSignal.workflow_state}} vs ${{rightSignal.workflow_state}}`, workflowTone, workflowTooltip, workflowCallout),
+      ].join("");
+    }};
+    const renderSignalRegimeStrip = () => {{
+      if (!compareSignalRegimeNode) {{
+        return;
+      }}
+      const left = compareState.signals.a;
+      const right = compareState.signals.b;
+      if (!left || !right) {{
+        compareRegimeHistory.signals = null;
+        renderCompareRegimeStrip(compareSignalRegimeNode, null, null, compareMessages.signal_regime_waiting || compareMessages.signal_delta_waiting);
+        return;
+      }}
+      const leftSnapshot = signalPreviewCache.get(left.signalId);
+      const rightSnapshot = signalPreviewCache.get(right.signalId);
+      const leftSignal = leftSnapshot && leftSnapshot.signal ? leftSnapshot.signal : null;
+      const rightSignal = rightSnapshot && rightSnapshot.signal ? rightSnapshot.signal : null;
+      const leftMarket = leftSnapshot && leftSnapshot.market_snapshot ? leftSnapshot.market_snapshot : null;
+      const rightMarket = rightSnapshot && rightSnapshot.market_snapshot ? rightSnapshot.market_snapshot : null;
+      if (!leftSignal || !rightSignal || !leftMarket || !rightMarket) {{
+        compareRegimeHistory.signals = null;
+        renderCompareRegimeStrip(compareSignalRegimeNode, null, null, compareMessages.loading);
+        return;
+      }}
+      const leftState = buildMarketLevelState(leftMarket, leftSignal.direction_final);
+      const rightState = buildMarketLevelState(rightMarket, rightSignal.direction_final);
+      const regimeContext = {{
+        signature: `${{left.signalId}}/${{right.signalId}}/${{left.timeframe}}/${{right.timeframe}}/${{compareRangeState.signal}}`,
+        states: {{
+          a: snapshotCompareRegimeState(leftState),
+          b: snapshotCompareRegimeState(rightState),
+        }},
+      }};
+      const driftNote = buildCompareRegimeDriftNote(compareRegimeHistory.signals, regimeContext);
+      compareRegimeHistory.signals = regimeContext;
+      renderCompareRegimeStrip(
+        compareSignalRegimeNode,
+        leftState,
+        rightState,
+        compareMessages.signal_regime_waiting || compareMessages.signal_delta_waiting,
+        driftNote,
+      );
+    }};
     const renderCompareRootCard = (slot) => {{
       const node = compareRootNodes[slot];
       if (!node) {{
@@ -4197,9 +6813,9 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         node.innerHTML = `<div class="compare-card-head"><div><strong>${{escapePreviewText(label)}}</strong><p>${{escapePreviewText(entry.rootCode)}}</p></div>${{actions}}</div><div class="compare-tabs">${{buildCompareTabs("root", slot, entry.timeframe)}}</div><div class="compare-empty">${{escapePreviewText(statusText)}}</div>`;
         return;
       }}
-      const series = resolvePreviewSeries(snapshot, entry.timeframe);
+      const series = sliceSeriesForCompareRange(resolvePreviewSeries(snapshot, entry.timeframe), compareRangeState.root);
       const subtitle = `${{compareMessages.updated}} ${{formatPreviewTime(snapshot.as_of)}} | ${{snapshot.status || "n/a"}}`;
-      node.innerHTML = `<div class="compare-card-head"><div><strong>${{escapePreviewText(label)}} · ${{escapePreviewText(snapshot.root_code || entry.rootCode)}}</strong><p>${{escapePreviewText(subtitle)}}</p></div>${{actions}}</div><div class="compare-tabs">${{buildCompareTabs("root", slot, entry.timeframe)}}</div><div class="compare-chart">${{series ? renderRootPreviewChart(series) : `<div class="empty">${{escapePreviewText(rootPreviewMessages.unavailable)}}</div>`}}</div><div class="compare-meta"><article><span>${{escapePreviewText(compareMessages.last)}}</span><strong>${{formatPreviewPrice(snapshot.current_price)}}${{snapshot.unit ? ` ${{escapePreviewText(snapshot.unit)}}` : ""}}</strong></article><article><span>${{escapePreviewText(compareMessages.open_label)}}</span><strong>${{series ? formatPreviewPrice(series.open_price) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.change)}}</span><strong>${{series ? formatPreviewPct(series.change_pct) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.range)}}</span><strong>${{series ? `${{formatPreviewPrice(series.low_price)}} - ${{formatPreviewPrice(series.high_price)}}` : "n/a"}}</strong></article></div><div class="compare-summary"><strong>${{escapePreviewText(snapshot.contract || entry.rootCode)}}</strong><p>${{escapePreviewText(snapshot.source_note || snapshot.status_detail || compareMessages.root_slot)}}</p></div>`;
+      node.innerHTML = `<div class="compare-card-head"><div><strong>${{escapePreviewText(label)}} · ${{escapePreviewText(snapshot.root_code || entry.rootCode)}}</strong><p>${{escapePreviewText(subtitle)}}</p></div>${{actions}}</div><div class="compare-tabs">${{buildCompareTabs("root", slot, entry.timeframe)}}</div><div class="compare-range-toolbar" data-compare-range-toolbar data-compare-kind="root">${{buildCompareRangeToolbar("root", compareRangeState.root, series)}}</div><div class="compare-chart" data-compare-chart-host data-compare-kind="root" data-compare-slot="${{slot}}">${{series ? renderRootPreviewChart(series) : `<div class="empty">${{escapePreviewText(rootPreviewMessages.unavailable)}}</div>`}}</div><p class="muted compare-chart-readout" data-compare-chart-readout>${{escapePreviewText(compareMessages.cursor_idle || "Hover the chart to sync the cursor.")}}</p><p class="muted compare-chart-measure" data-compare-chart-measure-readout>${{escapePreviewText(compareMessages.measure_idle || "Drag on a chart to sync a measure across A/B.")}}</p><div class="compare-meta"><article><span>${{escapePreviewText(compareMessages.last)}}</span><strong>${{series ? formatPreviewPrice(series.current_price) : formatPreviewPrice(snapshot.current_price)}}${{snapshot.unit ? ` ${{escapePreviewText(snapshot.unit)}}` : ""}}</strong></article><article><span>${{escapePreviewText(compareMessages.open_label)}}</span><strong>${{series ? formatPreviewPrice(series.open_price) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.change)}}</span><strong>${{series ? formatPreviewPct(series.change_pct) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.range)}}</span><strong>${{series ? `${{formatPreviewPrice(series.low_price)}} - ${{formatPreviewPrice(series.high_price)}}` : "n/a"}}</strong></article></div><div class="compare-summary"><strong>${{escapePreviewText(snapshot.contract || entry.rootCode)}}</strong><p>${{escapePreviewText(snapshot.source_note || snapshot.status_detail || compareMessages.root_slot)}}</p></div>`;
       return;
       }}
       if (!compareState.root) {{
@@ -4239,7 +6855,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       }}
       const signal = snapshot.signal || null;
       const marketSnapshot = snapshot.market_snapshot || null;
-      const series = resolvePreviewSeries(marketSnapshot, entry.timeframe);
+      const series = sliceSeriesForCompareRange(resolvePreviewSeries(marketSnapshot, entry.timeframe), compareRangeState.signal);
       const diffSummary = snapshot.signal_diff && snapshot.signal_diff.summary ? snapshot.signal_diff.summary : signalPreviewMessages.none;
       const latestEvent = Array.isArray(snapshot.decision_log) && snapshot.decision_log.length > 0
         ? `${{snapshot.decision_log[0].title}} | ${{previewExcerpt(snapshot.decision_log[0].detail, 120)}}`
@@ -4247,7 +6863,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       const subtitle = signal
         ? `${{signal.direction_final}} | ${{signal.horizon}} | ${{signal.workflow_state}}`
         : compareMessages.signal_slot;
-      node.innerHTML = `<div class="compare-card-head"><div><strong>${{escapePreviewText(label)}} · ${{escapePreviewText(signal ? `${{signal.root}} | ${{signal.contract}}` : entry.signalId)}}</strong><p>${{escapePreviewText(subtitle)}}</p></div>${{actions}}</div><div class="compare-tabs">${{buildCompareTabs("signal", slot, entry.timeframe)}}</div><div class="compare-chart">${{series ? renderRootPreviewChart(series) : `<div class="empty">${{escapePreviewText(signalPreviewMessages.unavailable)}}</div>`}}</div><div class="compare-meta"><article><span>${{escapePreviewText(compareMessages.confidence)}}</span><strong>${{signal && typeof signal.confidence_final === "number" ? signal.confidence_final.toFixed(2) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.skeptic)}}</span><strong>${{signal && typeof signal.skeptic_score === "number" ? signal.skeptic_score.toFixed(2) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.priority)}}</span><strong>${{signal && signal.priority_score !== undefined ? escapePreviewText(signal.priority_score) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.price)}}</span><strong>${{marketSnapshot ? `${{formatPreviewPrice(marketSnapshot.current_price)}}${{marketSnapshot.unit ? ` ${{escapePreviewText(marketSnapshot.unit)}}` : ""}}` : "n/a"}}</strong></article></div><div class="compare-summary"><strong>${{escapePreviewText(previewExcerpt(signal && signal.summary ? signal.summary : signalPreviewMessages.none, 180))}}</strong><p><strong>${{escapePreviewText(compareMessages.diff)}}:</strong> ${{escapePreviewText(previewExcerpt(diffSummary, 180))}}</p><p><strong>${{escapePreviewText(compareMessages.timeline)}}:</strong> ${{escapePreviewText(latestEvent)}}</p></div>`;
+      node.innerHTML = `<div class="compare-card-head"><div><strong>${{escapePreviewText(label)}} · ${{escapePreviewText(signal ? `${{signal.root}} | ${{signal.contract}}` : entry.signalId)}}</strong><p>${{escapePreviewText(subtitle)}}</p></div>${{actions}}</div><div class="compare-tabs">${{buildCompareTabs("signal", slot, entry.timeframe)}}</div><div class="compare-range-toolbar" data-compare-range-toolbar data-compare-kind="signal">${{buildCompareRangeToolbar("signal", compareRangeState.signal, series)}}</div><div class="compare-chart" data-compare-chart-host data-compare-kind="signal" data-compare-slot="${{slot}}">${{series ? renderRootPreviewChart(series) : `<div class="empty">${{escapePreviewText(signalPreviewMessages.unavailable)}}</div>`}}</div><p class="muted compare-chart-readout" data-compare-chart-readout>${{escapePreviewText(compareMessages.cursor_idle || "Hover the chart to sync the cursor.")}}</p><p class="muted compare-chart-measure" data-compare-chart-measure-readout>${{escapePreviewText(compareMessages.measure_idle || "Drag on a chart to sync a measure across A/B.")}}</p><div class="compare-meta"><article><span>${{escapePreviewText(compareMessages.confidence)}}</span><strong>${{signal && typeof signal.confidence_final === "number" ? signal.confidence_final.toFixed(2) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.skeptic)}}</span><strong>${{signal && typeof signal.skeptic_score === "number" ? signal.skeptic_score.toFixed(2) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.priority)}}</span><strong>${{signal && signal.priority_score !== undefined ? escapePreviewText(signal.priority_score) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.price)}}</span><strong>${{series ? `${{formatPreviewPrice(series.current_price)}}${{marketSnapshot && marketSnapshot.unit ? ` ${{escapePreviewText(marketSnapshot.unit)}}` : ""}}` : "n/a"}}</strong></article></div><div class="compare-summary"><strong>${{escapePreviewText(previewExcerpt(signal && signal.summary ? signal.summary : signalPreviewMessages.none, 180))}}</strong><p><strong>${{escapePreviewText(compareMessages.diff)}}:</strong> ${{escapePreviewText(previewExcerpt(diffSummary, 180))}}</p><p><strong>${{escapePreviewText(compareMessages.timeline)}}:</strong> ${{escapePreviewText(latestEvent)}}</p></div>`;
       return;
       }}
       if (!compareState.signal) {{
@@ -4274,15 +6890,560 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         : compareMessages.signal_slot;
       compareSignalNode.innerHTML = `<div class="compare-card-head"><div><strong>${{escapePreviewText(signal ? `${{signal.root}} | ${{signal.contract}}` : entry.signalId)}}</strong><p>${{escapePreviewText(subtitle)}}</p></div>${{actions}}</div><div class="compare-tabs">${{buildCompareTabs("signal", "signal-id", entry.signalId, entry.timeframe)}}</div><div class="compare-chart">${{series ? renderRootPreviewChart(series) : `<div class="empty">${{escapePreviewText(signalPreviewMessages.unavailable)}}</div>`}}</div><div class="compare-meta"><article><span>${{escapePreviewText(compareMessages.confidence)}}</span><strong>${{signal && typeof signal.confidence_final === "number" ? signal.confidence_final.toFixed(2) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.skeptic)}}</span><strong>${{signal && typeof signal.skeptic_score === "number" ? signal.skeptic_score.toFixed(2) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.priority)}}</span><strong>${{signal && signal.priority_score !== undefined ? escapePreviewText(signal.priority_score) : "n/a"}}</strong></article><article><span>${{escapePreviewText(compareMessages.price)}}</span><strong>${{marketSnapshot ? `${{formatPreviewPrice(marketSnapshot.current_price)}}${{marketSnapshot.unit ? ` ${{escapePreviewText(marketSnapshot.unit)}}` : ""}}` : "n/a"}}</strong></article></div><div class="compare-summary"><strong>${{escapePreviewText(previewExcerpt(signal && signal.summary ? signal.summary : signalPreviewMessages.none, 180))}}</strong><p><strong>${{escapePreviewText(compareMessages.diff)}}:</strong> ${{escapePreviewText(previewExcerpt(diffSummary, 180))}}</p><p><strong>${{escapePreviewText(compareMessages.timeline)}}:</strong> ${{escapePreviewText(latestEvent)}}</p></div>`;
     }};
+    const clearCompareChartCursor = (context) => {{
+      if (!context) {{
+        return;
+      }}
+      if (context.crosshairLayer) {{
+        context.crosshairLayer.style.display = "none";
+      }}
+      if (context.readoutNode) {{
+        context.readoutNode.textContent = compareMessages.cursor_idle || "Hover the chart to sync the cursor.";
+      }}
+    }};
+    const clearCompareChartMeasurement = (context, preserveReadout = false) => {{
+      if (!context) {{
+        return;
+      }}
+      if (context.measureLayerNode) {{
+        context.measureLayerNode.style.display = "none";
+      }}
+      if (context.measureReadoutNode && !preserveReadout) {{
+        context.measureReadoutNode.textContent = compareMessages.measure_idle || "Drag on a chart to sync a measure across A/B.";
+      }}
+    }};
+    const buildCompareChartContext = (kind, slot) => {{
+      const card = kind === "root" ? compareRootNodes[slot] : compareSignalNodes[slot];
+      const host = card ? card.querySelector("[data-compare-chart-host]") : null;
+      const readoutNode = card ? card.querySelector("[data-compare-chart-readout]") : null;
+      const measureReadoutNode = card ? card.querySelector("[data-compare-chart-measure-readout]") : null;
+      const svg = host ? host.querySelector("svg[data-market-chart-svg]") : null;
+      if (!card || !host || !readoutNode || !measureReadoutNode || !svg) {{
+        return null;
+      }}
+      let series = null;
+      let unit = "";
+      let title = `${{slotTitle(kind, slot)}}`;
+      if (kind === "root") {{
+        const entry = compareState.roots[slot];
+        const snapshot = entry ? rootPreviewCache.get(entry.rootCode) : null;
+        if (!entry || !snapshot) {{
+          return null;
+        }}
+        series = sliceSeriesForCompareRange(resolvePreviewSeries(snapshot, entry.timeframe), compareRangeState.root);
+        unit = snapshot.unit || "";
+        title = `${{slotTitle(kind, slot)}} · ${{snapshot.root_code || entry.rootCode}}`;
+      }} else {{
+        const entry = compareState.signals[slot];
+        const snapshot = entry ? signalPreviewCache.get(entry.signalId) : null;
+        const signal = snapshot && snapshot.signal ? snapshot.signal : null;
+        const marketSnapshot = snapshot && snapshot.market_snapshot ? snapshot.market_snapshot : null;
+        if (!entry || !snapshot || !marketSnapshot) {{
+          return null;
+        }}
+        series = sliceSeriesForCompareRange(resolvePreviewSeries(marketSnapshot, entry.timeframe), compareRangeState.signal);
+        unit = marketSnapshot.unit || "";
+        title = `${{slotTitle(kind, slot)}} · ${{signal ? `${{signal.root}} | ${{signal.contract}}` : entry.signalId}}`;
+      }}
+      if (!series || !Array.isArray(series.points) || series.points.length === 0) {{
+        return null;
+      }}
+      readoutNode.textContent = compareMessages.cursor_idle || "Hover the chart to sync the cursor.";
+      measureReadoutNode.textContent = compareMessages.measure_idle || "Drag on a chart to sync a measure across A/B.";
+      const viewBox = svg.viewBox && svg.viewBox.baseVal ? svg.viewBox.baseVal : null;
+      const width = viewBox && viewBox.width ? viewBox.width : 248;
+      const height = viewBox && viewBox.height ? viewBox.height : 96;
+      const overlayValues = Array.isArray(series.overlays) ? series.overlays.map((overlay) => overlay.value) : [];
+      const lows = series.points.map((point) => typeof point.low === "number" ? point.low : point.value).concat(overlayValues, [series.current_price]);
+      const highs = series.points.map((point) => typeof point.high === "number" ? point.high : point.value).concat(overlayValues, [series.current_price]);
+      const low = Math.min(...lows);
+      const high = Math.max(...highs);
+      const span = Math.max(high - low, 0.0001);
+      const mapPriceY = (value) => height - (((value - low) / span) * (height - 16)) - 8;
+      const resolveFraction = (fraction) => {{
+        const clampedFraction = Math.max(0, Math.min(1, typeof fraction === "number" ? fraction : 0));
+        const pointIndex = series.points.length === 1
+          ? 0
+          : Math.max(0, Math.min(series.points.length - 1, Math.round(clampedFraction * (series.points.length - 1))));
+        const point = series.points[pointIndex];
+        const x = series.points.length === 1 ? width / 2 : (pointIndex / (series.points.length - 1)) * width;
+        const closeValue = typeof point.close === "number" ? point.close : point.value;
+        const y = mapPriceY(closeValue);
+        return {{
+          point,
+          x,
+          y,
+          fraction: clampedFraction,
+          pointIndex,
+          value: closeValue,
+          label: point && point.label ? point.label : "n/a",
+        }};
+      }};
+      return {{
+        card,
+        host,
+        readoutNode,
+        measureReadoutNode,
+        svg,
+        title,
+        unit,
+        width,
+        height,
+        mapPriceY,
+        resolveFraction,
+        crosshairLayer: svg.querySelector("[data-market-crosshair-layer]"),
+        crosshairX: svg.querySelector("[data-market-crosshair-x]"),
+        crosshairY: svg.querySelector("[data-market-crosshair-y]"),
+        crosshairDot: svg.querySelector("[data-market-crosshair-dot]"),
+        measureLayerNode: svg.querySelector("[data-market-measure-layer]"),
+        measureLineNode: svg.querySelector("[data-market-measure-line]"),
+        measureStartDotNode: svg.querySelector("[data-market-measure-start-dot]"),
+        measureEndDotNode: svg.querySelector("[data-market-measure-end-dot]"),
+        measureLabelNode: svg.querySelector("[data-market-measure-label]"),
+        overlayKeys: Array.isArray(series.overlays)
+          ? series.overlays
+            .map((overlay) => String(overlay && overlay.key ? overlay.key : ""))
+            .filter((key) => ["entry", "invalidation", "target"].includes(key))
+          : [],
+      }};
+    }};
+    const applyCompareChartCursor = (context, resolved) => {{
+      if (!context || !resolved || !resolved.point) {{
+        return;
+      }}
+      if (context.crosshairLayer && context.crosshairX && context.crosshairY && context.crosshairDot) {{
+        context.crosshairLayer.style.display = "";
+        context.crosshairX.setAttribute("x1", resolved.x.toFixed(1));
+        context.crosshairX.setAttribute("x2", resolved.x.toFixed(1));
+        context.crosshairX.setAttribute("y1", "0");
+        context.crosshairX.setAttribute("y2", String(context.height || 96));
+        context.crosshairY.setAttribute("x1", "0");
+        context.crosshairY.setAttribute("x2", String(context.width || 248));
+        context.crosshairY.setAttribute("y1", resolved.y.toFixed(1));
+        context.crosshairY.setAttribute("y2", resolved.y.toFixed(1));
+        context.crosshairDot.setAttribute("cx", resolved.x.toFixed(1));
+        context.crosshairDot.setAttribute("cy", resolved.y.toFixed(1));
+      }}
+      context.readoutNode.innerHTML = renderMarketOhlcReadout(resolved.point, context.unit, context.title);
+    }};
+    const renderCompareMeasureReadout = (context, startResolved, endResolved) => {{
+      if (
+        !context
+        || !startResolved
+        || !endResolved
+        || typeof startResolved.value !== "number"
+        || typeof endResolved.value !== "number"
+      ) {{
+        return compareMessages.measure_idle || "Drag on a chart to sync a measure across A/B.";
+      }}
+      const unitSuffix = context.unit ? ` ${{context.unit}}` : "";
+      const delta = endResolved.value - startResolved.value;
+      const base = Math.max(Math.abs(startResolved.value), 0.0001);
+      const deltaPct = delta / base;
+      const bars = Math.abs((endResolved.pointIndex ?? 0) - (startResolved.pointIndex ?? 0)) + 1;
+      const deltaText = `${{delta >= 0 ? "+" : ""}}${{formatPreviewPrice(delta)}}${{unitSuffix}}`;
+      const pctText = formatPreviewPct(deltaPct);
+      return `<strong>${{escapePreviewText(marketPanelCopy.measure_title || "Measure")}}:</strong> ${{escapePreviewText(startResolved.label || "n/a")}} -> ${{escapePreviewText(endResolved.label || "n/a")}} | ${{escapePreviewText(marketPanelCopy.measure_delta || "Δ close")}} ${{escapePreviewText(deltaText)}} | ${{escapePreviewText(marketPanelCopy.measure_pct || "Δ %")}} ${{escapePreviewText(pctText)}} | ${{escapePreviewText(marketPanelCopy.measure_bars || "Bars")}} ${{bars}}`;
+    }};
+    const applyCompareChartMeasurement = (context, startResolved, endResolved) => {{
+      if (
+        !context
+        || !startResolved
+        || !endResolved
+        || typeof startResolved.value !== "number"
+        || typeof endResolved.value !== "number"
+      ) {{
+        clearCompareChartMeasurement(context);
+        return;
+      }}
+      if (
+        context.measureLayerNode
+        && context.measureLineNode
+        && context.measureStartDotNode
+        && context.measureEndDotNode
+        && context.measureLabelNode
+      ) {{
+        const delta = endResolved.value - startResolved.value;
+        const base = Math.max(Math.abs(startResolved.value), 0.0001);
+        const deltaPct = delta / base;
+        const bars = Math.abs((endResolved.pointIndex ?? 0) - (startResolved.pointIndex ?? 0)) + 1;
+        const labelText = `${{formatPreviewPct(deltaPct)}} | ${{bars}} ${{marketPanelCopy.measure_bars_short || "bars"}}`;
+        const labelX = Math.max(18, Math.min((context.width || 248) - 18, (startResolved.x + endResolved.x) / 2));
+        const labelY = Math.max(14, Math.min((context.height || 96) - 8, (startResolved.y + endResolved.y) / 2 - 8));
+        context.measureLayerNode.style.display = "";
+        context.measureLineNode.setAttribute("x1", startResolved.x.toFixed(1));
+        context.measureLineNode.setAttribute("y1", startResolved.y.toFixed(1));
+        context.measureLineNode.setAttribute("x2", endResolved.x.toFixed(1));
+        context.measureLineNode.setAttribute("y2", endResolved.y.toFixed(1));
+        context.measureStartDotNode.setAttribute("cx", startResolved.x.toFixed(1));
+        context.measureStartDotNode.setAttribute("cy", startResolved.y.toFixed(1));
+        context.measureEndDotNode.setAttribute("cx", endResolved.x.toFixed(1));
+        context.measureEndDotNode.setAttribute("cy", endResolved.y.toFixed(1));
+        context.measureLabelNode.setAttribute("x", labelX.toFixed(1));
+        context.measureLabelNode.setAttribute("y", labelY.toFixed(1));
+        context.measureLabelNode.textContent = labelText;
+      }}
+      context.measureReadoutNode.innerHTML = renderCompareMeasureReadout(context, startResolved, endResolved);
+    }};
+    const setCompareChartLevelFocus = (context, overlayKey) => {{
+      if (!context || !context.svg) {{
+        return;
+      }}
+      const resolvedKey = typeof overlayKey === "string" ? overlayKey : "";
+      const hasActive = Boolean(resolvedKey) && Array.isArray(context.overlayKeys) && context.overlayKeys.includes(resolvedKey);
+      Array.from(context.svg.querySelectorAll("[data-market-overlay-line]")).forEach((node) => {{
+        const currentKey = node.getAttribute("data-overlay-key") || "";
+        const active = hasActive && currentKey === resolvedKey;
+        node.setAttribute("opacity", hasActive ? (active ? "1" : "0.42") : "0.95");
+        node.setAttribute("stroke-width", active ? "2.3" : "1.2");
+      }});
+      Array.from(context.svg.querySelectorAll("[data-market-overlay-hit]")).forEach((node) => {{
+        const currentKey = node.getAttribute("data-overlay-key") || "";
+        node.setAttribute("stroke-width", hasActive && currentKey === resolvedKey ? "12" : "10");
+      }});
+      Array.from(context.svg.querySelectorAll("[data-market-overlay-label]")).forEach((node) => {{
+        const currentKey = node.getAttribute("data-overlay-key") || "";
+        const active = hasActive && currentKey === resolvedKey;
+        node.setAttribute("opacity", hasActive ? (active ? "1" : "0.56") : "1");
+        node.setAttribute("font-weight", active ? "800" : "700");
+      }});
+      context.host.dataset.compareOverlayKey = hasActive ? resolvedKey : "";
+    }};
+    const bindCompareStickyCursorGroup = (kind) => {{
+      const contexts = compareSlots
+        .map((slot) => buildCompareChartContext(kind, slot))
+        .filter(Boolean);
+      if (!contexts.length) {{
+        return;
+      }}
+      let clearTimer = null;
+      let measureState = null;
+      let activeOverlayKey = String(compareOverlayState[kind] || "");
+      const cancelClear = () => {{
+        if (clearTimer) {{
+          window.clearTimeout(clearTimer);
+          clearTimer = null;
+        }}
+      }};
+      const clearAllCursors = () => {{
+        for (const context of contexts) {{
+          clearCompareChartCursor(context);
+        }}
+      }};
+      const clearAllMeasurements = (preserveReadout = false) => {{
+        for (const context of contexts) {{
+          clearCompareChartMeasurement(context, preserveReadout);
+        }}
+      }};
+      const hasOverlayKey = (overlayKey) => Boolean(overlayKey) && contexts.some((context) => context.overlayKeys.includes(overlayKey));
+      const syncOverlayFocus = (overlayKey) => {{
+        const resolvedKey = hasOverlayKey(overlayKey) ? overlayKey : "";
+        for (const context of contexts) {{
+          setCompareChartLevelFocus(context, resolvedKey);
+        }}
+      }};
+      if (!hasOverlayKey(activeOverlayKey)) {{
+        activeOverlayKey = "";
+      }}
+      syncOverlayFocus(activeOverlayKey);
+      const scheduleClear = () => {{
+        if (measureState) {{
+          return;
+        }}
+        cancelClear();
+        clearTimer = window.setTimeout(() => {{
+          clearAllCursors();
+        }}, 90);
+      }};
+      const resolveEventFraction = (context, event) => {{
+        if (!context || !event) {{
+          return null;
+        }}
+        const rect = context.svg.getBoundingClientRect();
+        if (!rect.width) {{
+          return null;
+        }}
+        return Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+      }};
+      const syncFraction = (fraction) => {{
+        cancelClear();
+        for (const context of contexts) {{
+          applyCompareChartCursor(context, context.resolveFraction(fraction));
+        }}
+      }};
+      const syncMeasure = (startFraction, endFraction) => {{
+        cancelClear();
+        for (const context of contexts) {{
+          const startResolved = context.resolveFraction(startFraction);
+          const endResolved = context.resolveFraction(endFraction);
+          applyCompareChartMeasurement(context, startResolved, endResolved);
+          applyCompareChartCursor(context, endResolved);
+        }}
+      }};
+      const finishMeasure = (event, cancelled = false) => {{
+        if (!measureState) {{
+          return;
+        }}
+        const sourceContext = measureState.sourceContext;
+        if (
+          event
+          && measureState.pointerId !== null
+          && event.pointerId !== undefined
+          && event.pointerId !== measureState.pointerId
+        ) {{
+          return;
+        }}
+        if (sourceContext && typeof sourceContext.svg.releasePointerCapture === "function" && measureState.pointerId !== null) {{
+          try {{
+            sourceContext.svg.releasePointerCapture(measureState.pointerId);
+          }} catch (_error) {{
+          }}
+        }}
+        const finalState = measureState;
+        measureState = null;
+        if (cancelled || !finalState.moved) {{
+          clearAllMeasurements();
+          clearAllCursors();
+          return;
+        }}
+        syncMeasure(finalState.startFraction, finalState.endFraction);
+      }};
+      for (const context of contexts) {{
+        context.svg.addEventListener("pointerenter", (event) => {{
+          if (measureState && measureState.sourceContext === context && measureState.pointerId === event.pointerId) {{
+            return;
+          }}
+          const overlayTarget = event.target.closest("[data-market-overlay-hit],[data-market-overlay-line],[data-market-overlay-label]");
+          if (overlayTarget) {{
+            syncOverlayFocus(overlayTarget.getAttribute("data-overlay-key") || activeOverlayKey);
+          }} else {{
+            syncOverlayFocus(activeOverlayKey);
+          }}
+          const fraction = resolveEventFraction(context, event);
+          if (fraction === null) {{
+            return;
+          }}
+          syncFraction(fraction);
+        }});
+        context.svg.addEventListener("pointermove", (event) => {{
+          const overlayTarget = event.target.closest("[data-market-overlay-hit],[data-market-overlay-line],[data-market-overlay-label]");
+          if (overlayTarget) {{
+            syncOverlayFocus(overlayTarget.getAttribute("data-overlay-key") || activeOverlayKey);
+          }} else {{
+            syncOverlayFocus(activeOverlayKey);
+          }}
+          const fraction = resolveEventFraction(context, event);
+          if (fraction === null) {{
+            return;
+          }}
+          if (measureState && measureState.sourceContext === context && measureState.pointerId === event.pointerId) {{
+            measureState.endFraction = fraction;
+            if (Math.abs(fraction - measureState.startFraction) > 0.002) {{
+              measureState.moved = true;
+            }}
+            syncMeasure(measureState.startFraction, measureState.endFraction);
+            return;
+          }}
+          syncFraction(fraction);
+        }});
+        context.svg.addEventListener("pointerleave", () => {{
+          syncOverlayFocus(activeOverlayKey);
+          scheduleClear();
+        }});
+        context.svg.addEventListener("pointerdown", (event) => {{
+          const overlayTarget = event.target.closest("[data-market-overlay-hit],[data-market-overlay-line],[data-market-overlay-label]");
+          const overlayKey = overlayTarget ? (overlayTarget.getAttribute("data-overlay-key") || "") : "";
+          if (hasOverlayKey(overlayKey)) {{
+            activeOverlayKey = overlayKey;
+            compareOverlayState[kind] = overlayKey;
+            persistCompareState();
+            syncOverlayFocus(activeOverlayKey);
+          }}
+          const fraction = resolveEventFraction(context, event);
+          if (fraction === null) {{
+            return;
+          }}
+          event.preventDefault();
+          cancelClear();
+          measureState = {{
+            sourceContext: context,
+            pointerId: event.pointerId,
+            startFraction: fraction,
+            endFraction: fraction,
+            moved: false,
+          }};
+          if (typeof context.svg.setPointerCapture === "function") {{
+            try {{
+              context.svg.setPointerCapture(event.pointerId);
+            }} catch (_error) {{
+            }}
+          }}
+          syncMeasure(fraction, fraction);
+        }});
+        context.svg.addEventListener("pointerup", (event) => {{
+          finishMeasure(event, false);
+        }});
+        context.svg.addEventListener("pointercancel", (event) => {{
+          finishMeasure(event, true);
+        }});
+        context.svg.addEventListener("dblclick", (event) => {{
+          event.preventDefault();
+          finishMeasure(event, true);
+          clearAllMeasurements();
+          clearAllCursors();
+        }});
+      }}
+    }};
+    const bindCompareStickyCursor = () => {{
+      bindCompareStickyCursorGroup("root");
+      bindCompareStickyCursorGroup("signal");
+    }};
     const renderCompareBoard = () => {{
       renderCompareStatus();
+      renderRootDeltaStrip();
+      renderRootRegimeStrip();
+      renderSignalDeltaStrip();
+      renderSignalRegimeStrip();
       for (const slot of compareSlots) {{
         renderCompareRootCard(slot);
         renderCompareSignalCard(slot);
       }}
       syncRootPinButtons();
       syncSignalPinButtons();
+      bindCompareStickyCursor();
       return;
+    }};
+    const syncMarketPanel = (snapshot) => {{
+      if (!liveMarketPanelNode) {{
+        return;
+      }}
+      liveMarketPanelNode.dataset.marketRootCode = snapshot && snapshot.root_code
+        ? snapshot.root_code
+        : liveMarketPanelNode.dataset.marketRootCode || "";
+      liveMarketPanelNode.dataset.marketUnit = snapshot && snapshot.unit ? snapshot.unit : "";
+      liveMarketPanelNode.innerHTML = renderMarketPanelBody(snapshot);
+      if (!snapshot) {{
+        return;
+      }}
+      attachInteractiveMarketCharts(
+        liveMarketPanelNode,
+        [snapshot.daily, snapshot.weekly, snapshot.monthly],
+        (series) => `${{rootPreviewTimeframes[series.label] || series.label}} Â· ${{series.label}}`,
+        16,
+        8,
+      );
+    }};
+    if (liveMarketPanelNode) {{
+      try {{
+        const workspaceDataNode = document.getElementById("workspace-data");
+        const payload = workspaceDataNode ? JSON.parse(workspaceDataNode.textContent) : null;
+        if (payload && payload.market_snapshot) {{
+          liveMarketPanelNode.dataset.marketUnit = payload.market_snapshot.unit || "";
+          attachInteractiveMarketCharts(
+            liveMarketPanelNode,
+            [payload.market_snapshot.daily, payload.market_snapshot.weekly, payload.market_snapshot.monthly],
+            (series) => `${{rootPreviewTimeframes[series.label] || series.label}} Â· ${{series.label}}`,
+            16,
+            8,
+          );
+        }}
+      }} catch (_error) {{
+      }}
+    }}
+    const refreshRootLiveViews = (rootCode, snapshot) => {{
+      setRootLanePriceLine(rootCode, snapshot);
+      setRootLevelState(rootCode, snapshot);
+      for (const slot of compareSlots) {{
+        if (compareState.roots[slot] && compareState.roots[slot].rootCode === rootCode) {{
+          compareState.roots[slot].unavailable = !snapshot;
+        }}
+      }}
+      const card = document.querySelector(`[data-root-preview-card][data-root-code="${{rootCode}}"]`);
+      const popover = card ? card.querySelector("[data-root-preview-popover]") : null;
+      if (popover && !popover.hidden) {{
+        const activeButton = card.querySelector("[data-root-preview-button].is-active") || card.querySelector('[data-root-preview-button][data-timeframe="1D"]');
+        if (snapshot) {{
+          setRootPreviewContent(rootCode, activeButton ? activeButton.dataset.timeframe || "1D" : "1D", snapshot);
+        }} else {{
+          setRootPreviewMessage(rootCode, activeButton ? activeButton.dataset.timeframe || "1D" : "1D", rootPreviewMessages.unavailable);
+        }}
+      }}
+      if (
+        liveMarketPanelNode
+        && !liveMarketPanelNode.dataset.marketSignalId
+        && liveMarketPanelNode.dataset.marketRootCode === rootCode
+      ) {{
+        syncMarketPanel(snapshot);
+      }}
+    }};
+    const refreshSignalLiveViews = (signalId, snapshot) => {{
+      if (!snapshot) {{
+        return;
+      }}
+      setSignalLaneLevelState(signalId, snapshot);
+      const card = document.querySelector(`[data-signal-preview-card][data-signal-id="${{signalId}}"]`);
+      const popover = card ? card.querySelector("[data-signal-preview-popover]") : null;
+      if (popover && !popover.hidden) {{
+        const activeButton = card.querySelector("[data-signal-preview-button].is-active") || card.querySelector('[data-signal-preview-button][data-timeframe="1D"]');
+        setSignalPreviewContent(signalId, activeButton ? activeButton.dataset.timeframe || "1D" : "1D", snapshot);
+      }}
+      if (
+        liveMarketPanelNode
+        && liveMarketPanelNode.dataset.marketSignalId
+        && liveMarketPanelNode.dataset.marketSignalId === signalId
+        && snapshot.market_snapshot
+      ) {{
+        syncMarketPanel(snapshot.market_snapshot);
+      }}
+    }};
+    const collectLiveRootCodes = () => Array.from(document.querySelectorAll("[data-root-preview-card]"))
+      .map((card) => card.dataset.rootCode)
+      .filter((value) => Boolean(value));
+    const collectLiveSignalIds = () => {{
+      const ids = new Set();
+      if (liveMarketPanelNode && liveMarketPanelNode.dataset.marketSignalId) {{
+        ids.add(liveMarketPanelNode.dataset.marketSignalId);
+      }}
+      for (const card of document.querySelectorAll("[data-signal-preview-card]")) {{
+        if (card.dataset.signalId) {{
+          ids.add(card.dataset.signalId);
+        }}
+      }}
+      for (const popover of document.querySelectorAll("[data-signal-preview-popover]")) {{
+        if (!popover.hidden && popover.dataset.signalId) {{
+          ids.add(popover.dataset.signalId);
+        }}
+      }}
+      for (const slot of compareSlots) {{
+        if (compareState.signals[slot] && compareState.signals[slot].signalId) {{
+          ids.add(compareState.signals[slot].signalId);
+        }}
+      }}
+      return Array.from(ids);
+    }};
+    const refreshLiveMarketData = async () => {{
+      if (document.hidden) {{
+        return;
+      }}
+      const rootCodes = collectLiveRootCodes();
+      await Promise.all(rootCodes.map(async (rootCode) => {{
+        try {{
+          const snapshot = await fetchRootPreviewSnapshot(rootCode, {{ force: true }});
+          refreshRootLiveViews(rootCode, snapshot);
+        }} catch (_error) {{
+          return;
+        }}
+      }}));
+      const signalIds = collectLiveSignalIds();
+      await Promise.all(signalIds.map(async (signalId) => {{
+        try {{
+          const snapshot = await fetchSignalPreviewSnapshot(signalId, {{ force: true }});
+          refreshSignalLiveViews(signalId, snapshot);
+        }} catch (_error) {{
+          return;
+        }}
+      }}));
+      renderCompareBoard();
     }};
     const pinRootPreview = async (rootCode, timeframe, slot) => {{
       const resolvedSlot = normalizeCompareSlot(slot);
@@ -4302,13 +7463,13 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       persistCompareState();
       renderCompareBoard();
       try {{
-        await fetchRootPreviewSnapshot(rootCode);
+        const payload = await fetchRootPreviewSnapshot(rootCode);
         if (
           compareState.roots[resolvedSlot]
           && compareState.roots[resolvedSlot].rootCode === rootCode
           && compareState.roots[resolvedSlot].timeframe === resolvedTimeframe
         ) {{
-          compareState.roots[resolvedSlot].unavailable = false;
+          compareState.roots[resolvedSlot].unavailable = !payload;
         }}
       }} catch (_error) {{
         if (
@@ -4401,6 +7562,18 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
           }}
           persistCompareState();
           renderCompareBoard();
+          return;
+        }}
+        const rangeButton = event.target.closest("[data-compare-range-button]");
+        if (rangeButton) {{
+          event.preventDefault();
+          const kind = rangeButton.dataset.compareKind;
+          const rangeKey = normalizeCompareRange(rangeButton.dataset.rangeKey);
+          if (kind === "root" || kind === "signal") {{
+            compareRangeState[kind] = rangeKey;
+            persistCompareState();
+            renderCompareBoard();
+          }}
           return;
         }}
         const timeframeButtonNext = event.target.closest("[data-compare-timeframe]");
@@ -4565,6 +7738,16 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
           renderCompareBoard();
         }});
     }}
+    if (window.__imoexMarketLiveRefreshStop) {{
+      window.__imoexMarketLiveRefreshStop();
+    }}
+    const marketLiveRefreshTimer = window.setInterval(() => {{
+      void refreshLiveMarketData();
+    }}, 20000);
+    window.__imoexMarketLiveRefreshStop = () => {{
+      window.clearInterval(marketLiveRefreshTimer);
+    }};
+    void refreshLiveMarketData();
     document.addEventListener("click", (event) => {{
       if (!event.target.closest("[data-root-preview-card]")) {{
         hideRootPreviews();
@@ -4807,7 +7990,238 @@ def _council_role_blueprint(role_key: str, language: str) -> dict[str, str]:
     return blueprints.get(role_key, fallback)["ru" if language == "ru" else "en"]
 
 
-def _render_council_page(snapshot: WorkspaceSnapshot, *, language: str) -> str:
+def _build_council_prompt_context(snapshot: WorkspaceSnapshot, *, language: str) -> dict[str, object]:
+    focus = snapshot.focus_signal
+    root_details = snapshot.root_details
+    panel = snapshot.control_panel
+    market = snapshot.market_snapshot
+    is_ru = language == "ru"
+    primary_feed = _primary_market_feed(panel)
+    role_labels = {
+        "trend_vol": "Аналитик тренда и волатильности" if is_ru else "Trend / volatility analyst",
+        "flow_liquidity": "Аналитик потока и ликвидности" if is_ru else "Flow / liquidity analyst",
+        "oi_roll": "Аналитик OI и ролла" if is_ru else "OI / roll analyst",
+        "macro_event": "Аналитик макро-событий" if is_ru else "Macro-event analyst",
+        "skeptic": "Скептик" if is_ru else "Skeptic",
+        "arbiter": "Арбитр" if is_ru else "Arbiter",
+    }
+
+    def _bullets(values: list[str], fallback: str) -> str:
+        entries = [f"- {item}" for item in values if item]
+        return "\n".join(entries) if entries else f"- {fallback}"
+
+    missing_value = "н/д" if is_ru else "n/a"
+    current_price = missing_value
+    price_change_pct = missing_value
+    if market is not None:
+        current_price = f"{market.current_price:.2f} {market.unit}".strip()
+        price_change_pct = f"{market.price_change_pct:+.2%}"
+
+    horizon_labels = {
+        "H1S": "1 сессия" if is_ru else "1 session",
+        "H3S": "3 сессии" if is_ru else "3 sessions",
+        "H2W": "2 недели" if is_ru else "2 weeks",
+        "H4W": "4 недели" if is_ru else "4 weeks",
+    }
+    session_labels = {
+        "morning": "утренняя" if is_ru else "morning",
+        "main": "основная" if is_ru else "main",
+        "evening": "вечерняя" if is_ru else "evening",
+        "weekend": "выходной режим" if is_ru else "weekend",
+        "clearing": "клиринг" if is_ru else "clearing",
+        "halted": "приостановлена" if is_ru else "halted",
+    }
+    direction_labels = {
+        "bullish": "бычий" if is_ru else "bullish",
+        "bearish": "медвежий" if is_ru else "bearish",
+        "no_edge": "без преимущества" if is_ru else "no edge",
+    }
+    status_labels = {
+        "active": "активен" if is_ru else "active",
+        "resolved": "разрешён" if is_ru else "resolved",
+        "invalidated": "инвалидирован" if is_ru else "invalidated",
+    }
+    workflow_labels = {
+        "watching": "наблюдаю" if is_ru else "watching",
+        "validating": "проверяю" if is_ru else "validating",
+        "ready": "готов" if is_ru else "ready",
+        "ignored": "игнорирую" if is_ru else "ignored",
+        "escalate": "эскалирую" if is_ru else "escalate",
+        "resolved": "завершено" if is_ru else "resolved",
+    }
+
+    reference_status = (
+        f"{_control_panel_reference_sync_label(panel.reference_sync.status)} · "
+        f"{_control_panel_reference_sync_source(panel.reference_sync.source)}"
+    )
+    active_contract = root_details.continuous_series.active_contract if root_details is not None else missing_value
+    next_contract = root_details.continuous_series.next_contract if root_details is not None else missing_value
+    days_to_expiry = str(root_details.continuous_series.days_to_expiry) if root_details is not None else missing_value
+    roll_share = (
+        f"{root_details.continuous_series.next_contract_share:.0%}"
+        if root_details is not None
+        else missing_value
+    )
+    horizon = focus.horizon.value if focus is not None else ("n/a" if not is_ru else "н/д")
+    session_type = root_details.session.session_type.value if root_details is not None else "n/a"
+    signal_direction = focus.direction_final.value if focus is not None else "no_edge"
+    signal_status = focus.status.value if focus is not None else missing_value
+    workflow_state = focus.workflow_state.value if focus is not None else "watching"
+    roll_state = root_details.continuous_series.roll_state if root_details is not None else missing_value
+    horizon = horizon_labels.get(horizon, horizon)
+    session_type = session_labels.get(session_type, session_type)
+    signal_direction = direction_labels.get(signal_direction, signal_direction)
+    signal_status = status_labels.get(signal_status, signal_status)
+    workflow_state = workflow_labels.get(workflow_state, workflow_state)
+    if focus is None:
+        horizon = missing_value
+    if root_details is None:
+        session_type = missing_value
+    signal_summary = (
+        focus.summary
+        if focus is not None
+        else (
+            "Фокус-сигнал ещё не выбран."
+            if is_ru
+            else "No focus signal has been selected yet."
+        )
+    )
+    def _joined(values: list[str], fallback: str) -> str:
+        entries = [item for item in values if item]
+        return "; ".join(entries) if entries else fallback
+
+    def _packet(items: list[tuple[str, str]], fallback: str) -> str:
+        lines = [f"- {label}: {value}" for label, value in items if value]
+        return "\n".join(lines) if lines else f"- {fallback}"
+
+    driver_summary = _joined(
+        focus.drivers if focus is not None else [],
+        "Ð´Ñ€Ð°Ð¹Ð²ÐµÑ€Ñ‹ Ð¿Ð¾ÐºÐ° Ð½Ðµ Ð·Ð°Ñ„Ð¸ÐºÑÐ¸Ñ€Ð¾Ð²Ð°Ð½Ñ‹" if is_ru else "no drivers recorded yet",
+    )
+    objection_summary = _joined(
+        focus.objections if focus is not None else [],
+        "Ð²Ð¾Ð·Ñ€Ð°Ð¶ÐµÐ½Ð¸Ñ Ð¿Ð¾ÐºÐ° Ð½Ðµ Ð·Ð°Ñ„Ð¸ÐºÑÐ¸Ñ€Ð¾Ð²Ð°Ð½Ñ‹" if is_ru else "no objections recorded yet",
+    )
+    invalidation_summary = _joined(
+        focus.invalidation_conditions if focus is not None else [],
+        "ÑƒÑÐ»Ð¾Ð²Ð¸Ñ Ð¾Ñ‚Ð¼ÐµÐ½Ñ‹ Ð¿Ð¾ÐºÐ° Ð½Ðµ Ð·Ð°Ñ„Ð¸ÐºÑÐ¸Ñ€Ð¾Ð²Ð°Ð½Ñ‹" if is_ru else "no invalidation conditions recorded yet",
+    )
+    role_context_packets = {
+        "trend_vol": _packet(
+            [
+                ("Ð“Ð¾Ñ€Ð¸Ð·Ð¾Ð½Ñ‚ Ð¸ ÑÐµÑÑÐ¸Ñ" if is_ru else "Horizon and session", f"{horizon} · {session_type}"),
+                ("Ð¦ÐµÐ½Ð° Ð¸ Ð´Ð½ÐµÐ²Ð½Ð¾Ðµ Ð¸Ð·Ð¼ÐµÐ½ÐµÐ½Ð¸Ðµ" if is_ru else "Price and day change", f"{current_price} · {price_change_pct}"),
+                ("Ð¢ÐµÐºÑƒÑ‰ÐµÐµ Ñ‡Ñ‚ÐµÐ½Ð¸Ðµ" if is_ru else "Current read", f"{signal_direction} / {signal_status} / {workflow_state}"),
+                ("Ð§Ñ‚Ð¾ Ð¿Ð¾Ð´Ð´ÐµÑ€Ð¶Ð¸Ð²Ð°ÐµÑ‚ Ð´Ð²Ð¸Ð¶ÐµÐ½Ð¸Ðµ" if is_ru else "What supports the move", driver_summary),
+                ("Ð§Ñ‚Ð¾ Ð´Ð°Ð²Ð¸Ñ‚ Ð½Ð° Ñ€ÐµÐ¶Ð¸Ð¼" if is_ru else "What pressures the regime", objection_summary),
+            ],
+            "Ð´Ð»Ñ Ñ€ÐµÐ¶Ð¸Ð¼Ð° Ð¸ Ð²Ð¾Ð»Ð°Ñ‚Ð¸Ð»ÑŒÐ½Ð¾ÑÑ‚Ð¸ Ð¿Ð¾ÐºÐ° Ð½ÐµÑ‚ Ð¾Ñ‚Ð´ÐµÐ»ÑŒÐ½Ð¾Ð³Ð¾ packet" if is_ru else "no regime packet yet",
+        ),
+        "flow_liquidity": _packet(
+            [
+                ("Ð¦ÐµÐ½Ð° Ð¸ Ð´Ð½ÐµÐ²Ð½Ð¾Ðµ Ð¸Ð·Ð¼ÐµÐ½ÐµÐ½Ð¸Ðµ" if is_ru else "Price and day change", f"{current_price} · {price_change_pct}"),
+                ("Ð¡ÐµÑÑÐ¸Ñ" if is_ru else "Session", session_type),
+                ("Ð˜ÑÑ‚Ð¾Ñ‡Ð½Ð¸Ðº Ð¸ Ñ€ÐµÐ¶Ð¸Ð¼ Ð´Ð°Ð½Ð½Ñ‹Ñ…" if is_ru else "Source and data mode", f"{(primary_feed.owner if primary_feed is not None else missing_value)} · {_control_panel_data_mode_label(panel.data_mode)}"),
+                ("Ð¡Ð¾ÑÑ‚Ð¾ÑÐ½Ð¸Ðµ ÑÐ¿Ñ€Ð°Ð²Ð¾Ñ‡Ð½Ð¸ÐºÐ°" if is_ru else "Reference state", reference_status),
+                ("Ð§Ñ‚Ð¾ Ð²Ñ‹Ð³Ð»ÑÐ´Ð¸Ñ‚ Ð¿Ð¾Ð´Ñ‚Ð²ÐµÑ€Ð¶Ð´ÐµÐ½Ð¸ÐµÐ¼" if is_ru else "What looks confirmed", driver_summary),
+                ("Ð§Ñ‚Ð¾ Ð´ÐµÐ»Ð°ÐµÑ‚ Ð¿Ð¾Ñ‚Ð¾Ðº Ñ…Ñ€ÑƒÐ¿ÐºÐ¸Ð¼" if is_ru else "What makes flow fragile", objection_summary),
+            ],
+            "Ð´Ð»Ñ Ð¿Ð¾Ñ‚Ð¾ÐºÐ° Ð¸ Ð»Ð¸ÐºÐ²Ð¸Ð´Ð½Ð¾ÑÑ‚Ð¸ Ð¿Ð¾ÐºÐ° Ð½ÐµÑ‚ Ð¾Ñ‚Ð´ÐµÐ»ÑŒÐ½Ð¾Ð³Ð¾ packet" if is_ru else "no flow packet yet",
+        ),
+        "oi_roll": _packet(
+            [
+                ("ÐÐºÑ‚Ð¸Ð²Ð½Ð°Ñ ÑÐµÑ€Ð¸Ñ" if is_ru else "Active series", active_contract),
+                ("Ð¡Ð»ÐµÐ´ÑƒÑŽÑ‰Ð¸Ð¹ ÐºÐ¾Ð½Ñ‚Ñ€Ð°ÐºÑ‚" if is_ru else "Next contract", next_contract),
+                ("Ð”Ð¾ ÑÐºÑÐ¿Ð¸Ñ€Ð°Ñ†Ð¸Ð¸" if is_ru else "Days to expiry", days_to_expiry),
+                ("Ð”Ð¾Ð»Ñ Ñ€Ð¾Ð»Ð»Ð°" if is_ru else "Roll share", roll_share),
+                ("Ð¡Ð¾ÑÑ‚Ð¾ÑÐ½Ð¸Ðµ Ñ€Ð¾Ð»Ð»Ð°" if is_ru else "Roll state", roll_state),
+                ("Ð£ÑÐ»Ð¾Ð²Ð¸Ñ Ð¾Ñ‚Ð¼ÐµÐ½Ñ‹" if is_ru else "Invalidation", invalidation_summary),
+            ],
+            "Ð´Ð»Ñ OI Ð¸ Ñ€Ð¾Ð»Ð»Ð° Ð¿Ð¾ÐºÐ° Ð½ÐµÑ‚ Ð¾Ñ‚Ð´ÐµÐ»ÑŒÐ½Ð¾Ð³Ð¾ packet" if is_ru else "no roll packet yet",
+        ),
+        "macro_event": _packet(
+            [
+                ("Ð¢Ð¾Ñ€Ð³Ð¾Ð²Ñ‹Ð¹ Ð´ÐµÐ½ÑŒ Ð¸ ÑÐµÑÑÐ¸Ñ" if is_ru else "Trading day and session", f"{(root_details.session.trading_day.isoformat() if root_details is not None else missing_value)} · {session_type}"),
+                ("Ð ÐµÐ¶Ð¸Ð¼ Ð´Ð°Ð½Ð½Ñ‹Ñ…" if is_ru else "Data mode", _control_panel_data_mode_label(panel.data_mode)),
+                ("Ð¡Ð¾ÑÑ‚Ð¾ÑÐ½Ð¸Ðµ ÑÐ¿Ñ€Ð°Ð²Ð¾Ñ‡Ð½Ð¸ÐºÐ°" if is_ru else "Reference state", reference_status),
+                ("Ð§Ñ‚Ð¾ Ð´Ð¾Ð»Ð¶Ð½Ð¾ ÑÐ¾Ð²Ð¿Ð°ÑÑ‚ÑŒ" if is_ru else "What must align", driver_summary),
+                ("Ð§Ñ‚Ð¾ Ð¼Ð¾Ð¶ÐµÑ‚ Ð±Ñ‹ÑÑ‚Ñ€Ð¾ ÑÐ»Ð¾Ð¼Ð°Ñ‚ÑŒ Ð¸Ð´ÐµÑŽ" if is_ru else "What can break the idea", objection_summary),
+            ],
+            "Ð´Ð»Ñ macro/event Ð¿Ð¾ÐºÐ° Ð½ÐµÑ‚ Ð¾Ñ‚Ð´ÐµÐ»ÑŒÐ½Ð¾Ð³Ð¾ packet" if is_ru else "no macro packet yet",
+        ),
+        "skeptic": _packet(
+            [
+                ("Ð¢ÐµÐºÑƒÑ‰ÐµÐµ Ñ€ÐµÑˆÐµÐ½Ð¸Ðµ" if is_ru else "Current decision", f"{signal_direction} / {signal_status} / {workflow_state}"),
+                ("Confidence Ñ„Ð¸Ð½Ð°Ð»Ð°" if is_ru else "Final confidence", f"{focus.confidence_final:.2f}" if focus is not None else missing_value),
+                ("Skeptic score" if is_ru else "Skeptic score", f"{focus.skeptic_score:.2f}" if focus is not None else missing_value),
+                ("Ð“Ð»Ð°Ð²Ð½Ñ‹Ðµ Ð²Ð¾Ð·Ñ€Ð°Ð¶ÐµÐ½Ð¸Ñ" if is_ru else "Main objections", objection_summary),
+                ("Ð£ÑÐ»Ð¾Ð²Ð¸Ñ Ð¾Ñ‚Ð¼ÐµÐ½Ñ‹" if is_ru else "Invalidation", invalidation_summary),
+                ("ÐšÐ°Ñ‡ÐµÑÑ‚Ð²Ð¾ Ð´Ð°Ð½Ð½Ñ‹Ñ…" if is_ru else "Data quality", f"{_control_panel_data_mode_label(panel.data_mode)} · {reference_status}"),
+            ],
+            "Ð´Ð»Ñ ÑÐºÐµÐ¿Ñ‚Ð¸ÐºÐ° Ð¿Ð¾ÐºÐ° Ð½ÐµÑ‚ Ð¾Ñ‚Ð´ÐµÐ»ÑŒÐ½Ð¾Ð³Ð¾ packet" if is_ru else "no skeptic packet yet",
+        ),
+        "arbiter": _packet(
+            [
+                ("ÐÑ‚Ð¾Ð³ ÑÐµÐ¹Ñ‡Ð°Ñ" if is_ru else "Current state", f"{signal_direction} / {signal_status} / {workflow_state}"),
+                ("Confidence / skeptic" if is_ru else "Confidence / skeptic", f"{(f'{focus.confidence_final:.2f}' if focus is not None else missing_value)} · {(f'{focus.skeptic_score:.2f}' if focus is not None else missing_value)}"),
+                ("Ð¦ÐµÐ½Ð° Ð¸ Ð´Ð½ÐµÐ²Ð½Ð¾Ðµ Ð¸Ð·Ð¼ÐµÐ½ÐµÐ½Ð¸Ðµ" if is_ru else "Price and day change", f"{current_price} · {price_change_pct}"),
+                ("Ð§Ñ‚Ð¾ Ð¿Ð¾Ð´Ð´ÐµÑ€Ð¶Ð¸Ð²Ð°ÐµÑ‚" if is_ru else "What supports", driver_summary),
+                ("Ð§Ñ‚Ð¾ Ð¾Ð³Ñ€Ð°Ð½Ð¸Ñ‡Ð¸Ð²Ð°ÐµÑ‚" if is_ru else "What limits", objection_summary),
+                ("Ð§Ñ‚Ð¾ Ð¾Ñ‚Ð¼ÐµÐ½ÑÐµÑ‚" if is_ru else "What invalidates", invalidation_summary),
+            ],
+            "Ð´Ð»Ñ Ð°Ñ€Ð±Ð¸Ñ‚Ñ€Ð° Ð¿Ð¾ÐºÐ° Ð½ÐµÑ‚ Ð¾Ñ‚Ð´ÐµÐ»ÑŒÐ½Ð¾Ð³Ð¾ packet" if is_ru else "no arbiter packet yet",
+        ),
+    }
+    return {
+        "root_code": snapshot.selected_root,
+        "active_contract": active_contract,
+        "next_contract": next_contract,
+        "contract_code": focus.contract if focus is not None else active_contract,
+        "horizon": horizon,
+        "session_type": session_type,
+        "trading_day": (
+            root_details.session.trading_day.isoformat()
+            if root_details is not None
+            else datetime.now(UTC).date().isoformat()
+        ),
+        "current_price": current_price,
+        "price_change_pct": price_change_pct,
+        "workflow_state": workflow_state,
+        "signal_direction": signal_direction,
+        "signal_status": signal_status,
+        "signal_summary": signal_summary,
+        "why_now": _bullets(
+            focus.drivers if focus is not None else [],
+            "Драйверы ещё не записаны." if is_ru else "No drivers recorded yet.",
+        ),
+        "pushback": _bullets(
+            focus.objections if focus is not None else [],
+            "Возражения ещё не записаны." if is_ru else "No objections recorded yet.",
+        ),
+        "invalidation": _bullets(
+            focus.invalidation_conditions if focus is not None else [],
+            "Условия отмены ещё не записаны." if is_ru else "No invalidation conditions recorded yet.",
+        ),
+        "data_mode": _control_panel_data_mode_label(panel.data_mode),
+        "price_source": primary_feed.owner if primary_feed is not None else missing_value,
+        "roll_state": roll_state,
+        "reference_status": reference_status,
+        "days_to_expiry": days_to_expiry,
+        "roll_share": roll_share,
+        "confidence_final": f"{focus.confidence_final:.2f}" if focus is not None else "n/a",
+        "skeptic_score": f"{focus.skeptic_score:.2f}" if focus is not None else "n/a",
+        "role_label": "{role_label}",
+        "role_context_packets": role_context_packets,
+        **{f"role_label_{key}": value for key, value in role_labels.items()},
+    }
+
+
+def _render_council_page(
+    snapshot: WorkspaceSnapshot,
+    *,
+    runtime_snapshot: RuntimeControlSnapshot,
+    language: str,
+) -> str:
     focus = snapshot.focus_signal
     root_details = snapshot.root_details
     panel = snapshot.control_panel
@@ -4865,6 +8279,8 @@ def _render_council_page(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         "looks_at": "Смотрит на" if is_ru else "Looks at",
         "produces": "Возвращает" if is_ru else "Produces",
         "purpose": "Зачем нужен" if is_ru else "Why it matters",
+        "prompt": "Текущий prompt" if is_ru else "Current prompt",
+        "manage_prompt": "Управлять prompt" if is_ru else "Manage prompt",
         "fixed": "Сейчас роль жёстко закреплена за этой моделью." if is_ru else "This role is currently fixed to this model.",
         "dynamic": "Роль выбирается динамически." if is_ru else "This role is routed dynamically.",
         "decision_title": "Почему итог сейчас такой" if is_ru else "Why the current output looks like this",
@@ -4951,9 +8367,30 @@ def _render_council_page(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         else f"{next_contract} · expiry in {days_to_expiry}d ({expiry_date}) · roll {roll_share}"
     )
 
+    prompt_lookup = {item.role_key: item for item in runtime_snapshot.role_prompts}
     role_cards = []
     for item in panel.model_roles:
         blueprint = _council_role_blueprint(item.role_key, language)
+        prompt_profile = prompt_lookup.get(item.role_key)
+        prompt_preview = (
+            prompt_profile.effective_rendered_prompt
+            if prompt_profile is not None and getattr(prompt_profile, "effective_rendered_prompt", None)
+            else (
+                prompt_profile.prompt_template
+                if prompt_profile is not None
+                else ("Prompt preview is unavailable." if not is_ru else "Prompt preview недоступен.")
+            )
+        )
+        if prompt_profile is not None and getattr(prompt_profile, "effective_prompt_template", None):
+            prompt_preview = (
+                getattr(prompt_profile, "effective_rendered_prompt", None)
+                or getattr(prompt_profile, "effective_prompt_template")
+            )
+        prompt_status = (
+            f'<p class="muted" data-council-prompt-status>{escape(getattr(prompt_profile, "approval_note", ""))}</p>'
+            if prompt_profile is not None and getattr(prompt_profile, "approval_state", "live") == "pending_approval"
+            else ""
+        )
         role_cards.append(
             '<article class="role-card">'
             f'<strong>{escape(blueprint["title"])}</strong>'
@@ -4962,6 +8399,10 @@ def _render_council_page(snapshot: WorkspaceSnapshot, *, language: str) -> str:
             f'<div><span>{escape(copy["looks_at"])}</span><p>{escape(blueprint["inputs"])}</p></div>'
             f'<div><span>{escape(copy["produces"])}</span><p>{escape(blueprint["output"])}</p></div>'
             f'<div><span>{escape(copy["purpose"])}</span><p>{escape(blueprint["purpose"])}</p></div>'
+            f'<div><span>{escape(copy["prompt"])}</span><details data-council-prompt-card><summary>{escape(copy["prompt"])}</summary>'
+            f'<pre data-council-prompt-preview>{escape(prompt_preview)}</pre>'
+            f'{prompt_status}'
+            f'<p><a class="button" href="/workspace/runtime?root={escape(snapshot.selected_root)}#runtime-prompts">{escape(copy["manage_prompt"])}</a></p></details></div>'
             "</div>"
             f'<small>{escape(copy["fixed"] if item.control_mode == "fixed" else copy["dynamic"])}</small>'
             "</article>"
@@ -4996,6 +8437,70 @@ def _render_council_page(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         )
     )
     session_guidance = _render_review_bundle(snapshot.review_bundle)
+    council_rendered_prompts = sum(1 for item in runtime_snapshot.role_prompts if item.rendered_prompt)
+    council_state_strip = _render_surface_state_strip(
+        strip_key="council",
+        title="Council posture" if not is_ru else "Состояние совета",
+        note=(
+            "This strip explains whether the council is reasoning over a live focus packet, visible prompts, and trustworthy market context."
+            if not is_ru
+            else "Здесь видно, опирается ли совет на живой focus packet, видимые промпты и честный рыночный контекст."
+        ),
+        items=[
+            {
+                "label": "Focus packet" if not is_ru else "Фокусный пакет",
+                "status": "ready" if focus is not None else "waiting",
+                "tone": "positive" if focus is not None else "warning",
+                "detail": (
+                    focus.summary
+                    if focus is not None
+                    else (
+                        "The council is waiting for a focus signal before the full decision anatomy becomes meaningful."
+                        if not is_ru
+                        else "Совет ждёт фокусный сигнал, прежде чем анатомия решения станет полной."
+                    )
+                ),
+            },
+            {
+                "label": "Prompt coverage" if not is_ru else "Покрытие промптов",
+                "status": (
+                    "ready"
+                    if runtime_snapshot.role_prompts
+                    and council_rendered_prompts == len(runtime_snapshot.role_prompts)
+                    else "partial"
+                ),
+                "tone": (
+                    "positive"
+                    if runtime_snapshot.role_prompts
+                    and council_rendered_prompts == len(runtime_snapshot.role_prompts)
+                    else "warning"
+                ),
+                "detail": (
+                    f"{council_rendered_prompts} of {len(runtime_snapshot.role_prompts)} council prompts are visible with live context."
+                    if not is_ru
+                    else f"{council_rendered_prompts} из {len(runtime_snapshot.role_prompts)} промптов совета видны с живым контекстом."
+                ),
+            },
+            {
+                "label": "Market truth" if not is_ru else "Рыночный контекст",
+                "status": panel.data_mode if snapshot.market_snapshot is not None else ("hidden" if not is_ru else "скрыт"),
+                "tone": (
+                    "positive"
+                    if snapshot.market_snapshot is not None and panel.data_mode == "live"
+                    else "warning"
+                ),
+                "detail": (
+                    "The council can read live price context for the selected root."
+                    if snapshot.market_snapshot is not None
+                    else (
+                        "Charts are hidden, so the council page stays honest about missing live price context."
+                        if not is_ru
+                        else "Графики скрыты, поэтому страница совета честно показывает отсутствие живого ценового контекста."
+                    )
+                ),
+            },
+        ],
+    )
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -5065,6 +8570,10 @@ def _render_council_page(snapshot: WorkspaceSnapshot, *, language: str) -> str:
     .flow-arrow {{ display:none; }}
     .role-runtime {{ margin:0; color:var(--navy); font-weight:600; }}
     .role-facts {{ display:grid; gap:10px; }}
+    .role-facts details {{ border:1px solid var(--line); border-radius:16px; padding:10px 12px; background:rgba(255,255,255,.58); }}
+    .role-facts summary {{ cursor:pointer; font-weight:700; }}
+    .role-facts pre {{ margin-top:10px; padding:12px 14px; border-radius:14px; background:rgba(23,34,44,.06); white-space:pre-wrap; overflow:auto; }}
+    .role-facts .button {{ margin-top:8px; }}
     .why-card ul {{ margin:0; padding-left:18px; }}
     .control-summary-card.is-wide {{
       grid-column:span 2;
@@ -5119,6 +8628,7 @@ def _render_council_page(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         </div>
       </aside>
     </section>
+    {council_state_strip}
     <section class="panel"><div class="panel-head"><h2>{escape(copy["inputs_title"])}</h2></div><p class="panel-note">{escape(copy["inputs_note"])}</p><div class="input-grid"><article class="input-card"><span>{"Рыночный контекст" if is_ru else "Market context"}</span><strong>{escape(session_name)}</strong><p>{escape(snapshot.selected_root)} · {escape(trading_day)}</p></article><article class="input-card"><span>{"Контракт и экспирация" if is_ru else "Contract and expiry"}</span><strong>{escape(active_contract)}</strong><p>{escape(contract_context)}</p></article><article class="input-card"><span>{"Сигнал в фокусе" if is_ru else "Signal in focus"}</span><strong>{escape(final_call)}</strong><p>{escape(focus_header)} · {escape(workflow_state)}</p></article><article class="input-card"><span>{"Источники и синхронизация" if is_ru else "Sources and sync"}</span><strong>{escape(price_source)}</strong><p>{escape(data_mode)} · {escape(reference_state)}</p></article></div></section>
     <section class="panel">
       <div class="panel-head">
@@ -6215,7 +9725,131 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot, *, language: str
     confidence_block = _render_confidence_decomposition(snapshot.confidence_decomposition)
     decision_log = _render_decision_timeline(snapshot.decision_log, title="Decision log")
     similar_setups = _render_similar_setups(snapshot.similar_setups)
-    market_panel = _render_market_snapshot(snapshot.market_snapshot, language=language)
+    market_overlay_labels = json.dumps(_market_overlay_copy(language), ensure_ascii=False)
+    market_level_messages = json.dumps(_market_level_copy(language), ensure_ascii=False)
+    market_panel_copy = json.dumps(
+        {
+            "title": "Текущая цена и графики" if language == "ru" else "Current price and charts",
+            "subtitle": (
+                "По выбранному инструменту: текущая цена и три масштаба просмотра без переключения страниц."
+                if language == "ru"
+                else "Current price plus day, week, and month views for the selected instrument."
+            ),
+            "current_price": "Последняя цена" if language == "ru" else "Last",
+            "daily_change": "Дневное изменение" if language == "ru" else "Daily change",
+            "day_high": "Дневной максимум" if language == "ru" else "Day high",
+            "day_low": "Дневной минимум" if language == "ru" else "Day low",
+            "updated": "Обновлено" if language == "ru" else "Updated",
+            "source": "Источник" if language == "ru" else "Source",
+            "warning_title": "Поток цены требует внимания" if language == "ru" else "Price feed needs attention",
+            "warning_body": (
+                "Данные выглядят несвежими или деградировавшими, поэтому цену стоит читать с осторожностью."
+                if language == "ru"
+                else "The feed looks stale or degraded, so treat the displayed price with caution."
+            ),
+            "status": "Статус" if language == "ru" else "Status",
+            "levels": "Уровни" if language == "ru" else "Levels",
+            "open": "Открытие" if language == "ru" else "Open",
+            "change": "Изменение" if language == "ru" else "Change",
+            "range": "Диапазон" if language == "ru" else "Range",
+            "hover_hint": "Наведите на свечу, чтобы увидеть OHLC." if language == "ru" else "Hover a candle to inspect OHLC.",
+            "range_day": "Сессия" if language == "ru" else "Session",
+            "range_week": "Неделя" if language == "ru" else "Week",
+            "range_month": "Месяц" if language == "ru" else "Month",
+            "range_focus": "Фокус" if language == "ru" else "Focus",
+            "range_tight": "Импульс" if language == "ru" else "Impulse",
+            "level_legend": "Уровни идеи" if language == "ru" else "Setup levels",
+            "level_hint": "Нажмите на уровень, чтобы зафиксировать подсветку." if language == "ru" else "Click a level to lock the highlight.",
+            "level_distance": "До цены" if language == "ru" else "From price",
+            "level_entry_note": "Базовый вход в сетап." if language == "ru" else "Primary setup entry.",
+            "level_invalidation_note": "Уровень, после которого идея ломается." if language == "ru" else "Level that breaks the setup.",
+            "level_target_note": "Основная цель для идеи." if language == "ru" else "Primary target for the setup.",
+            "measure_hint": (
+                "Протяните по графику, чтобы измерить дельту между свечами."
+                if language == "ru"
+                else "Drag across the chart to measure the delta between candles."
+            ),
+            "measure_title": "Замер" if language == "ru" else "Measure",
+            "measure_delta": "Δ close",
+            "measure_pct": "Δ %",
+            "measure_bars": "Свечи" if language == "ru" else "Bars",
+            "measure_bars_short": "св." if language == "ru" else "bars",
+        },
+        ensure_ascii=False,
+    )
+    market_panel = _render_market_snapshot(
+        snapshot.market_snapshot,
+        language=language,
+        root_code=signal.root,
+        signal_id=signal.signal_id,
+    )
+    signal_state_strip = _render_surface_state_strip(
+        strip_key="signal",
+        title="Signal posture" if language != "ru" else "Состояние сигнала",
+        note=(
+            "This strip shows whether the signal page is backed by live market truth, review context, and resolution data."
+            if language != "ru"
+            else "Здесь видно, насколько страница сигнала опирается на живые цены, review-контекст и данные о завершении идеи."
+        ),
+        items=[
+            {
+                "label": "Signal lifecycle" if language != "ru" else "Жизненный цикл сигнала",
+                "status": signal.status.value,
+                "tone": "neutral" if signal.resolution is None else "positive",
+                "detail": (
+                    "The setup is still active, so there is no final resolution record yet."
+                    if signal.resolution is None
+                    else (
+                        f"Resolved as {signal.resolution.outcome.value} with status {signal.resolution.status.value}."
+                    )
+                )
+                if language != "ru"
+                else (
+                    "Идея ещё активна, поэтому финального resolution-записи пока нет."
+                    if signal.resolution is None
+                    else f"Сигнал завершён как {signal.resolution.outcome.value} со статусом {signal.resolution.status.value}."
+                ),
+            },
+            {
+                "label": "Market truth" if language != "ru" else "Слой цен и графиков",
+                "status": (
+                    snapshot.market_snapshot.status
+                    if snapshot.market_snapshot is not None
+                    else ("hidden" if language != "ru" else "скрыт")
+                ),
+                "tone": (
+                    "positive"
+                    if snapshot.market_snapshot is not None and snapshot.market_snapshot.status == "fresh"
+                    else "warning"
+                ),
+                "detail": (
+                    "Live price and chart history are visible for this signal."
+                    if snapshot.market_snapshot is not None
+                    else (
+                        "Charts are hidden until live quote and candle data return."
+                        if language != "ru"
+                        else "Графики скрыты, пока не вернутся живые котировки и свечи."
+                    )
+                ),
+            },
+            {
+                "label": "Review context" if language != "ru" else "Контекст review",
+                "status": "ready" if snapshot.related_signals or snapshot.similar_setups else "thin",
+                "tone": "positive" if snapshot.related_signals or snapshot.similar_setups else "warning",
+                "detail": (
+                    "Related signals and historical analogs are available for comparison."
+                    if snapshot.related_signals or snapshot.similar_setups
+                    else "No related signals or historical analogs are available yet."
+                )
+                if language != "ru"
+                else (
+                    "Для сравнения доступны связанные сигналы и исторические аналоги."
+                    if snapshot.related_signals or snapshot.similar_setups
+                    else "Связанные сигналы и исторические аналоги пока недоступны."
+                ),
+            },
+        ],
+    )
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6594,6 +10228,7 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot, *, language: str
       </aside>
     </section>
     {trust_ribbon}
+    {signal_state_strip}
     <section class="layout">
       <div class="stack">
         {diff_block}
@@ -6706,6 +10341,903 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot, *, language: str
   </main>
   </div>
   <script>
+    const marketOverlayLabels = {market_overlay_labels};
+    const marketPanelCopy = {market_panel_copy};
+    const marketLevelCopy = {market_level_messages};
+    const liveMarketPanelNode = document.querySelector("[data-market-panel]");
+    const formatPreviewPrice = (value) => {{
+      if (typeof value !== "number" || Number.isNaN(value)) {{
+        return "n/a";
+      }}
+      if (Math.abs(value) >= 1000) {{
+        return value.toLocaleString("en-US", {{ minimumFractionDigits: 2, maximumFractionDigits: 2 }}).replace(/,/g, " ");
+      }}
+      return value.toFixed(2);
+    }};
+    const formatPreviewPct = (value) => {{
+      if (typeof value !== "number" || Number.isNaN(value)) {{
+        return "n/a";
+      }}
+      return `${{value >= 0 ? "+" : ""}}${{(value * 100).toFixed(2)}}%`;
+    }};
+    const formatPreviewTime = (value) => {{
+      if (!value) {{
+        return "n/a";
+      }}
+      try {{
+        const stamp = new Date(value);
+        if (Number.isNaN(stamp.getTime())) {{
+          return "n/a";
+        }}
+        return `${{stamp.toLocaleString("sv-SE", {{
+          timeZone: "Europe/Moscow",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }})}} MSK`;
+      }} catch (_error) {{
+        return "n/a";
+      }}
+    }};
+    const escapePreviewText = (value) => String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+    const marketOverlayStyle = (key) => {{
+      if (key === "entry") {{
+        return {{ stroke: "#17364d", dasharray: "4 3" }};
+      }}
+      if (key === "invalidation") {{
+        return {{ stroke: "#bb7122", dasharray: "5 4" }};
+      }}
+      if (key === "target") {{
+        return {{ stroke: "#116966", dasharray: "6 4" }};
+      }}
+      return {{ stroke: "#5c6970", dasharray: "4 3" }};
+    }};
+    const renderOverlaySummary = (series, unit = "") => {{
+      if (!series || !Array.isArray(series.overlays) || series.overlays.length === 0) {{
+        return "";
+      }}
+      const unitSuffix = unit ? ` ${{unit}}` : "";
+      return series.overlays.map((overlay) => `${{marketOverlayLabels[overlay.key] || overlay.key}} ${{formatPreviewPrice(overlay.value)}}${{unitSuffix}}`).join(" | ");
+    }};
+    const overlayRecordFromSeries = (series) => {{
+      const record = {{}};
+      if (!series || !Array.isArray(series.overlays)) {{
+        return record;
+      }}
+      for (const overlay of series.overlays) {{
+        if (overlay && typeof overlay.value === "number" && Number.isFinite(overlay.value)) {{
+          record[String(overlay.key || "")] = overlay.value;
+        }}
+      }}
+      return record;
+    }};
+    const formatLevelDistance = (fromValue, toValue) => {{
+      if (
+        typeof fromValue !== "number"
+        || Number.isNaN(fromValue)
+        || typeof toValue !== "number"
+        || Number.isNaN(toValue)
+      ) {{
+        return "n/a";
+      }}
+      const base = Math.max(Math.abs(fromValue), 0.01);
+      return `${{(Math.abs(toValue - fromValue) / base * 100).toFixed(2)}}%`;
+    }};
+    const buildMarketDistanceBar = (series, unit = "") => {{
+      if (!series) {{
+        return "";
+      }}
+      const overlays = overlayRecordFromSeries(series);
+      if (
+        typeof overlays.entry !== "number"
+        || typeof overlays.target !== "number"
+        || typeof overlays.invalidation !== "number"
+        || typeof series.current_price !== "number"
+      ) {{
+        return "";
+      }}
+      const points = [
+        {{ key: "invalidation", label: marketLevelCopy.invalidation_short, value: overlays.invalidation, color: "#bb7122" }},
+        {{ key: "entry", label: marketLevelCopy.entry_short, value: overlays.entry, color: "#17364d" }},
+        {{ key: "price", label: marketLevelCopy.price_short, value: series.current_price, color: "#15202a" }},
+        {{ key: "target", label: marketLevelCopy.target_short, value: overlays.target, color: "#116966" }},
+      ];
+      const low = Math.min(...points.map((point) => point.value));
+      const high = Math.max(...points.map((point) => point.value));
+      const span = Math.max(high - low, Math.max(Math.abs(series.current_price), 0.01) * 0.001, 0.01);
+      const positionPct = (value) => ((value - low) / span) * 100;
+      const unitSuffix = unit ? ` ${{escapePreviewText(unit)}}` : "";
+      const markers = points.map((point) => {{
+        const left = Math.max(0, Math.min(100, positionPct(point.value)));
+        const size = point.key === "price" ? 12 : 9;
+        return `<div style="position:absolute;left:calc(${{left.toFixed(2)}}% - ${{(size / 2).toFixed(1)}}px);top:${{point.key === "price" ? "4px" : "8px"}};display:grid;justify-items:center;gap:3px;"><span style="font-size:10px;line-height:1;color:${{point.color}};font-weight:700;">${{escapePreviewText(point.label)}}</span><span style="width:${{size}}px;height:${{size}}px;border-radius:999px;background:${{point.color}};box-shadow:0 0 0 2px rgba(255,255,255,0.94);"></span></div>`;
+      }}).join("");
+      const chips = points.map((point) => {{
+        const detail = point.key === "price"
+          ? `${{formatPreviewPrice(point.value)}}${{unitSuffix}}`
+          : formatLevelDistance(series.current_price, point.value);
+        return `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 8px;border-radius:999px;background:rgba(255,255,255,0.82);border:1px solid rgba(21,32,42,0.08);font-size:11px;color:#5c6970;"><span style="width:7px;height:7px;border-radius:999px;background:${{point.color}};"></span>${{escapePreviewText(point.label)}} ${{escapePreviewText(detail)}}</span>`;
+      }}).join("");
+      return `<div data-market-distance-bar style="display:grid;gap:8px;"><div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#5c6970;">${{escapePreviewText(marketLevelCopy.distance_bar)}}</div><div style="position:relative;height:34px;"><div style="position:absolute;left:0;right:0;top:18px;height:4px;border-radius:999px;background:linear-gradient(90deg, rgba(187,113,34,0.22), rgba(23,54,77,0.18), rgba(17,105,102,0.22));"></div>${{markers}}</div><div style="display:flex;flex-wrap:wrap;gap:8px;">${{chips}}</div></div>`;
+    }};
+    const renderMarketOhlcReadout = (point, unit = "", chartTitle = "") => {{
+      if (!point) {{
+        return "";
+      }}
+      const unitSuffix = unit ? ` ${{escapePreviewText(unit)}}` : "";
+      const heading = [chartTitle, point.label].filter(Boolean).join(" | ");
+      const closeTone = typeof point.close === "number" && typeof point.open === "number" && point.close >= point.open
+        ? "#2f7e57"
+        : "#b44a3d";
+      return `<strong style="color:#15202a;">${{escapePreviewText(heading)}}</strong><span>O ${{formatPreviewPrice(point.open)}}${{unitSuffix}}</span><span>H ${{formatPreviewPrice(point.high)}}${{unitSuffix}}</span><span>L ${{formatPreviewPrice(point.low)}}${{unitSuffix}}</span><span style="color:${{closeTone}};font-weight:700;">C ${{formatPreviewPrice(point.close)}}${{unitSuffix}}</span>`;
+    }};
+    const attachInteractiveMarketCharts = (container, seriesEntries, titleResolver, scaleRange, scaleOffset) => {{
+      if (!container || !Array.isArray(seriesEntries)) {{
+        return;
+      }}
+      const cards = Array.from(container.querySelectorAll("article")).slice(-seriesEntries.length);
+      let persistedRangeState = {{}};
+      try {{
+        persistedRangeState = JSON.parse(container.dataset.marketRangeState || "{{}}");
+      }} catch (_error) {{
+        persistedRangeState = {{}};
+      }}
+      let persistedOverlayState = {{}};
+      try {{
+        persistedOverlayState = JSON.parse(container.dataset.marketOverlayState || "{{}}");
+      }} catch (_error) {{
+        persistedOverlayState = {{}};
+      }}
+      const buildRangePresets = (series) => {{
+        const total = Array.isArray(series.points) ? series.points.length : 0;
+        const focusRatio = series.label === "1D" ? 0.5 : series.label === "1W" ? 0.45 : 0.5;
+        const tightRatio = series.label === "1D" ? 0.22 : series.label === "1W" ? 0.2 : 0.25;
+        const focusMinimum = series.label === "1D" ? 10 : 6;
+        const tightMinimum = series.label === "1D" ? 6 : 4;
+        const fullLabel = series.label === "1D"
+          ? (marketPanelCopy.range_day || "Day")
+          : series.label === "1W"
+            ? (marketPanelCopy.range_week || "Week")
+            : (marketPanelCopy.range_month || "Month");
+        const presets = [
+          {{ key: "full", label: fullLabel, count: total }},
+          {{ key: "focus", label: marketPanelCopy.range_focus || "Focus", count: Math.min(total, Math.max(focusMinimum, Math.ceil(total * focusRatio))) }},
+          {{ key: "tight", label: marketPanelCopy.range_tight || "Tight", count: Math.min(total, Math.max(tightMinimum, Math.ceil(total * tightRatio))) }},
+        ];
+        return presets.filter((item, index) => index === 0 || item.count < presets[index - 1].count);
+      }};
+      cards.forEach((card, index) => {{
+        const series = seriesEntries[index];
+        if (!card || !series || !Array.isArray(series.points) || series.points.length === 0) {{
+          return;
+        }}
+        const svg = card.querySelector("[data-market-chart-svg]") || card.querySelector("svg");
+        if (!svg) {{
+          return;
+        }}
+        let toolbarNode = card.querySelector("[data-market-range-toolbar]");
+        if (!toolbarNode) {{
+          toolbarNode = document.createElement("div");
+          toolbarNode.setAttribute("data-market-range-toolbar", "");
+          toolbarNode.style.display = "flex";
+          toolbarNode.style.flexWrap = "wrap";
+          toolbarNode.style.gap = "6px";
+          toolbarNode.style.marginTop = "-2px";
+          toolbarNode.style.marginBottom = "2px";
+          card.insertBefore(toolbarNode, svg);
+        }}
+        let windowNode = card.querySelector("[data-market-range-window]");
+        if (!windowNode) {{
+          windowNode = document.createElement("p");
+          windowNode.className = "muted";
+          windowNode.setAttribute("data-market-range-window", "");
+          if (toolbarNode.nextSibling) {{
+            card.insertBefore(windowNode, toolbarNode.nextSibling);
+          }} else {{
+            card.appendChild(windowNode);
+          }}
+        }}
+        let readoutNode = card.querySelector("[data-market-ohlc-readout]");
+        if (!readoutNode) {{
+          readoutNode = document.createElement("div");
+          readoutNode.setAttribute("data-market-ohlc-readout", "");
+          readoutNode.style.display = "flex";
+          readoutNode.style.flexWrap = "wrap";
+          readoutNode.style.gap = "8px";
+          readoutNode.style.fontSize = "12px";
+          readoutNode.style.color = "#5c6970";
+          const firstMuted = card.querySelector("p.muted");
+          if (firstMuted) {{
+            card.insertBefore(readoutNode, firstMuted);
+          }} else {{
+            card.appendChild(readoutNode);
+          }}
+        }}
+        let hintNode = card.querySelector("[data-market-hover-hint]");
+        if (!hintNode) {{
+          hintNode = document.createElement("p");
+          hintNode.className = "muted";
+          hintNode.setAttribute("data-market-hover-hint", "");
+          hintNode.textContent = marketPanelCopy.hover_hint;
+          if (readoutNode.nextSibling) {{
+            card.insertBefore(hintNode, readoutNode.nextSibling);
+          }} else {{
+            card.appendChild(hintNode);
+          }}
+        }}
+        let levelLegendNode = card.querySelector("[data-market-level-legend]");
+        if (!levelLegendNode) {{
+          levelLegendNode = document.createElement("div");
+          levelLegendNode.setAttribute("data-market-level-legend", "");
+          levelLegendNode.style.display = "flex";
+          levelLegendNode.style.flexWrap = "wrap";
+          levelLegendNode.style.gap = "8px";
+          if (readoutNode) {{
+            card.insertBefore(levelLegendNode, readoutNode);
+          }} else {{
+            card.appendChild(levelLegendNode);
+          }}
+        }}
+        let levelDetailNode = card.querySelector("[data-market-level-detail]");
+        if (!levelDetailNode) {{
+          levelDetailNode = document.createElement("p");
+          levelDetailNode.className = "muted";
+          levelDetailNode.setAttribute("data-market-level-detail", "");
+          if (readoutNode) {{
+            card.insertBefore(levelDetailNode, readoutNode);
+          }} else {{
+            card.appendChild(levelDetailNode);
+          }}
+        }}
+        let measureNode = card.querySelector("[data-market-measure-readout]");
+        if (!measureNode) {{
+          measureNode = document.createElement("p");
+          measureNode.className = "muted";
+          measureNode.setAttribute("data-market-measure-readout", "");
+          measureNode.style.minHeight = "18px";
+          measureNode.style.color = "#17364d";
+          if (readoutNode) {{
+            card.insertBefore(measureNode, readoutNode);
+          }} else {{
+            card.appendChild(measureNode);
+          }}
+        }}
+        const chartTitle = typeof titleResolver === "function" ? titleResolver(series) : String(series.label || "");
+        const unit = container.dataset.marketUnit || "";
+        const unitSuffix = unit ? ` ${{escapePreviewText(unit)}}` : "";
+        const viewBox = svg.viewBox && svg.viewBox.baseVal ? svg.viewBox.baseVal : null;
+        const viewWidth = viewBox && viewBox.width ? viewBox.width : 220;
+        const viewHeight = viewBox && viewBox.height ? viewBox.height : 92;
+        const overlayItems = (Array.isArray(series.overlays) ? series.overlays : [])
+          .filter((overlay) => overlay && ["entry", "invalidation", "target"].includes(String(overlay.key || "")));
+        const overlayNote = (overlayKey) => {{
+          if (overlayKey === "entry") {{
+            return marketPanelCopy.level_entry_note || "";
+          }}
+          if (overlayKey === "invalidation") {{
+            return marketPanelCopy.level_invalidation_note || "";
+          }}
+          if (overlayKey === "target") {{
+            return marketPanelCopy.level_target_note || "";
+          }}
+          return "";
+        }};
+        const overlayKeyForSeries = series.label || String(index);
+        const overlayValueMap = Object.fromEntries(overlayItems.map((overlay) => [overlay.key, overlay]));
+        const resolveOverlayKey = (overlayKey) => overlayValueMap[overlayKey] ? overlayKey : (overlayItems[0] ? overlayItems[0].key : "");
+        const presets = buildRangePresets(series);
+        const subsetForRange = (rangeKey) => {{
+          const preset = presets.find((item) => item.key === rangeKey) || presets[0];
+          return series.points.slice(-preset.count);
+        }};
+        const buildSvgMarkup = (points) => {{
+          const overlayValues = Array.isArray(series.overlays) ? series.overlays.map((overlay) => overlay.value) : [];
+          const lows = points.map((point) => typeof point.low === "number" ? point.low : point.value).concat(overlayValues, [series.current_price]);
+          const highs = points.map((point) => typeof point.high === "number" ? point.high : point.value).concat(overlayValues, [series.current_price]);
+          const low = Math.min(...lows);
+          const high = Math.max(...highs);
+          const span = Math.max(high - low, 0.0001);
+          const bodyWidth = Math.max(6, Math.min(16, viewWidth / Math.max(points.length * 1.9, 1)));
+          const mapPriceY = (value) => viewHeight - (((value - low) / span) * (viewHeight - scaleRange)) - scaleOffset;
+          const candles = points.map((point, pointIndex) => {{
+            const x = points.length === 1 ? viewWidth / 2 : (pointIndex / (points.length - 1)) * viewWidth;
+            const openValue = typeof point.open === "number" ? point.open : point.value;
+            const closeValue = typeof point.close === "number" ? point.close : point.value;
+            const highValue = typeof point.high === "number" ? point.high : Math.max(openValue, closeValue);
+            const lowValue = typeof point.low === "number" ? point.low : Math.min(openValue, closeValue);
+            const openY = mapPriceY(openValue);
+            const closeY = mapPriceY(closeValue);
+            const highY = mapPriceY(highValue);
+            const lowY = mapPriceY(lowValue);
+            const bodyTop = Math.min(openY, closeY);
+            const bodyHeight = Math.max(Math.abs(closeY - openY), 3);
+            const tone = closeValue >= openValue ? "#2f7e57" : "#b44a3d";
+            return `<line x1="${{x.toFixed(1)}}" y1="${{highY.toFixed(1)}}" x2="${{x.toFixed(1)}}" y2="${{lowY.toFixed(1)}}" stroke="${{tone}}" stroke-width="1.8" stroke-linecap="round"></line><rect x="${{(x - (bodyWidth / 2)).toFixed(1)}}" y="${{bodyTop.toFixed(1)}}" width="${{bodyWidth.toFixed(1)}}" height="${{bodyHeight.toFixed(1)}}" rx="2" fill="${{tone}}" fill-opacity="0.92"></rect>`;
+          }}).join("");
+          const overlays = Array.isArray(series.overlays) ? series.overlays.map((overlay) => {{
+            const style = marketOverlayStyle(overlay.key);
+            const y = mapPriceY(overlay.value);
+            const label = escapePreviewText(marketOverlayLabels[overlay.key] || overlay.key);
+            return `<line x1="0" y1="${{y.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="${{style.stroke}}" stroke-width="1.2" stroke-dasharray="${{style.dasharray}}" opacity="0.95" data-market-overlay-line data-overlay-key="${{escapePreviewText(overlay.key)}}" style="cursor:pointer;"></line><line x1="0" y1="${{y.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="transparent" stroke-width="10" data-market-overlay-hit data-overlay-key="${{escapePreviewText(overlay.key)}}" style="cursor:pointer;"></line><text x="${{(viewWidth - 6).toFixed(1)}}" y="${{Math.max(12, Math.min(viewHeight - 4, y - 2)).toFixed(1)}}" text-anchor="end" fill="${{style.stroke}}" font-size="10" font-weight="700" data-market-overlay-label data-overlay-key="${{escapePreviewText(overlay.key)}}">${{label}}</text>`;
+          }}).join("") : "";
+          const baselineValue = points[0] && typeof points[0].open === "number" ? points[0].open : series.open_price;
+          const currentPriceY = mapPriceY(series.current_price);
+          const currentLine = `<line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="#15202a" stroke-width="1.3" opacity="0.78" data-market-current-line></line><line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="transparent" stroke-width="10" data-market-current-hit data-market-snap-key="price"></line><circle cx="${{(viewWidth - 6).toFixed(1)}}" cy="${{currentPriceY.toFixed(1)}}" r="3.4" fill="#15202a"></circle><text x="6" y="${{Math.max(12, Math.min(viewHeight - 4, currentPriceY - 4)).toFixed(1)}}" fill="#15202a" font-size="10" font-weight="700">${{escapePreviewText(marketLevelCopy.price_short)}}</text>`;
+          const measureLayer = `<g data-market-measure-layer style="display:none;pointer-events:none;"><line x1="0" y1="0" x2="0" y2="0" stroke="#17364d" stroke-width="1.8" stroke-dasharray="5 4" opacity="0.92" data-market-measure-line></line><circle cx="0" cy="0" r="3.2" fill="#17364d" data-market-measure-start-dot></circle><circle cx="0" cy="0" r="3.2" fill="#17364d" data-market-measure-end-dot></circle><text x="0" y="0" text-anchor="middle" fill="#17364d" font-size="10" font-weight="800" data-market-measure-label></text></g>`;
+          const crosshair = `<g data-market-crosshair-layer style="display:none;"><line x1="0" y1="0" x2="0" y2="${{viewHeight.toFixed(1)}}" stroke="rgba(21,32,42,0.22)" stroke-width="1" stroke-dasharray="3 3" data-market-crosshair-x></line><line x1="0" y1="0" x2="${{viewWidth.toFixed(1)}}" y2="0" stroke="rgba(21,32,42,0.18)" stroke-width="1" stroke-dasharray="3 3" data-market-crosshair-y></line><circle cx="0" cy="0" r="3.2" fill="#15202a" data-market-crosshair-dot></circle></g>`;
+          return {{
+            markup: `<line x1="0" y1="${{mapPriceY(baselineValue).toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{mapPriceY(baselineValue).toFixed(1)}}" stroke="rgba(21,32,42,0.08)" stroke-width="1" stroke-dasharray="4 4"></line>${{overlays}}${{currentLine}}${{candles}}${{measureLayer}}${{crosshair}}`,
+            mapPriceY,
+          }};
+        }};
+        let activePoints = subsetForRange(persistedRangeState[series.label || String(index)] || card.dataset.marketRangeKey || "full");
+        let activeMapPriceY = (value) => value;
+        let crosshairLayer = null;
+        let crosshairX = null;
+        let crosshairY = null;
+        let crosshairDot = null;
+        let measureLayerNode = null;
+        let measureLineNode = null;
+        let measureStartDotNode = null;
+        let measureEndDotNode = null;
+        let measureLabelNode = null;
+        let measureState = null;
+        let measurePointerId = null;
+        let measureDragging = false;
+        let measureMoved = false;
+        let activeOverlayKey = resolveOverlayKey(card.dataset.marketOverlayKey || persistedOverlayState[overlayKeyForSeries] || "");
+        if (!activeOverlayKey && overlayItems[0]) {{
+          activeOverlayKey = overlayItems[0].key;
+        }}
+        const pointCloseValue = (point) => {{
+          if (point && typeof point.close === "number") {{
+            return point.close;
+          }}
+          if (point && typeof point.value === "number") {{
+            return point.value;
+          }}
+          return null;
+        }};
+        const snapTolerancePx = 10;
+        const resolveMeasurementSnap = (localY, preferredSnapKey = "") => {{
+          const candidates = overlayItems.map((overlay) => {{
+            return {{
+              key: String(overlay.key || ""),
+              label: String(marketOverlayLabels[overlay.key] || overlay.key || ""),
+              value: overlay.value,
+            }};
+          }});
+          if (typeof series.current_price === "number") {{
+            candidates.push({{
+              key: "price",
+              label: String(marketLevelCopy.price_short || "Price"),
+              value: series.current_price,
+            }});
+          }}
+          if (preferredSnapKey) {{
+            const preferred = candidates.find((candidate) => candidate.key === preferredSnapKey);
+            if (preferred) {{
+              return preferred;
+            }}
+          }}
+          if (typeof localY !== "number") {{
+            return null;
+          }}
+          let best = null;
+          let bestDistance = snapTolerancePx;
+          for (const candidate of candidates) {{
+            const distance = Math.abs(activeMapPriceY(candidate.value) - localY);
+            if (distance <= bestDistance) {{
+              best = candidate;
+              bestDistance = distance;
+            }}
+          }}
+          return best;
+        }};
+        const buildMeasureAnchor = (resolved) => {{
+          if (!resolved) {{
+            return null;
+          }}
+          if (resolved.snapTarget) {{
+            return {{
+              label: resolved.snapTarget.label,
+              value: resolved.snapTarget.value,
+              x: resolved.x,
+              y: activeMapPriceY(resolved.snapTarget.value),
+              pointIndex: resolved.pointIndex,
+            }};
+          }}
+          const value = pointCloseValue(resolved.point);
+          if (typeof value !== "number") {{
+            return null;
+          }}
+          return {{
+            label: resolved.point && resolved.point.label ? resolved.point.label : "n/a",
+            value,
+            x: resolved.x,
+            y: activeMapPriceY(value),
+            pointIndex: resolved.pointIndex,
+          }};
+        }};
+        const persistOverlayKey = (overlayKey) => {{
+          const resolvedKey = resolveOverlayKey(overlayKey);
+          if (!resolvedKey) {{
+            return;
+          }}
+          activeOverlayKey = resolvedKey;
+          card.dataset.marketOverlayKey = resolvedKey;
+          persistedOverlayState[overlayKeyForSeries] = resolvedKey;
+          container.dataset.marketOverlayState = JSON.stringify(persistedOverlayState);
+        }};
+        const resetMeasurement = (preserveReadout = false) => {{
+          measureState = null;
+          measurePointerId = null;
+          measureDragging = false;
+          measureMoved = false;
+          if (measureLayerNode) {{
+            measureLayerNode.style.display = "none";
+          }}
+          if (!preserveReadout) {{
+            measureNode.textContent = marketPanelCopy.measure_hint || "";
+          }}
+        }};
+        const syncMeasurement = () => {{
+          if (
+            !measureState
+            || !measureState.startAnchor
+            || !measureState.endAnchor
+            || !measureLayerNode
+            || !measureLineNode
+            || !measureStartDotNode
+            || !measureEndDotNode
+            || !measureLabelNode
+          ) {{
+            if (measureLayerNode) {{
+              measureLayerNode.style.display = "none";
+            }}
+            measureNode.textContent = marketPanelCopy.measure_hint || "";
+            return;
+          }}
+          const startClose = measureState.startAnchor.value;
+          const endClose = measureState.endAnchor.value;
+          if (typeof startClose !== "number" || typeof endClose !== "number") {{
+            resetMeasurement();
+            return;
+          }}
+          const startY = measureState.startAnchor.y;
+          const endY = measureState.endAnchor.y;
+          const delta = endClose - startClose;
+          const base = Math.max(Math.abs(startClose), 0.0001);
+          const deltaPct = delta / base;
+          const bars = Math.abs((measureState.endAnchor.pointIndex ?? 0) - (measureState.startAnchor.pointIndex ?? 0)) + 1;
+          const deltaText = `${{delta >= 0 ? "+" : ""}}${{formatPreviewPrice(delta)}}${{unitSuffix}}`;
+          const pctText = formatPreviewPct(deltaPct);
+          const labelText = `${{pctText}} | ${{bars}} ${{marketPanelCopy.measure_bars_short || "bars"}}`;
+          const labelX = Math.max(18, Math.min(viewWidth - 18, (measureState.startAnchor.x + measureState.endAnchor.x) / 2));
+          const labelY = Math.max(14, Math.min(viewHeight - 8, (startY + endY) / 2 - 8));
+          measureLayerNode.style.display = "";
+          measureLineNode.setAttribute("x1", measureState.startAnchor.x.toFixed(1));
+          measureLineNode.setAttribute("y1", startY.toFixed(1));
+          measureLineNode.setAttribute("x2", measureState.endAnchor.x.toFixed(1));
+          measureLineNode.setAttribute("y2", endY.toFixed(1));
+          measureStartDotNode.setAttribute("cx", measureState.startAnchor.x.toFixed(1));
+          measureStartDotNode.setAttribute("cy", startY.toFixed(1));
+          measureEndDotNode.setAttribute("cx", measureState.endAnchor.x.toFixed(1));
+          measureEndDotNode.setAttribute("cy", endY.toFixed(1));
+          measureLabelNode.setAttribute("x", labelX.toFixed(1));
+          measureLabelNode.setAttribute("y", labelY.toFixed(1));
+          measureLabelNode.textContent = labelText;
+          measureNode.innerHTML = `<strong>${{escapePreviewText(marketPanelCopy.measure_title || "Measure")}}:</strong> ${{escapePreviewText(measureState.startAnchor.label || "n/a")}} -> ${{escapePreviewText(measureState.endAnchor.label || "n/a")}} | ${{escapePreviewText(marketPanelCopy.measure_delta || "Δ close")}} ${{escapePreviewText(deltaText)}} | ${{escapePreviewText(marketPanelCopy.measure_pct || "Δ %")}} ${{escapePreviewText(pctText)}} | ${{escapePreviewText(marketPanelCopy.measure_bars || "Bars")}} ${{bars}}`;
+        }};
+        const startMeasurement = (resolved, pointerId) => {{
+          const anchor = buildMeasureAnchor(resolved);
+          if (!resolved || !anchor) {{
+            return;
+          }}
+          measurePointerId = pointerId;
+          measureDragging = true;
+          measureMoved = false;
+          measureState = {{
+            startAnchor: anchor,
+            endAnchor: anchor,
+          }};
+          syncMeasurement();
+        }};
+        const updateMeasurement = (resolved) => {{
+          const anchor = buildMeasureAnchor(resolved);
+          if (!measureDragging || !measureState || !resolved || !anchor) {{
+            return;
+          }}
+          measureState.endAnchor = anchor;
+          if (
+            anchor.pointIndex !== measureState.startAnchor.pointIndex
+            || Math.abs(anchor.x - measureState.startAnchor.x) > 1
+            || Math.abs(anchor.value - measureState.startAnchor.value) > 0.0001
+            || anchor.label !== measureState.startAnchor.label
+          ) {{
+            measureMoved = true;
+          }}
+          syncMeasurement();
+        }};
+        const finishMeasurement = () => {{
+          if (!measureDragging) {{
+            return;
+          }}
+          measureDragging = false;
+          measurePointerId = null;
+          if (!measureMoved) {{
+            resetMeasurement();
+            return;
+          }}
+          syncMeasurement();
+        }};
+        const syncToolbar = (rangeKey) => {{
+          toolbarNode.innerHTML = presets.map((preset) => `<button type="button" data-market-range-button data-range-key="${{preset.key}}" style="padding:6px 10px;border-radius:999px;border:1px solid rgba(21,32,42,0.1);background:${{preset.key === rangeKey ? "#17364d" : "rgba(255,255,255,0.82)"}};color:${{preset.key === rangeKey ? "#f7f4ef" : "#15202a"}};font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;cursor:pointer;">${{escapePreviewText(preset.label)}}</button>`).join("");
+        }};
+        const syncLevelLegend = (overlayKey) => {{
+          if (!overlayItems.length) {{
+            levelLegendNode.style.display = "none";
+            levelLegendNode.innerHTML = "";
+            return;
+          }}
+          levelLegendNode.style.display = "flex";
+          levelLegendNode.innerHTML = overlayItems.map((overlay) => {{
+            const label = escapePreviewText(marketOverlayLabels[overlay.key] || overlay.key);
+            const value = `${{formatPreviewPrice(overlay.value)}}${{unitSuffix}}`;
+            const distance = typeof series.current_price === "number"
+              ? formatLevelDistance(series.current_price, overlay.value)
+              : "n/a";
+            const active = overlay.key === overlayKey;
+            return `<button type="button" data-market-level-button data-overlay-key="${{escapePreviewText(overlay.key)}}" title="${{escapePreviewText(`${{label}} | ${{value}} | ${{marketPanelCopy.level_distance || "Distance"}}: ${{distance}}`)}}" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid ${{active ? "rgba(23,54,77,0.24)" : "rgba(21,32,42,0.12)"}};background:${{active ? "rgba(23,54,77,0.12)" : "rgba(255,255,255,0.78)"}};color:${{active ? "#17364d" : "#3c4b56"}};font-size:11px;font-weight:700;cursor:pointer;"><span>${{label}}</span><span style="font-weight:600;color:${{active ? "#17364d" : "#5c6970"}};">${{escapePreviewText(value)}}</span></button>`;
+          }}).join("");
+        }};
+        const syncLevelFocus = (overlayKey) => {{
+          if (!overlayItems.length) {{
+            levelDetailNode.textContent = marketPanelCopy.level_hint || "";
+            levelDetailNode.style.display = "";
+            levelLegendNode.style.display = "none";
+            return;
+          }}
+          const resolvedKey = resolveOverlayKey(overlayKey);
+          const overlay = overlayValueMap[resolvedKey];
+          if (!overlay) {{
+            levelDetailNode.textContent = marketPanelCopy.level_hint || "";
+            levelDetailNode.style.display = "";
+            syncLevelLegend(activeOverlayKey);
+            return;
+          }}
+          const label = marketOverlayLabels[overlay.key] || overlay.key;
+          const distance = typeof series.current_price === "number"
+            ? formatLevelDistance(series.current_price, overlay.value)
+            : "n/a";
+          const note = overlayNote(overlay.key);
+          levelDetailNode.style.display = "";
+          levelDetailNode.innerHTML = `<strong>${{escapePreviewText(marketPanelCopy.level_legend || "Level")}}:</strong> ${{escapePreviewText(label)}} | ${{escapePreviewText(formatPreviewPrice(overlay.value) + unitSuffix)}} | ${{escapePreviewText(marketPanelCopy.level_distance || "Distance")}}: ${{escapePreviewText(distance)}}${{note ? ` | ${{escapePreviewText(note)}}` : ""}}`;
+          syncLevelLegend(resolvedKey);
+          Array.from(svg.querySelectorAll("[data-market-overlay-line]")).forEach((node) => {{
+            const currentKey = node.getAttribute("data-overlay-key") || "";
+            const active = currentKey === resolvedKey;
+            node.setAttribute("opacity", active ? "1" : "0.42");
+            node.setAttribute("stroke-width", active ? "2.3" : "1.2");
+          }});
+          Array.from(svg.querySelectorAll("[data-market-overlay-hit]")).forEach((node) => {{
+            const currentKey = node.getAttribute("data-overlay-key") || "";
+            node.setAttribute("stroke-width", currentKey === resolvedKey ? "12" : "10");
+          }});
+          Array.from(svg.querySelectorAll("[data-market-overlay-label]")).forEach((node) => {{
+            const currentKey = node.getAttribute("data-overlay-key") || "";
+            const active = currentKey === resolvedKey;
+            node.setAttribute("opacity", active ? "1" : "0.56");
+            node.setAttribute("font-weight", active ? "800" : "700");
+          }});
+        }};
+        const updateReadout = (point) => {{
+          readoutNode.innerHTML = renderMarketOhlcReadout(point, unit, chartTitle);
+        }};
+        const updateWindow = (points) => {{
+          const start = points[0] ? points[0].label : "n/a";
+          const end = points[points.length - 1] ? points[points.length - 1].label : "n/a";
+          windowNode.textContent = `${{escapePreviewText(start)}} → ${{escapePreviewText(end)}} | ${{points.length}} bars`;
+        }};
+        const renderRange = (rangeKey) => {{
+          card.dataset.marketRangeKey = rangeKey;
+          persistedRangeState[series.label || String(index)] = rangeKey;
+          container.dataset.marketRangeState = JSON.stringify(persistedRangeState);
+          activePoints = subsetForRange(rangeKey);
+          const chart = buildSvgMarkup(activePoints);
+          svg.innerHTML = chart.markup;
+          activeMapPriceY = chart.mapPriceY;
+          crosshairLayer = svg.querySelector("[data-market-crosshair-layer]");
+          crosshairX = svg.querySelector("[data-market-crosshair-x]");
+          crosshairY = svg.querySelector("[data-market-crosshair-y]");
+          crosshairDot = svg.querySelector("[data-market-crosshair-dot]");
+          measureLayerNode = svg.querySelector("[data-market-measure-layer]");
+          measureLineNode = svg.querySelector("[data-market-measure-line]");
+          measureStartDotNode = svg.querySelector("[data-market-measure-start-dot]");
+          measureEndDotNode = svg.querySelector("[data-market-measure-end-dot]");
+          measureLabelNode = svg.querySelector("[data-market-measure-label]");
+          syncToolbar(rangeKey);
+          updateWindow(activePoints);
+          updateReadout(activePoints[activePoints.length - 1] || null);
+          resetMeasurement();
+          if (activeOverlayKey) {{
+            persistOverlayKey(activeOverlayKey);
+          }}
+          syncLevelFocus(activeOverlayKey);
+        }};
+        const showPoint = (point, x) => {{
+          if (!crosshairLayer || !crosshairX || !crosshairY || !crosshairDot) {{
+            return;
+          }}
+          const y = activeMapPriceY(typeof point.close === "number" ? point.close : point.value);
+          crosshairLayer.style.display = "";
+          crosshairX.setAttribute("x1", x.toFixed(1));
+          crosshairX.setAttribute("x2", x.toFixed(1));
+          crosshairX.setAttribute("y1", "0");
+          crosshairX.setAttribute("y2", viewHeight.toFixed(1));
+          crosshairY.setAttribute("x1", "0");
+          crosshairY.setAttribute("x2", viewWidth.toFixed(1));
+          crosshairY.setAttribute("y1", y.toFixed(1));
+          crosshairY.setAttribute("y2", y.toFixed(1));
+          crosshairDot.setAttribute("cx", x.toFixed(1));
+          crosshairDot.setAttribute("cy", y.toFixed(1));
+          updateReadout(point);
+        }};
+        const resetChart = () => {{
+          if (crosshairLayer) {{
+            crosshairLayer.style.display = "none";
+          }}
+          updateReadout(activePoints[activePoints.length - 1] || null);
+        }};
+        const resolvePoint = (clientX, clientY = null, preferredSnapKey = "") => {{
+          const rect = svg.getBoundingClientRect();
+          if (!rect.width) {{
+            return null;
+          }}
+          const localX = ((clientX - rect.left) / rect.width) * viewWidth;
+          const localY = rect.height && typeof clientY === "number"
+            ? ((clientY - rect.top) / rect.height) * viewHeight
+            : null;
+          const pointIndex = activePoints.length === 1
+            ? 0
+            : Math.max(0, Math.min(activePoints.length - 1, Math.round((localX / viewWidth) * (activePoints.length - 1))));
+          const point = activePoints[pointIndex];
+          const x = activePoints.length === 1 ? viewWidth / 2 : (pointIndex / (activePoints.length - 1)) * viewWidth;
+          const snapTarget = resolveMeasurementSnap(localY, preferredSnapKey);
+          return {{ point, x, pointIndex, snapTarget }};
+        }};
+        if (card.dataset.marketInteractiveBound !== "1") {{
+          svg.style.cursor = "crosshair";
+          svg.addEventListener("pointerenter", (event) => {{
+            const overlayTarget = event.target.closest("[data-market-overlay-hit],[data-market-overlay-line],[data-market-overlay-label]");
+            if (overlayTarget) {{
+              syncLevelFocus(overlayTarget.getAttribute("data-overlay-key") || activeOverlayKey);
+            }} else {{
+              syncLevelFocus(activeOverlayKey);
+            }}
+            const resolved = resolvePoint(event.clientX, event.clientY);
+            if (!resolved) {{
+              return;
+            }}
+            if (measureDragging && (measurePointerId === null || measurePointerId === event.pointerId)) {{
+              updateMeasurement(resolved);
+            }}
+            showPoint(resolved.point, resolved.x);
+          }});
+          svg.addEventListener("pointermove", (event) => {{
+            const overlayTarget = event.target.closest("[data-market-overlay-hit],[data-market-overlay-line],[data-market-overlay-label]");
+            if (overlayTarget) {{
+              syncLevelFocus(overlayTarget.getAttribute("data-overlay-key") || activeOverlayKey);
+            }} else {{
+              syncLevelFocus(activeOverlayKey);
+            }}
+            const resolved = resolvePoint(event.clientX, event.clientY);
+            if (!resolved) {{
+              return;
+            }}
+            if (measureDragging && (measurePointerId === null || measurePointerId === event.pointerId)) {{
+              updateMeasurement(resolved);
+            }}
+            showPoint(resolved.point, resolved.x);
+          }});
+          svg.addEventListener("pointerleave", () => {{
+            if (measureDragging) {{
+              return;
+            }}
+            resetChart();
+            syncLevelFocus(activeOverlayKey);
+          }});
+          svg.addEventListener("pointerdown", (event) => {{
+            const overlayTarget = event.target.closest("[data-market-overlay-hit],[data-market-overlay-line],[data-market-overlay-label]");
+            const currentTarget = event.target.closest("[data-market-current-hit]");
+            const preferredSnapKey = overlayTarget
+              ? (overlayTarget.getAttribute("data-overlay-key") || "")
+              : currentTarget
+                ? (currentTarget.getAttribute("data-market-snap-key") || "price")
+                : "";
+            if (overlayTarget) {{
+              event.preventDefault();
+              persistOverlayKey(preferredSnapKey || activeOverlayKey);
+              syncLevelFocus(activeOverlayKey);
+            }}
+            const resolved = resolvePoint(event.clientX, event.clientY, preferredSnapKey);
+            if (!resolved) {{
+              return;
+            }}
+            if (typeof svg.setPointerCapture === "function") {{
+              try {{
+                svg.setPointerCapture(event.pointerId);
+              }} catch (_error) {{
+              }}
+            }}
+            startMeasurement(resolved, event.pointerId);
+            showPoint(resolved.point, resolved.x);
+          }});
+          svg.addEventListener("pointerup", (event) => {{
+            if (!measureDragging || (measurePointerId !== null && event.pointerId !== measurePointerId)) {{
+              return;
+            }}
+            if (typeof svg.releasePointerCapture === "function") {{
+              try {{
+                svg.releasePointerCapture(event.pointerId);
+              }} catch (_error) {{
+              }}
+            }}
+            finishMeasurement();
+          }});
+          svg.addEventListener("pointercancel", () => {{
+            resetMeasurement();
+          }});
+          svg.addEventListener("dblclick", (event) => {{
+            event.preventDefault();
+            resetMeasurement();
+          }});
+          toolbarNode.addEventListener("click", (event) => {{
+            const button = event.target.closest("[data-market-range-button]");
+            if (!button) {{
+              return;
+            }}
+            event.preventDefault();
+            renderRange(button.dataset.rangeKey || "full");
+          }});
+          levelLegendNode.addEventListener("pointerover", (event) => {{
+            const button = event.target.closest("[data-market-level-button]");
+            if (!button) {{
+              return;
+            }}
+            syncLevelFocus(button.dataset.overlayKey || activeOverlayKey);
+          }});
+          levelLegendNode.addEventListener("pointerleave", () => {{
+            syncLevelFocus(activeOverlayKey);
+          }});
+          levelLegendNode.addEventListener("focusin", (event) => {{
+            const button = event.target.closest("[data-market-level-button]");
+            if (!button) {{
+              return;
+            }}
+            syncLevelFocus(button.dataset.overlayKey || activeOverlayKey);
+          }});
+          levelLegendNode.addEventListener("focusout", (event) => {{
+            if (levelLegendNode.contains(event.relatedTarget)) {{
+              return;
+            }}
+            syncLevelFocus(activeOverlayKey);
+          }});
+          levelLegendNode.addEventListener("click", (event) => {{
+            const button = event.target.closest("[data-market-level-button]");
+            if (!button) {{
+              return;
+            }}
+            event.preventDefault();
+            persistOverlayKey(button.dataset.overlayKey || activeOverlayKey);
+            syncLevelFocus(activeOverlayKey);
+          }});
+          card.dataset.marketInteractiveBound = "1";
+        }}
+        card.setAttribute("data-market-chart-card", "");
+        card.dataset.marketChartTitle = chartTitle;
+        renderRange(card.dataset.marketRangeKey || "full");
+      }});
+    }};
+    const renderMarketChart = (series) => {{
+      if (!series || !Array.isArray(series.points) || series.points.length === 0) {{
+        return "";
+      }}
+      const width = 220;
+      const height = 92;
+      const overlayValues = Array.isArray(series.overlays) ? series.overlays.map((overlay) => overlay.value) : [];
+      const lows = series.points.map((point) => typeof point.low === "number" ? point.low : point.value).concat(overlayValues);
+      const highs = series.points.map((point) => typeof point.high === "number" ? point.high : point.value).concat(overlayValues);
+      const low = Math.min(...lows);
+      const high = Math.max(...highs);
+      const span = Math.max(high - low, 0.0001);
+      const bodyWidth = Math.max(6, Math.min(16, width / Math.max(series.points.length * 1.9, 1)));
+      const mapPriceY = (value) => height - (((value - low) / span) * (height - 14)) - 7;
+      const candles = series.points.map((point, index) => {{
+        const x = series.points.length === 1 ? width / 2 : (index / (series.points.length - 1)) * width;
+        const openY = mapPriceY(point.open);
+        const closeY = mapPriceY(point.close);
+        const highY = mapPriceY(point.high);
+        const lowY = mapPriceY(point.low);
+        const bodyTop = Math.min(openY, closeY);
+        const bodyHeight = Math.max(Math.abs(closeY - openY), 3);
+        const tone = point.close >= point.open ? "#2f7e57" : "#b44a3d";
+        return `<line x1="${{x.toFixed(1)}}" y1="${{highY.toFixed(1)}}" x2="${{x.toFixed(1)}}" y2="${{lowY.toFixed(1)}}" stroke="${{tone}}" stroke-width="1.8" stroke-linecap="round"></line><rect x="${{(x - (bodyWidth / 2)).toFixed(1)}}" y="${{bodyTop.toFixed(1)}}" width="${{bodyWidth.toFixed(1)}}" height="${{bodyHeight.toFixed(1)}}" rx="2" fill="${{tone}}" fill-opacity="0.92"></rect>`;
+      }}).join("");
+      const overlays = Array.isArray(series.overlays) ? series.overlays.map((overlay) => {{
+        const style = marketOverlayStyle(overlay.key);
+        const y = mapPriceY(overlay.value);
+        const label = escapePreviewText(marketOverlayLabels[overlay.key] || overlay.key);
+        return `<line x1="0" y1="${{y.toFixed(1)}}" x2="${{width.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="${{style.stroke}}" stroke-width="1.2" stroke-dasharray="${{style.dasharray}}" opacity="0.95"></line><text x="${{(width - 6).toFixed(1)}}" y="${{Math.max(12, Math.min(height - 4, y - 2)).toFixed(1)}}" text-anchor="end" fill="${{style.stroke}}" font-size="10" font-weight="700">${{label}}</text>`;
+      }}).join("") : "";
+      const currentPriceY = mapPriceY(series.current_price);
+      const currentLine = `<line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{width.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="#15202a" stroke-width="1.3" opacity="0.78" data-market-current-line></line><circle cx="${{(width - 6).toFixed(1)}}" cy="${{currentPriceY.toFixed(1)}}" r="3.4" fill="#15202a"></circle><text x="6" y="${{Math.max(12, Math.min(height - 4, currentPriceY - 4)).toFixed(1)}}" fill="#15202a" font-size="10" font-weight="700">${{escapePreviewText(marketLevelCopy.price_short)}}</text>`;
+      return `<svg viewBox="0 0 220 92" preserveAspectRatio="none" style="width:100%;height:92px;border-radius:14px;background:linear-gradient(180deg, rgba(15,108,103,0.06), rgba(255,255,255,0.6));"><line x1="0" y1="${{mapPriceY(series.open_price).toFixed(1)}}" x2="${{width}}" y2="${{mapPriceY(series.open_price).toFixed(1)}}" stroke="rgba(21,32,42,0.08)" stroke-width="1" stroke-dasharray="4 4"></line>${{overlays}}${{currentLine}}${{candles}}</svg>`;
+    }};
+    const renderMarketPanelUnavailable = () => `<div class="panel-head"><h2>${{escapePreviewText(marketPanelCopy.title)}}</h2><p>${{escapePreviewText(marketPanelCopy.subtitle)}}</p></div><div class="metric-list" data-market-unavailable><article class="action-card tone-warning"><strong>${{escapePreviewText(marketPanelCopy.unavailable_title || marketPanelCopy.warning_title)}}</strong><p class="muted">${{escapePreviewText(marketPanelCopy.unavailable_body || marketPanelCopy.warning_body)}}</p></article></div>`;
+    const renderMarketPanelBody = (snapshot) => {{
+      if (!snapshot) {{
+        return renderMarketPanelUnavailable();
+      }}
+      const unitSuffix = snapshot.unit ? ` ${{escapePreviewText(snapshot.unit)}}` : "";
+      const warning = snapshot.status && snapshot.status !== "fresh"
+        ? `<div class="metric-list" style="margin-bottom:12px;"><article class="action-card tone-${{escapePreviewText(snapshot.status === "degraded" ? "warning" : "neutral")}}"><strong>${{escapePreviewText(marketPanelCopy.warning_title)}}</strong><p class="muted">${{escapePreviewText(snapshot.status)}} | ${{escapePreviewText(snapshot.status_detail || marketPanelCopy.warning_body)}}</p></article></div>`
+        : "";
+      const renderChartCard = (series) => {{
+        if (!series) {{
+          return "";
+        }}
+        const overlaySummary = renderOverlaySummary(series, snapshot.unit);
+        const distanceBar = buildMarketDistanceBar(series, snapshot.unit);
+        return `<article style="padding:14px 16px;border-radius:18px;border:1px solid rgba(21, 32, 42, 0.1);background:rgba(255,255,255,0.72);display:grid;gap:10px;"><div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;"><strong>${{escapePreviewText(series.label)}}</strong><span style="font-weight:700;color:${{series.change_abs >= 0 ? "#2f7e57" : "#b44a3d"}};">${{formatPreviewPrice(series.current_price)}}${{unitSuffix}}</span></div>${{renderMarketChart(series)}}<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#5c6970;"><span>${{escapePreviewText(series.points[0] ? series.points[0].label : series.label)}}</span><span>${{escapePreviewText(series.points[series.points.length - 1] ? series.points[series.points.length - 1].label : series.label)}}</span></div><p class="muted">${{escapePreviewText(marketPanelCopy.open)}} ${{formatPreviewPrice(series.open_price)}}${{unitSuffix}} | ${{escapePreviewText(marketPanelCopy.change)}} ${{series.change_abs >= 0 ? "+" : ""}}${{formatPreviewPrice(series.change_abs)}}${{unitSuffix}} (${{formatPreviewPct(series.change_pct)}})</p><p class="muted">${{escapePreviewText(marketPanelCopy.range)}} ${{formatPreviewPrice(series.low_price)}}${{unitSuffix}} - ${{formatPreviewPrice(series.high_price)}}${{unitSuffix}}</p>${{distanceBar}}${{overlaySummary ? `<p class="muted">${{escapePreviewText(marketPanelCopy.levels)}} ${{escapePreviewText(overlaySummary)}}</p>` : ""}}</article>`;
+      }};
+      return `<div class="panel-head"><h2>${{escapePreviewText(marketPanelCopy.title)}}</h2><p>${{escapePreviewText(marketPanelCopy.subtitle)}}</p></div>${{warning}}<div class="metric-list" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));"><article><span>${{escapePreviewText(marketPanelCopy.current_price)}}</span><strong>${{formatPreviewPrice(snapshot.current_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.root_code)}} · ${{escapePreviewText(snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.daily_change)}}</span><strong>${{snapshot.price_change_abs >= 0 ? "+" : ""}}${{formatPreviewPrice(snapshot.price_change_abs)}}${{unitSuffix}}</strong><p class="muted">${{formatPreviewPct(snapshot.price_change_pct)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.day_high)}}</span><strong>${{formatPreviewPrice(snapshot.daily.high_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.daily.points[snapshot.daily.points.length - 1] ? snapshot.daily.points[snapshot.daily.points.length - 1].label : snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.day_low)}}</span><strong>${{formatPreviewPrice(snapshot.daily.low_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.daily.points[0] ? snapshot.daily.points[0].label : snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.updated)}}</span><strong>${{escapePreviewText(formatPreviewTime(snapshot.as_of))}}</strong><p class="muted">${{escapePreviewText(marketPanelCopy.status)}}: ${{escapePreviewText(snapshot.status || "n/a")}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.source)}}</span><strong>${{escapePreviewText(snapshot.price_source)}}</strong><p class="muted">${{escapePreviewText(snapshot.base_asset)}}</p></article></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:16px;">${{renderChartCard(snapshot.daily)}}${{renderChartCard(snapshot.weekly)}}${{renderChartCard(snapshot.monthly)}}</div>`;
+    }};
+    const syncMarketPanel = (snapshot) => {{
+      if (!liveMarketPanelNode) {{
+        return;
+      }}
+      liveMarketPanelNode.dataset.marketRootCode = snapshot && snapshot.root_code
+        ? snapshot.root_code
+        : liveMarketPanelNode.dataset.marketRootCode || "";
+      liveMarketPanelNode.dataset.marketUnit = snapshot && snapshot.unit ? snapshot.unit : "";
+      liveMarketPanelNode.innerHTML = renderMarketPanelBody(snapshot);
+      if (!snapshot) {{
+        return;
+      }}
+      attachInteractiveMarketCharts(
+        liveMarketPanelNode,
+        [snapshot.daily, snapshot.weekly, snapshot.monthly],
+        (series) => String(series.label || ""),
+        14,
+        7,
+      );
+    }};
+    if (liveMarketPanelNode) {{
+      try {{
+        const signalPageDataNode = document.getElementById("signal-page-data");
+        const payload = signalPageDataNode ? JSON.parse(signalPageDataNode.textContent) : null;
+        if (payload && payload.market_snapshot) {{
+          liveMarketPanelNode.dataset.marketUnit = payload.market_snapshot.unit || "";
+          attachInteractiveMarketCharts(
+            liveMarketPanelNode,
+            [payload.market_snapshot.daily, payload.market_snapshot.weekly, payload.market_snapshot.monthly],
+            (series) => String(series.label || ""),
+            14,
+            7,
+          );
+        }}
+      }} catch (_error) {{
+      }}
+    }}
     const journalForm = document.getElementById("signal-journal-form");
     const journalStatus = document.getElementById("signal-journal-status");
     if (journalForm) {{
@@ -6774,6 +11306,31 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot, *, language: str
         await window.__imoexRefreshPage();
       }});
     }}
+    if (window.__imoexMarketLiveRefreshStop) {{
+      window.__imoexMarketLiveRefreshStop();
+    }}
+    const refreshSignalMarketPanel = async () => {{
+      if (document.hidden || !liveMarketPanelNode || !liveMarketPanelNode.dataset.marketSignalId) {{
+        return;
+      }}
+      try {{
+        const response = await fetch(`/api/v1/workspace/signals/${{encodeURIComponent(liveMarketPanelNode.dataset.marketSignalId)}}`, {{ cache: "no-store" }});
+        if (!response.ok) {{
+          return;
+        }}
+        const payload = await response.json();
+        syncMarketPanel(payload && payload.market_snapshot ? payload.market_snapshot : null);
+      }} catch (_error) {{
+        return;
+      }}
+    }};
+    const marketLiveRefreshTimer = window.setInterval(() => {{
+      void refreshSignalMarketPanel();
+    }}, 20000);
+    window.__imoexMarketLiveRefreshStop = () => {{
+      window.clearInterval(marketLiveRefreshTimer);
+    }};
+    void refreshSignalMarketPanel();
   </script>
 </body>
 </html>"""
@@ -6878,6 +11435,8 @@ def _render_root_pulse_card(item, *, selected_root: str, language: str) -> str:
         "preview_note": "Быстрый просмотр свечей без перехода" if language == "ru" else "Quick candle preview without navigation",
         "pin_a": "Серия A" if language == "ru" else "Root A",
         "pin_b": "Серия B" if language == "ru" else "Root B",
+        "level_waiting": "Ждём уровни" if language == "ru" else "Waiting for levels",
+        "level_waiting_note": "Нужны вход, инвалидация и цель." if language == "ru" else "Need entry, invalidation, and target.",
     }
     preview_buttons = "".join(
         (
@@ -6894,7 +11453,8 @@ def _render_root_pulse_card(item, *, selected_root: str, language: str) -> str:
         f"<strong>{escape(item.root_code)}</strong>"
         f"<span>{escape(item.base_asset)}</span>"
         f"<small>{escape(item.headline)}</small>"
-        f"<em>{price_line}</em>"
+        f'<em data-root-price-line data-active-signals="{item.active_signals}" data-roll-share="{item.next_contract_share:.0%}">{price_line}</em>'
+        f'<div class="market-level-chip tone-neutral" data-root-level-chip><strong>{escape(copy["level_waiting"])}</strong><span>{escape(copy["level_waiting_note"])}</span></div>'
         "</a>"
         '<div class="rail-card-footer">'
         f'<div class="rail-card-tabs">{preview_buttons}</div>'
@@ -6917,9 +11477,185 @@ def _render_root_pulse_card(item, *, selected_root: str, language: str) -> str:
     )
 
 
-def _render_market_snapshot(snapshot, *, language: str) -> str:
-    if snapshot is None:
+def _market_overlay_copy(language: str) -> dict[str, str]:
+    return {
+        "entry": "Вход" if language == "ru" else "Entry",
+        "invalidation": "Инвалидация" if language == "ru" else "Invalidation",
+        "target": "Цель" if language == "ru" else "Target",
+        "levels": "Уровни" if language == "ru" else "Levels",
+    }
+
+
+def _market_level_copy(language: str) -> dict[str, str]:
+    return {
+        "price_map": "Цена vs идея" if language == "ru" else "Price vs setup",
+        "price_short": "Цена" if language == "ru" else "Price",
+        "entry_short": "Вход" if language == "ru" else "Entry",
+        "target_short": "Цель" if language == "ru" else "Target",
+        "invalidation_short": "Инв." if language == "ru" else "Invalid.",
+        "distance_bar": "Шкала уровней" if language == "ru" else "Level distance bar",
+        "pending": "Ждём уровни" if language == "ru" else "Waiting for levels",
+        "pending_detail": (
+            "Нужны вход, инвалидация и цель."
+            if language == "ru"
+            else "Need entry, invalidation, and target."
+        ),
+        "target_hit": "Цель достигнута" if language == "ru" else "Target reached",
+        "above_entry": "Выше входа" if language == "ru" else "Above entry",
+        "below_entry": "Ниже входа" if language == "ru" else "Below entry",
+        "above_invalidation": "Выше инвалидации" if language == "ru" else "Above invalidation",
+        "below_invalidation": "Ниже инвалидации" if language == "ru" else "Below invalidation",
+        "to_target": "До цели" if language == "ru" else "To target",
+        "to_entry": "До входа" if language == "ru" else "To entry",
+        "past_target": "После цели" if language == "ru" else "Past target",
+        "beyond_invalidation": "За инвалидацией" if language == "ru" else "Beyond invalidation",
+    }
+
+
+def _market_overlay_style(key: str) -> tuple[str, str]:
+    mapping = {
+        "entry": ("#17364d", "4 3"),
+        "invalidation": ("#bb7122", "5 4"),
+        "target": ("#116966", "6 4"),
+    }
+    return mapping.get(key, ("#5c6970", "4 3"))
+
+
+def _market_overlay_summary(series, *, unit: str, language: str) -> str:
+    overlays = getattr(series, "overlays", [])
+    if not overlays:
         return ""
+    labels = _market_overlay_copy(language)
+    unit_suffix = f" {escape(unit)}" if unit else ""
+    return " | ".join(
+        f"{escape(labels.get(overlay.key, overlay.key.title()))} {_format_price_value(overlay.value)}{unit_suffix}"
+        for overlay in overlays
+    )
+
+
+def _format_level_distance(from_value: float | None, to_value: float | None) -> str:
+    if from_value is None or to_value is None:
+        return "n/a"
+    base = max(abs(from_value), 0.01)
+    return f"{abs(to_value - from_value) / base * 100:.2f}%"
+
+
+def _market_level_record(series) -> dict[str, float]:
+    record: dict[str, float] = {}
+    for overlay in getattr(series, "overlays", []):
+        if overlay.value is not None:
+            record[str(overlay.key)] = overlay.value
+    return record
+
+
+def _render_market_distance_bar(series, *, unit: str, language: str) -> str:
+    overlays = _market_level_record(series)
+    current_price = getattr(series, "current_price", None)
+    if (
+        current_price is None
+        or overlays.get("entry") is None
+        or overlays.get("target") is None
+        or overlays.get("invalidation") is None
+    ):
+        return ""
+
+    copy = _market_level_copy(language)
+    points = [
+        ("invalidation", copy["invalidation_short"], overlays["invalidation"], "#bb7122"),
+        ("entry", copy["entry_short"], overlays["entry"], "#17364d"),
+        ("price", copy["price_short"], current_price, "#15202a"),
+        ("target", copy["target_short"], overlays["target"], "#116966"),
+    ]
+    low = min(point[2] for point in points)
+    high = max(point[2] for point in points)
+    span = max(high - low, max(abs(current_price), 0.01) * 0.001, 0.01)
+    unit_suffix = f" {escape(unit)}" if unit else ""
+    markers: list[str] = []
+    chips: list[str] = []
+    for key, label, value, color in points:
+        left = max(0.0, min(100.0, ((value - low) / span) * 100.0))
+        size = 12 if key == "price" else 9
+        markers.append(
+            f'<div style="position:absolute;left:calc({left:.2f}% - {size / 2:.1f}px);top:{"4px" if key == "price" else "8px"};display:grid;justify-items:center;gap:3px;">'
+            f'<span style="font-size:10px;line-height:1;color:{color};font-weight:700;">{escape(label)}</span>'
+            f'<span style="width:{size}px;height:{size}px;border-radius:999px;background:{color};box-shadow:0 0 0 2px rgba(255,255,255,0.94);"></span>'
+            "</div>"
+        )
+        detail = (
+            f"{_format_price_value(value)}{unit_suffix}"
+            if key == "price"
+            else _format_level_distance(current_price, value)
+        )
+        chips.append(
+            '<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 8px;border-radius:999px;'
+            'background:rgba(255,255,255,0.82);border:1px solid rgba(21,32,42,0.08);font-size:11px;color:#5c6970;">'
+            f'<span style="width:7px;height:7px;border-radius:999px;background:{color};"></span>'
+            f"{escape(label)} {escape(detail)}"
+            "</span>"
+        )
+    return (
+        '<div data-market-distance-bar style="display:grid;gap:8px;">'
+        f'<div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#5c6970;">{escape(copy["distance_bar"])}</div>'
+        '<div style="position:relative;height:34px;">'
+        '<div style="position:absolute;left:0;right:0;top:18px;height:4px;border-radius:999px;'
+        'background:linear-gradient(90deg, rgba(187,113,34,0.22), rgba(23,54,77,0.18), rgba(17,105,102,0.22));"></div>'
+        f'{"".join(markers)}'
+        "</div>"
+        f'<div style="display:flex;flex-wrap:wrap;gap:8px;">{"".join(chips)}</div>'
+        "</div>"
+    )
+
+
+def _render_market_unavailable_snapshot(
+    *,
+    language: str,
+    root_code: str | None = None,
+    signal_id: str | None = None,
+) -> str:
+    copy = {
+        "title": "Текущая цена и графики" if language == "ru" else "Current price and charts",
+        "subtitle": (
+            "По выбранному инструменту: текущая цена и три масштаба просмотра без переключения страницы."
+            if language == "ru"
+            else "Current price plus day, week, and month views for the selected instrument."
+        ),
+        "warning_title": (
+            "Рыночные данные временно недоступны"
+            if language == "ru"
+            else "Market data is temporarily unavailable"
+        ),
+        "warning_body": (
+            "Графики скрыты, чтобы не показывать приблизительные или устаревшие цены. Проверьте статус live feed в runtime."
+            if language == "ru"
+            else "Charts are hidden so the app does not display approximate or stale prices. Check the live-feed status in runtime."
+        ),
+    }
+    signal_attr = f' data-market-signal-id="{escape(signal_id)}"' if signal_id else ""
+    return (
+        f'<section class="panel" data-market-panel data-market-root-code="{escape(root_code or "")}"{signal_attr}>'
+        '<div class="panel-head">'
+        f'<h2>{escape(copy["title"])}</h2>'
+        f'<p>{escape(copy["subtitle"])}</p>'
+        "</div>"
+        '<div class="metric-list" data-market-unavailable>'
+        '<article class="action-card tone-warning">'
+        f'<strong>{escape(copy["warning_title"])}</strong>'
+        f'<p class="muted">{escape(copy["warning_body"])}</p>'
+        "</article>"
+        "</div>"
+        "</section>"
+    )
+
+
+def _render_market_snapshot(
+    snapshot,
+    *,
+    language: str,
+    root_code: str | None = None,
+    signal_id: str | None = None,
+) -> str:
+    if snapshot is None:
+        return _render_market_unavailable_snapshot(language=language, root_code=root_code, signal_id=signal_id)
 
     copy = {
         "title": "Текущая цена и графики" if language == "ru" else "Current price and charts",
@@ -6941,6 +11677,7 @@ def _render_market_snapshot(snapshot, *, language: str) -> str:
             else "The feed looks stale or degraded, so treat the displayed price with caution."
         ),
         "status": "Статус" if language == "ru" else "Status",
+        "hover_hint": "Наведите на свечу, чтобы увидеть OHLC." if language == "ru" else "Hover a candle to inspect OHLC.",
     }
     unit = f" {escape(snapshot.unit)}" if snapshot.unit else ""
     tone = _market_status_tone(snapshot.status)
@@ -6959,8 +11696,9 @@ def _render_market_snapshot(snapshot, *, language: str) -> str:
         _render_market_chart_card(series, unit=snapshot.unit, language=language)
         for series in (snapshot.daily, snapshot.weekly, snapshot.monthly)
     )
+    signal_attr = f' data-market-signal-id="{escape(signal_id)}"' if signal_id else ""
     return (
-        '<section class="panel">'
+        f'<section class="panel" data-market-panel data-market-root-code="{escape(snapshot.root_code)}"{signal_attr}>'
         '<div class="panel-head">'
         f'<h2>{escape(copy["title"])}</h2>'
         f'<p>{escape(copy["subtitle"])}</p>'
@@ -6984,14 +11722,17 @@ def _render_market_snapshot(snapshot, *, language: str) -> str:
 def _render_market_chart_card(series, *, unit: str, language: str) -> str:
     if not series.points:
         return ""
+    overlay_copy = _market_overlay_copy(language)
+    level_copy = _market_level_copy(language)
     chart_labels = {
         "1D": "День" if language == "ru" else "Day",
         "1W": "Неделя" if language == "ru" else "Week",
         "1M": "Месяц" if language == "ru" else "Month",
     }
     label = chart_labels.get(series.label, series.label)
-    low = min(point.low for point in series.points)
-    high = max(point.high for point in series.points)
+    overlay_values = [overlay.value for overlay in getattr(series, "overlays", [])]
+    low = min([point.low for point in series.points] + overlay_values + [series.current_price])
+    high = max([point.high for point in series.points] + overlay_values + [series.current_price])
     span = max(high - low, 0.0001)
     width = 220.0
     height = 92.0
@@ -7003,7 +11744,9 @@ def _render_market_chart_card(series, *, unit: str, language: str) -> str:
     open_label = "Открытие" if language == "ru" else "Open"
     close_label = "Закрытие" if language == "ru" else "Close"
     change_label = "Изменение" if language == "ru" else "Change"
+    levels_label = overlay_copy["levels"]
     candles: list[str] = []
+    overlay_lines: list[str] = []
     body_width = max(6.0, min(16.0, width / max(len(series.points) * 1.9, 1)))
 
     def _map_price_y(value: float) -> float:
@@ -7024,6 +11767,27 @@ def _render_market_chart_card(series, *, unit: str, language: str) -> str:
             f'<rect x="{(x - (body_width / 2)):.1f}" y="{body_top:.1f}" width="{body_width:.1f}" '
             f'height="{body_height:.1f}" rx="2" fill="{candle_tone}" fill-opacity="0.92"></rect>'
         )
+    for overlay in getattr(series, "overlays", []):
+        stroke, dasharray = _market_overlay_style(overlay.key)
+        y = _map_price_y(overlay.value)
+        overlay_label = escape(overlay_copy.get(overlay.key, overlay.key.title()))
+        overlay_lines.append(
+            f'<line x1="0" y1="{y:.1f}" x2="{width:.1f}" y2="{y:.1f}" '
+            f'stroke="{stroke}" stroke-width="1.2" stroke-dasharray="{dasharray}" opacity="0.95"></line>'
+            f'<text x="{width - 6:.1f}" y="{max(12.0, min(height - 4.0, y - 2.0)):.1f}" '
+            f'text-anchor="end" fill="{stroke}" font-size="10" font-weight="700">{overlay_label}</text>'
+        )
+    current_y = _map_price_y(series.current_price)
+    current_line = (
+        f'<line x1="0" y1="{current_y:.1f}" x2="{width:.1f}" y2="{current_y:.1f}" stroke="#15202a" '
+        'stroke-width="1.3" opacity="0.78" data-market-current-line></line>'
+        f'<circle cx="{width - 6:.1f}" cy="{current_y:.1f}" r="3.4" fill="#15202a"></circle>'
+        f'<text x="6" y="{max(12.0, min(height - 4.0, current_y - 4.0)):.1f}" fill="#15202a" '
+        f'font-size="10" font-weight="700">{escape(level_copy["price_short"])}</text>'
+    )
+    overlay_summary = _market_overlay_summary(series, unit=unit, language=language)
+    distance_bar = _render_market_distance_bar(series, unit=unit, language=language)
+    levels_line = f'<p class="muted">{escape(levels_label)} {overlay_summary}</p>' if overlay_summary else ""
     return (
         '<article style="padding:14px 16px;border-radius:18px;border:1px solid rgba(21, 32, 42, 0.1);background:rgba(255,255,255,0.72);display:grid;gap:10px;">'
         '<div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;">'
@@ -7032,6 +11796,8 @@ def _render_market_chart_card(series, *, unit: str, language: str) -> str:
         "</div>"
         f'<svg viewBox="0 0 220 92" preserveAspectRatio="none" style="width:100%;height:92px;border-radius:14px;background:linear-gradient(180deg, rgba(15,108,103,0.06), rgba(255,255,255,0.6));">'
         f'<line x1="0" y1="{_map_price_y(series.open_price):.1f}" x2="220" y2="{_map_price_y(series.open_price):.1f}" stroke="rgba(21,32,42,0.08)" stroke-width="1" stroke-dasharray="4 4"></line>'
+        f'{"".join(overlay_lines)}'
+        f"{current_line}"
         f'{"".join(candles)}'
         "</svg>"
         '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#5c6970;">'
@@ -7039,6 +11805,8 @@ def _render_market_chart_card(series, *, unit: str, language: str) -> str:
         "</div>"
         f'<p class="muted">{escape(open_label)} {_format_price_value(series.open_price)}{unit_suffix} | {escape(close_label)} {_format_price_value(series.current_price)}{unit_suffix} | {escape(change_label)} {_format_signed_value(series.change_abs)}{unit_suffix} ({_format_signed_pct(series.change_pct)})</p>'
         f'<p class="muted">{escape(range_label)} {_format_price_value(series.low_price)}{unit_suffix} - {_format_price_value(series.high_price)}{unit_suffix}</p>'
+        f"{distance_bar}"
+        f"{levels_line}"
         "</article>"
     )
 
@@ -7186,6 +11954,8 @@ def _render_workspace_signal_tile(signal, selected_signal_id: str | None, *, lan
             if language == "ru"
             else "Quick signal preview without leaving the lane."
         ),
+        "level_waiting": "Ждём уровни" if language == "ru" else "Waiting for levels",
+        "level_waiting_note": "Нужны вход, инвалидация и цель." if language == "ru" else "Need entry, invalidation, and target.",
     }
     preview_buttons = "".join(
         (
@@ -7209,6 +11979,7 @@ def _render_workspace_signal_tile(signal, selected_signal_id: str | None, *, lan
         f"<small>priority {signal.priority_score}</small>"
         f"<small>workflow {_workflow_state_label(signal.workflow_state)}</small>"
         "</div>"
+        f'<div class="market-level-chip tone-neutral" data-signal-level-chip><strong>{escape(copy["level_waiting"])}</strong><span>{escape(copy["level_waiting_note"])}</span></div>'
         "</a>"
         '<div class="signal-tile-footer">'
         f'<div class="signal-preview-tabs">{preview_buttons}</div>'
