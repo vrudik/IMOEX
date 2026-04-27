@@ -24,4 +24,7 @@ apps/ui/.next/
 local.db
 local.db-journal
 .smoke-local/
+.smoke-*.db
+.smoke-*.db-journal
+.office-cleanup-backup-*/
 *.egg-info/

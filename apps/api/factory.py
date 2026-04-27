@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from uuid import uuid4
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 
 from apps.api.routes.admin import router as admin_router
 from apps.api.routes.dashboard import router as dashboard_router
@@ -74,6 +74,10 @@ def create_app() -> FastAPI:
                 },
             )
         return response
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon() -> Response:
+        return Response(status_code=204)
 
     app.include_router(health_router, prefix="/api/v1")
     app.include_router(quality_router, prefix="/api/v1")

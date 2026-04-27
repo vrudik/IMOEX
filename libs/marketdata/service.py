@@ -63,6 +63,7 @@ class MarketDataService:
         self._finam_adapter = finam_adapter or FinamAdapter(self.settings)
         self._quote_cache: dict[str, tuple[datetime, LiveQuoteSnapshot]] = {}
         self._snapshot_cache: dict[str, tuple[datetime, LiveInstrumentMarketSnapshot]] = {}
+        self._provider_failure_cache: dict[str, tuple[datetime, str]] = {}
         self._finam_jwt_token: str | None = self.settings.finam_jwt_token
 
     def get_quote_snapshot(
@@ -84,6 +85,8 @@ class MarketDataService:
             return cached[1].model_copy(deep=True)
 
         for provider in _provider_order(providers):
+            if self._provider_failure_is_fresh(provider, current_time):
+                continue
             try:
                 snapshot = None
                 if provider == "moex":
@@ -91,9 +94,11 @@ class MarketDataService:
                 elif provider == "finam":
                     snapshot = self._fetch_finam_quote(root_code=root_code, contract=contract, unit_hint=unit_hint)
                 if snapshot is not None:
+                    self._provider_failure_cache.pop(provider, None)
                     self._quote_cache[cache_key] = (current_time, snapshot)
                     return snapshot.model_copy(deep=True)
-            except (httpx.HTTPError, ValueError):
+            except (httpx.HTTPError, ValueError) as exc:
+                self._record_provider_failure(provider, current_time, exc)
                 continue
         return None
 
@@ -116,6 +121,8 @@ class MarketDataService:
             return cached[1].model_copy(deep=True)
 
         for provider in _provider_order(providers):
+            if self._provider_failure_is_fresh(provider, current_time):
+                continue
             try:
                 snapshot = None
                 if provider == "moex":
@@ -123,11 +130,23 @@ class MarketDataService:
                 elif provider == "finam":
                     snapshot = self._fetch_finam_snapshot(root_code=root_code, contract=contract, unit_hint=unit_hint, now=current_time)
                 if snapshot is not None:
+                    self._provider_failure_cache.pop(provider, None)
                     self._snapshot_cache[cache_key] = (current_time, snapshot)
                     return snapshot.model_copy(deep=True)
-            except (httpx.HTTPError, ValueError):
+            except (httpx.HTTPError, ValueError) as exc:
+                self._record_provider_failure(provider, current_time, exc)
                 continue
         return None
+
+    def _provider_failure_is_fresh(self, provider: str, current_time: datetime) -> bool:
+        cached = self._provider_failure_cache.get(provider)
+        if cached is None:
+            return False
+        failed_at, _detail = cached
+        return current_time - failed_at <= timedelta(seconds=self.settings.market_data_cache_ttl_seconds)
+
+    def _record_provider_failure(self, provider: str, failed_at: datetime, exc: Exception) -> None:
+        self._provider_failure_cache[provider] = (failed_at, f"{type(exc).__name__}: {exc}")
 
     def _fetch_moex_snapshot(
         self,

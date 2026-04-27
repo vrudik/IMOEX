@@ -23,6 +23,7 @@ from libs.dashboard.contracts import (
     HorizonComparisonItem,
     HorizonComparisonSnapshot,
     JournalDecisionLogItem,
+    JournalTagSummary,
     JournalWorkspaceEntry,
     JournalWorkspaceSnapshot,
     ReviewBundle,
@@ -285,6 +286,7 @@ class DashboardService:
         status: SignalStatus | None = None,
         kind: JournalEntryKind | None = None,
         signal_id: str | None = None,
+        tag: str | None = None,
         limit: int = 120,
     ) -> JournalWorkspaceSnapshot:
         roots = self.contract_service.list_roots()
@@ -311,6 +313,18 @@ class DashboardService:
         if signal_id is not None:
             entries = [item for item in entries if item.signal.signal_id == signal_id]
             related_signals = [item for item in related_signals if item.signal_id == signal_id] or related_signals
+        tag_counts = self._journal_tag_counts(entries)
+        selected_tag = (tag or "").strip() or None
+        if selected_tag is not None:
+            entries = [
+                item
+                for item in entries
+                if selected_tag in {candidate.strip() for candidate in item.entry.tags}
+            ]
+        if selected_tag is not None:
+            signal_ids_with_tag = {item.signal.signal_id for item in entries}
+            decision_log = [item for item in decision_log if item.signal.signal_id in signal_ids_with_tag]
+            related_signals = [item for item in related_signals if item.signal_id in signal_ids_with_tag]
 
         selected_signal_id = signal_id
         if selected_signal_id is None and entries:
@@ -325,6 +339,7 @@ class DashboardService:
             selected_status=status,
             selected_kind=kind,
             selected_signal_id=selected_signal_id,
+            selected_tag=selected_tag,
             decision_log=decision_log[: min(limit, 12)],
             entries=entries[:limit],
             related_signals=related_signals[:12],
@@ -334,7 +349,33 @@ class DashboardService:
             post_mortems=sum(1 for item in entries if item.entry.kind == JournalEntryKind.POST_MORTEM),
             note_templates=self._note_templates(),
             tag_suggestions=self._tag_suggestions(),
+            tag_counts=tag_counts,
         )
+
+    def _journal_tag_counts(self, entries: list[JournalWorkspaceEntry]) -> list[JournalTagSummary]:
+        buckets: dict[str, dict[str, set[str] | int]] = {}
+        for item in entries:
+            for raw_tag in item.entry.tags:
+                tag = raw_tag.strip()
+                if not tag:
+                    continue
+                bucket = buckets.setdefault(tag, {"count": 0, "roots": set(), "kinds": set()})
+                bucket["count"] = int(bucket["count"]) + 1
+                roots = bucket["roots"]
+                kinds = bucket["kinds"]
+                if isinstance(roots, set):
+                    roots.add(item.signal.root)
+                if isinstance(kinds, set):
+                    kinds.add(item.entry.kind.value)
+        return [
+            JournalTagSummary(
+                tag=tag,
+                count=int(data["count"]),
+                roots=sorted(data["roots"]) if isinstance(data["roots"], set) else [],
+                kinds=sorted(data["kinds"]) if isinstance(data["kinds"], set) else [],
+            )
+            for tag, data in sorted(buckets.items(), key=lambda pair: (-int(pair[1]["count"]), pair[0]))
+        ]
 
     def add_watchlist_entry(self, *, root_code: str, signal_id: str | None = None, note: str | None = None) -> list[WatchlistEntry]:
         effective_root = root_code
@@ -353,8 +394,37 @@ class DashboardService:
         )
         return self._build_watchlist()
 
+    def list_watchlist_entries(
+        self,
+        *,
+        review_state: str | None = None,
+        root_code: str | None = None,
+        linked: str | None = None,
+    ) -> list[WatchlistEntry]:
+        return self._filter_watchlist(
+            self._build_watchlist(),
+            review_state=review_state,
+            root_code=root_code,
+            linked=linked,
+        )
+
     def remove_watchlist_entry(self, watch_key: str) -> list[WatchlistEntry]:
         self.repository.delete_workspace_watch(watch_key=watch_key, profile_id="default")
+        return self._build_watchlist()
+
+    def mark_watchlist_entry_reviewed(self, watch_key: str) -> list[WatchlistEntry]:
+        watches = self.repository.list_workspace_watches(profile_id="default")
+        row = next((item for item in watches if item.watch_key == watch_key), None)
+        if row is None:
+            return self._build_watchlist()
+        self.repository.upsert_workspace_watch(
+            watch_key=row.watch_key,
+            profile_id=row.profile_id,
+            root_code=row.root_code,
+            signal_id=row.signal_id,
+            note=row.note,
+            updated_at=datetime.now(UTC),
+        )
         return self._build_watchlist()
 
     def build_horizon_comparison_snapshot(self, *, root: str) -> HorizonComparisonSnapshot | None:
@@ -653,18 +723,46 @@ class DashboardService:
             item.signal_id: item
             for item in self._list_signals(limit=24)
         }
+        now = datetime.now(UTC)
         return [
             WatchlistEntry(
                 watch_key=row.watch_key,
                 root_code=row.root_code,
                 signal_id=row.signal_id,
                 note=row.note,
+                priority_rank=index,
+                focus_reason=self._watchlist_focus_reason(row=row, signal=signals.get(row.signal_id)),
+                last_reviewed_at=row.updated_at,
+                review_state=self._watchlist_review_state(row=row, now=now),
                 added_at=row.created_at,
                 updated_at=row.updated_at,
                 signal=signals.get(row.signal_id) if row.signal_id else None,
             )
-            for row in watches
+            for index, row in enumerate(watches, start=1)
         ]
+
+    def _filter_watchlist(
+        self,
+        items: list[WatchlistEntry],
+        *,
+        review_state: str | None = None,
+        root_code: str | None = None,
+        linked: str | None = None,
+    ) -> list[WatchlistEntry]:
+        normalized_review_state = (review_state or "all").strip().lower()
+        raw_root = (root_code or "all").strip()
+        normalized_root = raw_root.upper()
+        normalized_linked = (linked or "all").strip().lower()
+        filtered = items
+        if normalized_review_state not in {"", "all"}:
+            filtered = [item for item in filtered if item.review_state == normalized_review_state]
+        if raw_root.lower() not in {"", "all"}:
+            filtered = [item for item in filtered if item.root_code.upper() == normalized_root]
+        if normalized_linked in {"signal", "signal_linked", "linked"}:
+            filtered = [item for item in filtered if item.signal_id is not None]
+        elif normalized_linked in {"root", "root_level"}:
+            filtered = [item for item in filtered if item.signal_id is None]
+        return filtered
 
     def _workspace_mode(self, *, focus_signal: FinalSignalDetail | None, watchlist: list[WatchlistEntry]) -> str:
         if focus_signal is not None:
@@ -674,6 +772,20 @@ class DashboardService:
         if watchlist:
             return "scan"
         return "scan"
+
+    def _watchlist_focus_reason(self, *, row, signal: FinalSignalCard | None) -> str:
+        note = (row.note or "").strip()
+        if note:
+            return note
+        if signal is not None:
+            return signal.summary
+        return "Root-level watch item"
+
+    def _watchlist_review_state(self, *, row, now: datetime) -> str:
+        reviewed_at = row.updated_at
+        if reviewed_at.tzinfo is None:
+            reviewed_at = reviewed_at.replace(tzinfo=UTC)
+        return "reviewed_today" if reviewed_at.date() == now.date() else "review_due"
 
     def _build_horizon_comparison(self, *, selected_root: str, root_details) -> HorizonComparisonSnapshot | None:
         related = self._list_signals(root=selected_root, limit=12, seed_root_details=root_details)
@@ -906,19 +1018,73 @@ class DashboardService:
     def _build_review_bundle(self, *, roots) -> ReviewBundle:
         signals = self._list_signals(limit=64)
         watched = self._build_watchlist()
+        watched_root_codes = sorted({item.root_code for item in watched})
+        review_due = sum(1 for item in watched if item.review_state == "review_due")
+        reviewed_today = sum(1 for item in watched if item.review_state == "reviewed_today")
         ignored = sum(1 for item in signals if item.workflow_state.value == "ignored")
         resolved = self.repository.count_signals(status="resolved")
         journal_entries = self.repository.count_journal_entries()
+        outcomes = self._review_outcome_summary()
+        next_actions = self._review_next_actions(
+            watched=watched,
+            review_due=review_due,
+            ignored=ignored,
+            resolved=resolved,
+            journal_entries=journal_entries,
+        )
         return ReviewBundle(
+            watchlist_items=len(watched),
             watched_roots=len({item.root_code for item in watched}),
+            watched_root_codes=watched_root_codes,
+            review_due_items=review_due,
+            reviewed_today_items=reviewed_today,
             decisions_logged=journal_entries,
             ignored_signals=ignored,
             resolved_signals=resolved,
+            outcome_summary=outcomes,
+            tag_suggestions=self._tag_suggestions(),
+            next_review_actions=next_actions,
             highlights=[
                 f"{len(watched)} watchlist items are being monitored.",
                 f"{len(roots)} roots are available in the current universe.",
+                f"{review_due} watchlist items still need review today.",
             ],
         )
+
+    def _review_outcome_summary(self) -> list[str]:
+        rows = self.repository.list_signal_resolutions(limit=5)
+        if not rows:
+            return ["No resolved outcomes yet; post-resolution review will appear here after signals are closed."]
+        return [
+            f"{row.root_code} {row.horizon}: {row.outcome} ({float(row.realized_return_bps):+.1f} bps)"
+            for row in rows
+        ]
+
+    def _review_next_actions(
+        self,
+        *,
+        watched: list[WatchlistEntry],
+        review_due: int,
+        ignored: int,
+        resolved: int,
+        journal_entries: int,
+    ) -> list[str]:
+        actions: list[str] = []
+        if review_due:
+            actions.append(f"Review {review_due} queued watchlist item(s) before the close.")
+        elif watched:
+            actions.append("All watchlist items are reviewed today; capture any changed thesis or risk.")
+        else:
+            actions.append("Promote at least one root or signal into watchlist before end-of-day review.")
+        if journal_entries == 0:
+            actions.append("Add at least one thesis or risk note so tomorrow starts with context.")
+        if ignored:
+            actions.append(f"Check {ignored} ignored signal(s) for false urgency, late timing, or data issues.")
+        if resolved:
+            actions.append(f"Use {resolved} resolved signal(s) as calibration anchors for confidence quality.")
+        else:
+            actions.append("No resolved outcomes yet; keep post-mortem slots ready for the first closed setup.")
+        return actions
 
     def _note_templates(self) -> list[dict[str, str]]:
         return [

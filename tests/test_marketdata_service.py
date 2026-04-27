@@ -112,3 +112,48 @@ def test_market_data_service_parses_moex_quote_and_candles() -> None:
     assert len(snapshot.monthly_bars) == 2
     assert snapshot.as_of.isoformat() == "2026-04-19T09:34:56+00:00"
 
+
+def test_market_data_service_circuit_breaks_repeated_provider_failures() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise httpx.ConnectTimeout("MOEX is temporarily unavailable.", request=request)
+
+    transport = httpx.MockTransport(handler)
+    moex_client = httpx.Client(transport=transport, base_url="https://iss.moex.com/iss")
+    app_settings = Settings(
+        market_data_live_enabled=True,
+        market_data_http_timeout_seconds=1.0,
+        market_data_cache_ttl_seconds=60,
+    )
+    service = MarketDataService(app_settings=app_settings, moex_client=moex_client)
+    now = datetime(2026, 4, 19, 9, 40, tzinfo=UTC)
+
+    first = service.get_quote_snapshot(
+        root_code="Si",
+        contract="SiM6",
+        providers=["moex"],
+        unit_hint="RUB",
+        now=now,
+    )
+    second = service.get_quote_snapshot(
+        root_code="BR",
+        contract="BRK6",
+        providers=["moex"],
+        unit_hint="USD",
+        now=now,
+    )
+    third = service.get_market_snapshot(
+        root_code="MXI",
+        contract="MXM6",
+        providers=["moex"],
+        unit_hint="RUB",
+        now=now,
+    )
+
+    assert first is None
+    assert second is None
+    assert third is None
+    assert calls == 1

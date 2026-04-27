@@ -344,6 +344,9 @@ class AdminBackupResult(BaseModel):
     backup_path: str
     created_at: datetime
     size_bytes: int
+    database_kind: str = "sqlite"
+    backup_format: str = "sqlite3"
+    restore_hint: str | None = None
 
 
 class AdminCleanupRequest(BaseModel):

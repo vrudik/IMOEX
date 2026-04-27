@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
+import re
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi import APIRouter
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 
 from libs.adapters.contracts import SourceRegistryEntry
 from libs.adapters.registry import get_adapter_registry
@@ -14,12 +18,16 @@ from libs.domain.contracts import CapabilityRegistry
 from libs.runtime.contracts import FeatureFlagState, RuntimeMetricsSnapshot
 from libs.runtime.feature_flags import list_feature_flags
 from libs.runtime.metrics import get_runtime_metrics_registry
-from libs.notifications.readiness import telegram_source_health
+from libs.security.admin import admin_security_state
+from libs.notifications.readiness import telegram_delivery_configured, telegram_delivery_enabled, telegram_source_health
 from libs.scheduler.contracts import ScheduledJobSnapshot, SchedulerLeaderSnapshot, SchedulerRunHistoryEntry
-from libs.utils.db import database_available
+from libs.utils.config import settings
+from libs.utils.db import database_available, get_engine
 
 router = APIRouter(tags=["health"])
 MetricValue = str | int | float | bool | None
+BACKUP_FRESH_SECONDS = 36 * 60 * 60
+PRODUCTION_LIKE_ENVIRONMENTS = {"prod", "production", "staging"}
 
 
 class BootstrapState(BaseModel):
@@ -201,6 +209,39 @@ async def product_readiness(root: str | None = None) -> ProductReadinessResponse
         status="ok" if db_ok else "not_ok",
         detail="Primary application database is reachable." if db_ok else "Primary application database is unreachable.",
     )
+
+    _add_admin_runtime_security_check(add_check)
+
+    admin_health_snapshot = None
+    try:
+        admin_health_snapshot = container.observability_service.admin_health()
+    except Exception as exc:  # pragma: no cover - defensive readiness payload
+        add_check(
+            key="admin_health_surface",
+            label="Admin health surface",
+            surface="ops",
+            severity="advisory",
+            status="warning",
+            detail=f"Admin health snapshot failed to build: {type(exc).__name__}.",
+        )
+    else:
+        add_check(
+            key="admin_health_surface",
+            label="Admin health surface",
+            surface="ops",
+            severity="advisory",
+            status="ok" if admin_health_snapshot.database_status == "ok" else "not_ok",
+            detail=(
+                "Admin health snapshot is available."
+                if admin_health_snapshot.database_status == "ok"
+                else "Admin health snapshot reports database problems."
+            ),
+            metrics={
+                "admin_status": admin_health_snapshot.status,
+                "database_status": admin_health_snapshot.database_status,
+                "roots_count": admin_health_snapshot.roots_count,
+            },
+        )
 
     dashboard_enabled = any(item.name == "dashboard_ui" and item.enabled for item in list_feature_flags())
     add_check(
@@ -395,6 +436,12 @@ async def product_readiness(root: str | None = None) -> ProductReadinessResponse
             },
         )
 
+    _add_backup_readiness_check(add_check, generated_at=generated_at, admin_health=admin_health_snapshot)
+    _add_scheduler_readiness_check(add_check, container=container, admin_health=admin_health_snapshot)
+    _add_delivery_readiness_check(add_check)
+    _add_migration_readiness_check(add_check)
+    _add_restore_drill_evidence_check(add_check, generated_at=generated_at)
+
     if workspace_snapshot is None:
         add_check(
             key="market_data_truth",
@@ -437,6 +484,8 @@ async def product_readiness(root: str | None = None) -> ProductReadinessResponse
             },
         )
 
+    _add_market_data_policy_check(add_check, workspace_snapshot=workspace_snapshot)
+
     required_failures = [item for item in checks if item.severity == "required" and item.status == "not_ok"]
     warnings = [item for item in checks if item.status == "warning"]
     status = "not_ok" if required_failures else "warning" if warnings else "ok"
@@ -456,4 +505,410 @@ async def product_readiness(root: str | None = None) -> ProductReadinessResponse
         summary=summary,
         checks=checks,
     )
+
+
+def _add_admin_runtime_security_check(add_check) -> None:
+    state = admin_security_state()
+    configured = bool(state["configured"])
+    protected_environment = bool(state["protected_environment"])
+    required = bool(state["required"])
+    severity = "required" if required else "advisory"
+
+    if required and not configured:
+        status = "not_ok"
+        detail = "Admin/runtime controls require ADMIN_API_KEY in this environment, but it is not configured."
+    elif configured:
+        status = "ok"
+        detail = "Admin/runtime control APIs require the configured admin key."
+    else:
+        status = "ok"
+        detail = "Local environment allows admin/runtime controls without an API key."
+
+    add_check(
+        key="admin_runtime_security",
+        label="Admin/runtime API protection",
+        surface="security",
+        severity=severity,
+        status=status,
+        detail=detail,
+        metrics={
+            "environment": state["environment"],
+            "protected_environment": protected_environment,
+            "admin_api_key_configured": configured,
+            "header": state["header"],
+        },
+    )
+
+
+def _add_backup_readiness_check(add_check, *, generated_at: datetime, admin_health) -> None:
+    if admin_health is None:
+        add_check(
+            key="backup_freshness",
+            label="Backup freshness",
+            surface="backup",
+            severity="advisory",
+            status="warning",
+            detail="Backup freshness could not be evaluated because admin health is unavailable.",
+        )
+        return
+
+    latest_backup_at = _ensure_aware_utc(admin_health.latest_backup_at)
+    age_seconds = (
+        int((generated_at - latest_backup_at).total_seconds()) if latest_backup_at is not None else None
+    )
+    backup_artifacts = int(admin_health.backup_artifacts)
+    is_fresh = backup_artifacts > 0 and age_seconds is not None and age_seconds <= BACKUP_FRESH_SECONDS
+    if is_fresh:
+        status = "ok"
+        detail = "A recent backup artifact is available."
+    elif backup_artifacts > 0:
+        status = "warning"
+        detail = "Backup artifacts exist, but the latest backup is older than the freshness target."
+    else:
+        status = "warning"
+        detail = "No backup artifacts are available yet; run the restore drill before release."
+    add_check(
+        key="backup_freshness",
+        label="Backup freshness",
+        surface="backup",
+        severity="advisory",
+        status=status,
+        detail=detail,
+        metrics={
+            "backup_artifacts": backup_artifacts,
+            "latest_backup_age_seconds": age_seconds,
+            "freshness_target_seconds": BACKUP_FRESH_SECONDS,
+        },
+    )
+
+
+def _add_scheduler_readiness_check(add_check, *, container, admin_health) -> None:
+    if admin_health is None:
+        add_check(
+            key="scheduler_health",
+            label="Scheduler health",
+            surface="scheduler",
+            severity="advisory",
+            status="warning",
+            detail="Scheduler health could not be evaluated because admin health is unavailable.",
+        )
+        return
+
+    metrics = {item.name: item for item in admin_health.metrics}
+    total_runs = int(metrics.get("scheduler_runs_total").value) if metrics.get("scheduler_runs_total") else 0
+    failed_runs = int(metrics.get("scheduler_failed_runs_total").value) if metrics.get("scheduler_failed_runs_total") else 0
+    active_locks = int(metrics.get("scheduler_active_locks").value) if metrics.get("scheduler_active_locks") else 0
+    try:
+        planned_jobs = len(container.scheduler_service.plan().jobs)
+    except Exception:
+        planned_jobs = 0
+
+    if failed_runs > 0:
+        status = "warning"
+        detail = "Recent scheduler failures need review before release."
+    elif total_runs == 0:
+        status = "warning"
+        detail = "No scheduler run history is available yet."
+    else:
+        status = "ok"
+        detail = "Scheduler run history has no recorded failures."
+
+    add_check(
+        key="scheduler_health",
+        label="Scheduler health",
+        surface="scheduler",
+        severity="advisory",
+        status=status,
+        detail=detail,
+        metrics={
+            "planned_jobs": planned_jobs,
+            "scheduler_runs_total": total_runs,
+            "scheduler_failed_runs_total": failed_runs,
+            "scheduler_active_locks": active_locks,
+        },
+    )
+
+
+def _add_delivery_readiness_check(add_check) -> None:
+    enabled = telegram_delivery_enabled()
+    configured = telegram_delivery_configured()
+    source = telegram_source_health()
+    if enabled and configured:
+        status = "ok"
+        detail = "Telegram delivery is enabled and configured."
+    elif enabled:
+        status = "warning"
+        detail = "Telegram delivery is enabled but not fully configured."
+    else:
+        status = "warning"
+        detail = "Telegram delivery is disabled; alerts and digests will stay in preview/dry-run mode."
+    add_check(
+        key="delivery_readiness",
+        label="Delivery readiness",
+        surface="notifications",
+        severity="advisory",
+        status=status,
+        detail=detail,
+        metrics={
+            "telegram_enabled": enabled,
+            "telegram_configured": configured,
+            "source_status": source.status.value,
+        },
+    )
+
+
+def _add_migration_readiness_check(add_check) -> None:
+    expected_head = _latest_alembic_revision()
+    current_version = _current_database_revision()
+    if expected_head is None:
+        status = "warning"
+        detail = "Alembic migration head could not be resolved from the repository."
+    elif current_version is None:
+        status = "warning"
+        detail = "Database schema is available, but alembic_version is not stamped."
+    elif current_version == expected_head:
+        status = "ok"
+        detail = "Database migration version matches the repository migration head."
+    else:
+        status = "warning"
+        detail = "Database migration version does not match the repository migration head."
+    add_check(
+        key="migration_status",
+        label="Migration status",
+        surface="database_schema",
+        severity="advisory",
+        status=status,
+        detail=detail,
+        metrics={
+            "current_version": current_version,
+            "expected_head": expected_head,
+            "stamped": current_version is not None,
+        },
+    )
+
+
+def _add_restore_drill_evidence_check(add_check, *, generated_at: datetime) -> None:
+    environment = _readiness_environment()
+    required = bool(settings.product_readiness_require_restore_evidence) or _is_production_like_environment(
+        environment
+    )
+    severity = "required" if required else "advisory"
+    configured_path = (settings.product_readiness_restore_evidence_path or "").strip()
+    max_age_hours = max(1, int(settings.product_readiness_restore_evidence_max_age_hours))
+    metrics: dict[str, MetricValue] = {
+        "environment": environment,
+        "required": required,
+        "path_configured": bool(configured_path),
+        "max_age_hours": max_age_hours,
+    }
+
+    if not configured_path:
+        add_check(
+            key="restore_drill_evidence",
+            label="Restore drill evidence",
+            surface="backup_restore",
+            severity=severity,
+            status="not_ok" if required else "ok",
+            detail=(
+                "Production-like environments require PRODUCT_READINESS_RESTORE_EVIDENCE_PATH to point at a fresh restore-drill JSON summary."
+                if required
+                else "Restore-drill evidence is optional for local development and beta preflight."
+            ),
+            metrics=metrics,
+        )
+        return
+
+    evidence_path = Path(configured_path).expanduser()
+    if not evidence_path.is_absolute():
+        evidence_path = Path.cwd() / evidence_path
+    metrics["path"] = str(evidence_path)
+
+    if not evidence_path.exists():
+        add_check(
+            key="restore_drill_evidence",
+            label="Restore drill evidence",
+            surface="backup_restore",
+            severity=severity,
+            status="not_ok" if required else "warning",
+            detail="Restore-drill evidence path is configured, but the JSON summary file does not exist.",
+            metrics=metrics,
+        )
+        return
+
+    try:
+        payload = json.loads(evidence_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        add_check(
+            key="restore_drill_evidence",
+            label="Restore drill evidence",
+            surface="backup_restore",
+            severity=severity,
+            status="not_ok" if required else "warning",
+            detail=f"Restore-drill evidence could not be read as JSON: {type(exc).__name__}.",
+            metrics=metrics,
+        )
+        return
+
+    generated_raw = payload.get("generated_at") if isinstance(payload, dict) else None
+    evidence_generated_at = _parse_iso_datetime(generated_raw)
+    evidence_age_seconds = (
+        int((generated_at - evidence_generated_at).total_seconds()) if evidence_generated_at is not None else None
+    )
+    max_age_seconds = max_age_hours * 60 * 60
+    release_gate = str(payload.get("release_gate", "")).strip().lower() if isinstance(payload, dict) else ""
+    admin_status = str(payload.get("admin_status", "")).strip().lower() if isinstance(payload, dict) else ""
+    integrity_check = str(payload.get("integrity_check", "")).strip().lower() if isinstance(payload, dict) else ""
+    roots = _coerce_int(payload.get("roots")) if isinstance(payload, dict) else None
+    final_signals = _coerce_int(payload.get("final_signals")) if isinstance(payload, dict) else None
+
+    metrics.update(
+        {
+            "age_seconds": evidence_age_seconds,
+            "max_age_seconds": max_age_seconds,
+            "release_gate": release_gate or None,
+            "admin_status": admin_status or None,
+            "integrity_check": integrity_check or None,
+            "roots": roots,
+            "final_signals": final_signals,
+        }
+    )
+
+    problems: list[str] = []
+    if evidence_generated_at is None:
+        problems.append("generated_at is missing or invalid")
+    elif evidence_age_seconds is None or evidence_age_seconds < 0 or evidence_age_seconds > max_age_seconds:
+        problems.append(f"evidence is older than {max_age_hours}h")
+    if release_gate != "pass":
+        problems.append("release_gate is not pass")
+    if roots is None or roots <= 0:
+        problems.append("roots count is missing or zero")
+    if final_signals is None or final_signals <= 0:
+        problems.append("final_signals count is missing or zero")
+    if integrity_check and integrity_check != "ok":
+        problems.append("database integrity check is not ok")
+
+    add_check(
+        key="restore_drill_evidence",
+        label="Restore drill evidence",
+        surface="backup_restore",
+        severity=severity,
+        status="ok" if not problems else "not_ok" if required else "warning",
+        detail=(
+            "Restore-drill evidence is fresh and passed launch-critical validation."
+            if not problems
+            else f"Restore-drill evidence is not launch-ready: {'; '.join(problems)}."
+        ),
+        metrics=metrics,
+    )
+
+
+def _add_market_data_policy_check(add_check, *, workspace_snapshot) -> None:
+    environment = _readiness_environment()
+    live_required = bool(settings.product_readiness_require_live_market_data) or _is_production_like_environment(
+        environment
+    )
+    market_snapshot = workspace_snapshot.market_snapshot if workspace_snapshot is not None else None
+    market_visible = market_snapshot is not None
+    market_status = str(market_snapshot.status).strip().lower() if market_snapshot is not None else "hidden"
+    live_enabled = bool(settings.market_data_live_enabled)
+    if live_required and not live_enabled:
+        status = "not_ok"
+        severity = "required"
+        detail = "This environment requires live market data, but live market-data mode is disabled."
+    elif live_required and not market_visible:
+        status = "not_ok"
+        severity = "required"
+        detail = "This environment requires live market data, but the market panel is hidden."
+    elif live_required and market_status in {"stale", "degraded"}:
+        status = "not_ok"
+        severity = "required"
+        detail = "This environment requires fresh live market data, but the market panel is stale or degraded."
+    elif live_required:
+        status = "ok"
+        severity = "required"
+        detail = "This environment requires live market data and the market panel is fresh."
+    elif market_visible:
+        status = "ok"
+        severity = "advisory"
+        detail = "Live market data is visible; local/beta policy is satisfied."
+    else:
+        status = "warning"
+        severity = "advisory"
+        detail = "Local/beta policy allows hidden market data when the UI is explicit about it."
+    add_check(
+        key="market_data_policy",
+        label="Environment market-data policy",
+        surface="market_panel",
+        severity=severity,
+        status=status,
+        detail=detail,
+        metrics={
+            "environment": environment,
+            "live_required": live_required,
+            "live_enabled": live_enabled,
+            "market_visible": market_visible,
+            "market_status": market_status,
+        },
+    )
+
+
+def _readiness_environment() -> str:
+    return settings.app_environment.strip().lower() or "local"
+
+
+def _is_production_like_environment(environment: str) -> bool:
+    return environment in PRODUCTION_LIKE_ENVIRONMENTS
+
+
+def _parse_iso_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return _ensure_aware_utc(parsed)
+
+
+def _coerce_int(value: object) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _latest_alembic_revision() -> str | None:
+    versions_dir = Path.cwd() / "alembic" / "versions"
+    if not versions_dir.exists():
+        return None
+    revisions: list[str] = []
+    pattern = re.compile(r'^revision\s*=\s*["\']([^"\']+)["\']')
+    for path in versions_dir.glob("*.py"):
+        try:
+            content = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for line in content.splitlines():
+            match = pattern.match(line.strip())
+            if match:
+                revisions.append(match.group(1))
+                break
+    return sorted(revisions)[-1] if revisions else None
+
+
+def _current_database_revision() -> str | None:
+    try:
+        with get_engine().connect() as conn:
+            row = conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1")).fetchone()
+    except Exception:
+        return None
+    return str(row[0]) if row is not None and row[0] else None
+
+
+def _ensure_aware_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 

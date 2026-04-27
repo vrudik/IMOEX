@@ -2,17 +2,118 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from html import escape
 from urllib.parse import urlencode
-from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
+from apps.api.routes.dashboard_formatting import (
+    format_calendar_date as _format_calendar_date,
+    format_expiry_countdown as _format_expiry_countdown,
+    format_optional as _format_optional,
+    format_price_value as _format_price_value,
+    format_signed_pct as _format_signed_pct,
+    format_signed_value as _format_signed_value,
+    format_timestamp as _format_timestamp,
+)
+from apps.api.routes.dashboard_cards import (
+    render_action_item as _render_action_item,
+    render_journal_entry as _render_journal_entry,
+    render_related_signal as _render_related_signal,
+)
+from apps.api.routes.dashboard_comparison import (
+    render_horizon_comparison as _render_horizon_comparison,
+    render_signal_diff as _render_signal_diff,
+)
+from apps.api.routes.dashboard_council_data import (
+    council_bullets as _council_bullets,
+    council_joined as _council_joined,
+    council_packet as _council_packet,
+    council_role_labels as _council_role_labels,
+)
+from apps.api.routes.dashboard_control import (
+    control_panel_data_mode_label as _control_panel_data_mode_label,
+    control_panel_reference_sync_label as _control_panel_reference_sync_label,
+    control_panel_reference_sync_source as _control_panel_reference_sync_source,
+    primary_market_feed as _primary_market_feed,
+    render_control_panel as _render_control_panel,
+    render_market_data_context as _render_market_data_context,
+    render_runtime_prompt_history as _render_runtime_prompt_history,
+    runtime_prompt_approval_state_label as _runtime_prompt_approval_state_label,
+    runtime_prompt_effective_rendered_prompt as _runtime_prompt_effective_rendered_prompt,
+    runtime_prompt_working_rendered_prompt as _runtime_prompt_working_rendered_prompt,
+)
+from apps.api.routes.dashboard_delivery import (
+    delivery_activity_filter_href as _delivery_activity_filter_href,
+    render_delivery_activity as _render_delivery_activity,
+    render_delivery_activity_controls as _render_delivery_activity_controls,
+    render_delivery_activity_footer as _render_delivery_activity_footer,
+    render_delivery_windows as _render_delivery_windows,
+)
+from apps.api.routes.dashboard_delivery_data import (
+    build_delivery_activity_snapshot as _build_delivery_activity_snapshot,
+    build_delivery_history_snapshot as _build_delivery_history_snapshot,
+)
+from apps.api.routes.dashboard_decision import (
+    render_decision_timeline as _render_decision_timeline,
+    render_review_bundle as _render_review_bundle,
+)
+from apps.api.routes.dashboard_export import render_delivery_activity_export as _render_delivery_activity_export
+from apps.api.routes.dashboard_insight import (
+    render_confidence_decomposition as _render_confidence_decomposition,
+    render_similar_setups as _render_similar_setups,
+)
+from apps.api.routes.dashboard_journal import (
+    render_journal_decision_log_item as _render_journal_decision_log_item,
+    render_journal_workspace_entry as _render_journal_workspace_entry,
+)
+from apps.api.routes.dashboard_gate import ensure_dashboard_enabled as _ensure_dashboard_enabled
+from apps.api.routes.dashboard_language import resolve_language as _resolve_language
+from apps.api.routes.dashboard_page_shell import apply_page_utility_shell as _apply_page_utility_shell
+from apps.api.routes.dashboard_market import (
+    market_level_copy as _market_level_copy,
+    market_overlay_copy as _market_overlay_copy,
+    render_market_snapshot as _render_market_snapshot,
+)
+from apps.api.routes.dashboard_onboarding import render_operator_onboarding as _render_operator_onboarding
+from apps.api.routes.dashboard_quality import (
+    journal_filter_href as _journal_filter_href,
+    render_quality_pair as _render_quality_pair,
+)
+from apps.api.routes.dashboard_sidebar import (
+    render_page_sidebar as _render_page_sidebar,
+    render_page_sidebar_styles as _render_page_sidebar_styles,
+)
+from apps.api.routes.dashboard_signal_list import (
+    render_signal_card as _render_signal_card,
+    render_signal_row as _render_signal_row,
+)
+from apps.api.routes.dashboard_surface import render_surface_state_strip as _render_surface_state_strip
+from apps.api.routes.dashboard_tags import render_tag_picker as _render_tag_picker
+from apps.api.routes.dashboard_trust import render_trust_ribbon as _render_trust_ribbon
+from apps.api.routes.dashboard_visuals import (
+    render_horizon_pulse as _render_horizon_pulse,
+    render_metric_bars as _render_metric_bars,
+    render_timeline as _render_timeline,
+)
+from apps.api.routes.dashboard_watchlist import render_watchlist as _render_watchlist
+from apps.api.routes.dashboard_workspace_data import (
+    build_preference_workspace_snapshot as _build_preference_workspace_snapshot,
+    build_signal_workspace_snapshot as _build_signal_workspace_snapshot,
+    build_workspace_snapshot as _build_workspace_snapshot,
+)
+from apps.api.routes.dashboard_workspace import (
+    render_root_pulse_card as _render_root_pulse_card,
+    render_workspace_signal_tile as _render_workspace_signal_tile,
+)
+from apps.api.routes.dashboard_workflow import (
+    render_workflow_panel as _render_workflow_panel,
+    workflow_state_label as _workflow_state_label,
+)
 from libs.bootstrap.container import get_app_container
 from libs.dashboard.contracts import (
-    DashboardQualityPair,
     DashboardSnapshot,
     DecisionTimelineItem,
     DeliveryHistoryWorkspaceSnapshot,
@@ -30,100 +131,21 @@ from libs.dashboard.contracts import (
     SignalChangeSummary,
     WatchlistEntry,
     WatchlistEntryCreate,
-    WorkspaceActionItem,
     WorkspaceSignalSnapshot,
     WorkspaceSnapshot,
 )
 from libs.domain.contracts import JournalEntryKind, SignalStatus, SignalWorkflowState
 from libs.notifications.contracts import TelegramNotificationSendRequest, TelegramNotificationSendResult
 from libs.preferences.contracts import (
-    NotificationDeliveryActivityAction,
     NotificationDeliveryActivityExportFormat,
-    NotificationDeliveryActivityFilters,
-    NotificationDeliveryActivityGroup,
-    NotificationDeliveryActivityItem,
-    NotificationDeliveryActivityPagination,
-    NotificationDeliveryWindow,
     NotificationEventKind,
     NotificationDeliverySkipRequest,
     NotificationPreferenceUpdate,
     NotificationPreferenceWorkspaceSnapshot,
 )
-from libs.runtime.feature_flags import is_feature_enabled
+from libs.security.admin import require_admin_api_key
 
 router = APIRouter(tags=["dashboard"])
-
-LANGUAGE_COOKIE = "imoex_lang"
-SUPPORTED_LANGUAGES = {"ru", "en"}
-MOSCOW_TIMEZONE = ZoneInfo("Europe/Moscow")
-
-
-def _ensure_dashboard_enabled() -> None:
-    if not is_feature_enabled("dashboard_ui"):
-        raise HTTPException(status_code=404, detail="Dashboard feature is disabled.")
-
-
-def _resolve_language(request: Request) -> str:
-    candidate = (
-        request.query_params.get("lang")
-        or request.cookies.get(LANGUAGE_COOKIE)
-        or "ru"
-    )
-    candidate = candidate.lower().strip()
-    return candidate if candidate in SUPPORTED_LANGUAGES else "ru"
-
-
-def _page_hint(page_key: str, language: str) -> str:
-    hints = {
-        "dashboard": {
-            "ru": "Смотрите сверху вниз: сначала KPI и пульт серии, затем активные сигналы, оценку и здоровье платформы.",
-            "en": "Read top to bottom: start with the KPIs and root control room, then move to active signals, evaluation, and platform health.",
-        },
-        "workspace": {
-            "ru": "Начните с сигнала в фокусе и ленты серий, затем проверьте пакет решения, календарь доставок и журнал.",
-            "en": "Start with the focus signal and root lane, then review the decision pack, delivery calendar, and journal.",
-        },
-        "journal": {
-            "ru": "Сначала используйте фильтры, затем смотрите ленту журнала и переходите в нужный сигнал из карточки записи.",
-            "en": "Use the filters first, then scan the journal tape and jump into the relevant signal from an entry card.",
-        },
-        "delivery-history": {
-            "ru": "Смотрите фильтры и группировку сверху, а ниже проверяйте последние события доставки и их статусы.",
-            "en": "Start with the filters and grouped summary, then review the latest delivery events and their statuses below.",
-        },
-        "preferences": {
-            "ru": "Проверьте настройки подписки и Telegram, затем календарь доставок и историю действий ниже на странице.",
-            "en": "Review subscription and Telegram settings first, then check the delivery calendar and activity lower on the page.",
-        },
-        "signal": {
-            "ru": "Смотрите hero-блок сигнала, потом анатомию решения, хронологию и Telegram-сводку справа.",
-            "en": "Read the signal hero first, then the decision anatomy, timeline, and Telegram brief on the side.",
-        },
-        "council": {
-            "ru": "\u0418\u0434\u0438\u0442\u0435 \u0441\u043b\u0435\u0432\u0430 \u043d\u0430\u043f\u0440\u0430\u0432\u043e: \u0441\u043d\u0430\u0447\u0430\u043b\u0430 \u0432\u0432\u043e\u0434\u043d\u044b\u0435 \u0434\u0430\u043d\u043d\u044b\u0435 \u0438 \u0440\u043e\u043b\u0438 \u0441\u043e\u0432\u0435\u0442\u0430, \u043f\u043e\u0442\u043e\u043c \u0441\u043a\u0435\u043f\u0442\u0438\u043a \u0438 \u0430\u0440\u0431\u0438\u0442\u0440, \u0430 \u0432 \u043a\u043e\u043d\u0446\u0435 \u0438\u0442\u043e\u0433\u043e\u0432\u044b\u0435 score \u0438 \u0442\u0435\u043a\u0443\u0449\u0438\u0439 runtime.",
-            "en": "Read left to right: start with the inputs and council roles, then the skeptic and arbiter, and finish with the final scores and current runtime.",
-        },
-        "runtime": {
-            "ru": "Сначала проверьте маршрутизацию ролей и SLA по актуальности, затем просмотрите журнал изменений runtime и последние технические решения.",
-            "en": "Start with role routing and freshness SLAs, then review the runtime audit trail and the latest technical decisions.",
-        },
-        "tooltip_shift_intro": (
-            "Ð›Ð¸Ð´ÐµÑ€ ÑÐ¼ÐµÐ½Ð¸Ð»ÑÑ Ð¿Ð¾ÑÐ»Ðµ Ð¿ÐµÑ€ÐµÐºÐ»ÑŽÑ‡ÐµÐ½Ð¸Ñ Ñ‚Ð°Ð¹Ð¼Ñ„Ñ€ÐµÐ¹Ð¼Ð°."
-            if language == "ru"
-            else "Leader changed after timeframe switch."
-        ),
-        "tooltip_shift_stable": (
-            "ÐŸÐ¾ÑÐ»Ðµ Ð¿ÐµÑ€ÐµÐºÐ»ÑŽÑ‡ÐµÐ½Ð¸Ñ Ñ‚Ð°Ð¹Ð¼Ñ„Ñ€ÐµÐ¹Ð¼Ð° Ð»Ð¸Ð´ÐµÑ€ Ð¾ÑÑ‚Ð°Ð»ÑÑ Ñ‚ÐµÐ¼ Ð¶Ðµ."
-            if language == "ru"
-            else "Leader stayed the same after timeframe switch."
-        ),
-        "tooltip_shift_was": "Ð‘Ñ‹Ð»" if language == "ru" else "Was",
-        "tooltip_shift_now": "Ð¡ÐµÐ¹Ñ‡Ð°Ñ" if language == "ru" else "Now",
-        "tooltip_shift_frames": "Ð¢Ð°Ð¹Ð¼Ñ„Ñ€ÐµÐ¹Ð¼Ñ‹" if language == "ru" else "Frames",
-        "tooltip_shift_spread": "Ð Ð°Ð·Ñ€Ñ‹Ð² A-B" if language == "ru" else "A-B spread",
-    }
-    page_hints = hints.get(page_key, hints["workspace"])
-    return page_hints["ru"] if language == "ru" else page_hints["en"]
 
 
 def _localize_html(html: str, language: str) -> str:
@@ -225,6 +247,7 @@ def _localize_html(html: str, language: str) -> str:
         ("Preview available even if delivery is not configured yet.", "Предпросмотр доступен, даже если доставка ещё не настроена."),
         ("Short title", "Короткий заголовок"),
         ("Write what changed, why it matters, and what you will watch next.", "Опишите, что изменилось, почему это важно и что вы будете отслеживать дальше."),
+        ("Review tags", "Теги ревью"),
         ("What changed, what risk you see, and what should be watched next.", "Что изменилось, какой риск вы видите и что нужно отслеживать дальше."),
         ("Select a signal first.", "Сначала выберите сигнал."),
         ("Title and note are required.", "Нужны заголовок и заметка."),
@@ -438,6 +461,12 @@ def _localize_html(html: str, language: str) -> str:
     html = html.replace("Live", "Живой поток")
     html = html.replace("Snapshot", "Снимок")
     html = html.replace("Degraded feed", "Деградировавший источник")
+    localized_live_label = "\u0416\u0438\u0432\u043e\u0439 \u043f\u043e\u0442\u043e\u043a"
+    html = re.sub(
+        rf"(?<=[A-Za-z0-9_]){re.escape(localized_live_label)}(?=[A-Za-z0-9_])",
+        "Live",
+        html,
+    )
     html = html.replace(
         "At least one fresh market-data API is healthy for this root.",
         "Для этой серии есть хотя бы один свежий и здоровый рыночный API.",
@@ -641,469 +670,7 @@ def _localize_html(html: str, language: str) -> str:
 def _decorate_html_page(html: str, *, language: str, page_key: str) -> str:
     html = _localize_html(html, language)
     html = html.replace('<html lang="en">', f'<html lang="{language}">', 1)
-    utility_style = """
-  <style>
-    .utility-shell {
-      width: min(1320px, calc(100% - 28px));
-      margin: 18px auto 0;
-    }
-    .utility-bar {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 12px 16px;
-      border-radius: 18px;
-      border: 1px solid rgba(23, 34, 44, 0.12);
-      background: rgba(255, 250, 241, 0.82);
-      box-shadow: 0 10px 26px rgba(23, 34, 44, 0.08);
-      backdrop-filter: blur(12px);
-    }
-    .utility-controls {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 10px;
-    }
-    .utility-label {
-      font-size: 13px;
-      font-weight: 600;
-      color: #425057;
-    }
-    .utility-select,
-    .utility-button {
-      min-height: 40px;
-      border-radius: 12px;
-      border: 1px solid rgba(23, 34, 44, 0.12);
-      background: rgba(255, 255, 255, 0.8);
-      color: #17222c;
-      font: inherit;
-    }
-    .utility-select {
-      padding: 0 12px;
-    }
-    .utility-button {
-      padding: 0 14px;
-      cursor: pointer;
-      font-weight: 600;
-    }
-    .utility-hint {
-      margin-top: 10px;
-      padding: 12px 14px;
-      border-radius: 16px;
-      background: rgba(25, 58, 82, 0.08);
-      color: #23323d;
-      line-height: 1.5;
-      border: 1px solid rgba(25, 58, 82, 0.12);
-    }
-  </style>
-"""
-    language_label = "Язык" if language == "ru" else "Language"
-    hint_button_label = "Куда смотреть?" if language == "ru" else "Where to look?"
-    hint = escape(_page_hint(page_key, language))
-    utility_markup = f"""
-  <div class="utility-shell">
-    <div class="utility-bar">
-      <div class="utility-controls">
-        <label class="utility-label" for="ui-language-select">{language_label}</label>
-        <select class="utility-select" id="ui-language-select" data-language-select>
-          <option value="ru">Русский</option>
-          <option value="en">English</option>
-        </select>
-      </div>
-      <button class="utility-button" type="button" data-hint-toggle aria-expanded="false">{hint_button_label}</button>
-    </div>
-    <div class="utility-hint" data-hint-box data-message="{hint}" hidden></div>
-  </div>
-"""
-    utility_script = f"""
-  <script>
-    (() => {{
-      const select = document.querySelector("[data-language-select]");
-      const hintButton = document.querySelector("[data-hint-toggle]");
-      const hintBox = document.querySelector("[data-hint-box]");
-      const swapPage = async (nextUrl) => {{
-        if (window.__imoexMarketLiveRefreshStop) {{
-          window.__imoexMarketLiveRefreshStop();
-          window.__imoexMarketLiveRefreshStop = null;
-        }}
-        try {{
-          const response = await fetch(nextUrl, {{
-            credentials: "same-origin",
-            headers: {{ "X-Requested-With": "imoex-ui" }},
-          }});
-          if (!response.ok) {{
-            window.location.assign(nextUrl);
-            return;
-          }}
-          const htmlText = await response.text();
-          history.replaceState({{}}, "", nextUrl);
-          document.open();
-          document.write(htmlText);
-          document.close();
-        }} catch {{
-          window.location.assign(nextUrl);
-        }}
-      }};
-      window.__imoexSwapPage = swapPage;
-      window.__imoexRefreshPage = async (nextUrl) => {{
-        await swapPage(nextUrl || window.location.href);
-      }};
-      document.addEventListener("click", async (event) => {{
-        const link = event.target.closest("a[data-swap-link]");
-        if (!link || event.defaultPrevented || event.button !== 0) {{
-          return;
-        }}
-        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || link.target) {{
-          return;
-        }}
-        event.preventDefault();
-        await swapPage(link.href);
-      }});
-      if (select) {{
-        select.value = "{language}";
-        select.addEventListener("change", async () => {{
-          document.cookie = "{LANGUAGE_COOKIE}=" + encodeURIComponent(select.value) + "; path=/; max-age=31536000; SameSite=Lax";
-          const nextUrl = new URL(window.location.href);
-          nextUrl.searchParams.set("lang", select.value);
-          await swapPage(nextUrl.toString());
-        }});
-      }}
-      const rootSwitch = document.querySelector("[data-root-switch]");
-      if (rootSwitch) {{
-        rootSwitch.addEventListener("change", async () => {{
-          const nextRoot = rootSwitch.value;
-          if (!nextRoot) {{
-            return;
-          }}
-          const nextUrl = new URL(window.location.href);
-          const pageKey = rootSwitch.dataset.pageKey || "";
-          const fallbackPath = rootSwitch.dataset.fallbackPath || "/workspace";
-          nextUrl.searchParams.delete("signal_id");
-          if (pageKey === "signal") {{
-            nextUrl.pathname = fallbackPath;
-            nextUrl.search = "";
-          }}
-          nextUrl.searchParams.set("root", nextRoot);
-          if (pageKey === "delivery-history") {{
-            nextUrl.searchParams.set("activity_root_scope", nextRoot);
-          }}
-          await swapPage(nextUrl.toString());
-        }});
-      }}
-      if (hintButton && hintBox) {{
-        hintButton.addEventListener("click", () => {{
-          const hidden = hintBox.hasAttribute("hidden");
-          if (hidden) {{
-            hintBox.textContent = hintBox.dataset.message || "";
-            hintBox.removeAttribute("hidden");
-            hintButton.setAttribute("aria-expanded", "true");
-            return;
-          }}
-          hintBox.setAttribute("hidden", "hidden");
-          hintButton.setAttribute("aria-expanded", "false");
-        }});
-      }}
-    }})();
-  </script>
-"""
-    html = html.replace("</head>", utility_style + "\n</head>", 1)
-    html = html.replace("<body>", "<body>\n" + utility_markup, 1)
-    html = html.replace("</body>", utility_script + "\n</body>", 1)
-    return html
-
-
-def _build_delivery_windows(*, selected_root: str | None = None) -> list[NotificationDeliveryWindow]:
-    container = get_app_container()
-    preferences = container.preference_service.get_preferences()
-    plan = container.scheduler_service.plan()
-    windows: list[NotificationDeliveryWindow] = []
-    for job in plan.jobs:
-        if job.command != "notify-telegram":
-            continue
-        event_kind = NotificationEventKind(str(job.payload.get("event_kind") or "digest"))
-        root_scope = str(job.payload.get("root") or selected_root or preferences.default_root or "profile default")
-        windows.append(
-            NotificationDeliveryWindow(
-                job_id=job.job_id,
-                label=job.description,
-                event_kind=event_kind,
-                root_scope=root_scope,
-                next_run_at=job.next_run_at,
-                due_now=job.due_now,
-                subscription_enabled=event_kind in preferences.subscribed_event_kinds,
-                skip_next_pending=event_kind in preferences.skip_next_event_kinds,
-                quiet_hours_policy=(
-                    "suppressed during quiet hours"
-                    if preferences.suppress_during_quiet_hours
-                    else "allowed during quiet hours"
-                ),
-                last_run_status=job.last_run_status,
-                last_run_detail=job.last_run_detail,
-            )
-        )
-    return windows
-
-
-def _build_delivery_activity_snapshot(
-    *,
-    selected_root: str | None = None,
-    root_scope: str | None = None,
-    event_kind: NotificationEventKind | None = None,
-    status: str | None = None,
-    page: int = 1,
-    page_size: int = 8,
-    limit: int = 8,
-    source_limit: int = 64,
-) -> tuple[
-    list[NotificationDeliveryActivityItem],
-    NotificationDeliveryActivityFilters,
-    list[NotificationDeliveryActivityGroup],
-    list[NotificationDeliveryActivityGroup],
-    list[NotificationDeliveryActivityGroup],
-    NotificationDeliveryActivityPagination,
-]:
-    container = get_app_container()
-    normalized_page = max(1, int(page))
-    normalized_page_size = max(1, min(int(page_size), 50))
-    effective_root_scope = root_scope or selected_root
-    total_items = container.repository.count_notification_delivery_events(
-        profile_id="default",
-        root_code=effective_root_scope,
-        event_kind=event_kind.value if event_kind is not None else None,
-        status=status,
-    )
-    total_pages = max(1, (total_items + normalized_page_size - 1) // normalized_page_size)
-    normalized_page = min(normalized_page, total_pages)
-    offset = (normalized_page - 1) * normalized_page_size
-    effective_source_limit = max(source_limit, offset + normalized_page_size, 128)
-    rows = container.repository.list_recent_notification_delivery_events(
-        profile_id="default",
-        root_code=effective_root_scope,
-        offset=0,
-        limit=effective_source_limit,
-    )
-    paged_rows = container.repository.list_recent_notification_delivery_events(
-        profile_id="default",
-        root_code=effective_root_scope,
-        event_kind=event_kind.value if event_kind is not None else None,
-        status=status,
-        offset=offset,
-        limit=normalized_page_size,
-    )
-    all_items: list[NotificationDeliveryActivityItem] = []
-    for row in rows:
-        try:
-            signal_ids = json.loads(row.signal_ids_json)
-        except json.JSONDecodeError:
-            signal_ids = []
-        all_items.append(
-            NotificationDeliveryActivityItem(
-                activity_id=row.activity_id,
-                action=NotificationDeliveryActivityAction(row.action),
-                event_kind=NotificationEventKind(row.event_kind),
-                delivery_source=row.delivery_source,
-                root_scope=row.root_code,
-                status=row.status,
-                detail=row.detail,
-                signal_ids=[str(item) for item in signal_ids if isinstance(item, str)],
-                provider_message_id=row.provider_message_id,
-                created_at=row.created_at,
-            )
-        )
-    paged_ids = {row.activity_id for row in paged_rows}
-    paged_items = [item for item in all_items if item.activity_id in paged_ids]
-    paged_items.sort(key=lambda item: item.created_at, reverse=True)
-    paged_items = paged_items[:limit]
-    return (
-        paged_items,
-        NotificationDeliveryActivityFilters(
-            root_scope=effective_root_scope,
-            event_kind=event_kind,
-            status=status,
-        ),
-        _group_delivery_activity(
-            all_items,
-            value_getter=lambda item: item.event_kind.value,
-            label_getter=lambda item: item.event_kind.value,
-        ),
-        _group_delivery_activity(
-            all_items,
-            value_getter=lambda item: item.root_scope or "profile default",
-            label_getter=lambda item: item.root_scope or "profile default",
-        ),
-        _group_delivery_activity(
-            all_items,
-            value_getter=lambda item: item.status,
-            label_getter=lambda item: item.status,
-        ),
-        NotificationDeliveryActivityPagination(
-            page=normalized_page,
-            page_size=normalized_page_size,
-            total_items=total_items,
-            total_pages=total_pages,
-            has_previous=normalized_page > 1,
-            has_next=normalized_page < total_pages,
-        ),
-    )
-
-
-def _group_delivery_activity(items, *, value_getter, label_getter) -> list[NotificationDeliveryActivityGroup]:
-    grouped: dict[str, NotificationDeliveryActivityGroup] = {}
-    for item in items:
-        value = str(value_getter(item))
-        if value not in grouped:
-            grouped[value] = NotificationDeliveryActivityGroup(
-                value=value,
-                label=str(label_getter(item)),
-                count=0,
-            )
-        grouped[value].count += 1
-    return sorted(grouped.values(), key=lambda entry: (-entry.count, entry.label))
-
-
-def _build_workspace_snapshot(
-    root: str | None = None,
-    signal_id: str | None = None,
-    activity_event_kind: NotificationEventKind | None = None,
-    activity_status: str | None = None,
-    activity_page: int = 1,
-    activity_page_size: int = 8,
-) -> WorkspaceSnapshot:
-    container = get_app_container()
-    resolved_root = root
-    if resolved_root is None:
-        resolved_root = container.preference_service.resolve_default_root()
-    snapshot = container.dashboard_service.build_workspace_snapshot(root=resolved_root, signal_id=signal_id)
-    preview = container.telegram_notification_service.preview(root=snapshot.selected_root, limit=3)
-    (
-        delivery_activity,
-        delivery_activity_filters,
-        delivery_activity_by_event_kind,
-        delivery_activity_by_root_scope,
-        delivery_activity_by_status,
-        delivery_activity_pagination,
-    ) = _build_delivery_activity_snapshot(
-        selected_root=snapshot.selected_root,
-        event_kind=activity_event_kind,
-        status=activity_status,
-        page=activity_page,
-        page_size=activity_page_size,
-    )
-    return snapshot.model_copy(
-        update={
-            "telegram_preview_message": preview.message,
-            "telegram_delivery_ready": bool(preview.enabled and preview.configured),
-            "delivery_windows": _build_delivery_windows(selected_root=snapshot.selected_root),
-            "delivery_activity": delivery_activity,
-            "delivery_activity_filters": delivery_activity_filters,
-            "delivery_activity_by_event_kind": delivery_activity_by_event_kind,
-            "delivery_activity_by_root_scope": delivery_activity_by_root_scope,
-            "delivery_activity_by_status": delivery_activity_by_status,
-            "delivery_activity_pagination": delivery_activity_pagination,
-        },
-        deep=True,
-    )
-
-
-def _build_preference_workspace_snapshot(
-    *,
-    activity_root_scope: str | None = None,
-    activity_event_kind: NotificationEventKind | None = None,
-    activity_status: str | None = None,
-    activity_page: int = 1,
-    activity_page_size: int = 12,
-) -> NotificationPreferenceWorkspaceSnapshot:
-    container = get_app_container()
-    snapshot = container.preference_service.build_workspace_snapshot()
-    (
-        delivery_activity,
-        delivery_activity_filters,
-        delivery_activity_by_event_kind,
-        delivery_activity_by_root_scope,
-        delivery_activity_by_status,
-        delivery_activity_pagination,
-    ) = _build_delivery_activity_snapshot(
-        root_scope=activity_root_scope,
-        event_kind=activity_event_kind,
-        status=activity_status,
-        limit=activity_page_size,
-        page=activity_page,
-        page_size=activity_page_size,
-    )
-    return snapshot.model_copy(
-        update={
-            "delivery_windows": _build_delivery_windows(selected_root=snapshot.preferences.default_root),
-            "delivery_activity": delivery_activity,
-            "delivery_activity_filters": delivery_activity_filters,
-            "delivery_activity_by_event_kind": delivery_activity_by_event_kind,
-            "delivery_activity_by_root_scope": delivery_activity_by_root_scope,
-            "delivery_activity_by_status": delivery_activity_by_status,
-            "delivery_activity_pagination": delivery_activity_pagination,
-        },
-        deep=True,
-    )
-
-
-def _build_signal_workspace_snapshot(signal_id: str) -> WorkspaceSignalSnapshot:
-    container = get_app_container()
-    snapshot = container.dashboard_service.build_signal_snapshot(signal_id=signal_id)
-    if snapshot is None:
-        raise HTTPException(status_code=404, detail=f"Unknown signal: {signal_id}")
-    preview = container.telegram_notification_service.preview(root=snapshot.signal.root, limit=3)
-    return snapshot.model_copy(
-        update={
-            "telegram_preview_message": preview.message,
-            "telegram_delivery_ready": bool(preview.enabled and preview.configured),
-        },
-        deep=True,
-    )
-
-
-def _build_delivery_history_snapshot(
-    *,
-    selected_root: str | None = None,
-    activity_root_scope: str | None = None,
-    activity_event_kind: NotificationEventKind | None = None,
-    activity_status: str | None = None,
-    activity_page: int = 1,
-    activity_page_size: int = 24,
-) -> DeliveryHistoryWorkspaceSnapshot:
-    container = get_app_container()
-    roots = container.contract_master_service.list_roots()
-    resolved_root = selected_root or container.preference_service.resolve_default_root()
-    preference_snapshot = container.preference_service.build_workspace_snapshot()
-    (
-        delivery_activity,
-        delivery_activity_filters,
-        delivery_activity_by_event_kind,
-        delivery_activity_by_root_scope,
-        delivery_activity_by_status,
-        delivery_activity_pagination,
-    ) = _build_delivery_activity_snapshot(
-        selected_root=resolved_root,
-        root_scope=activity_root_scope,
-        event_kind=activity_event_kind,
-        status=activity_status,
-        page=activity_page,
-        page_size=activity_page_size,
-        limit=activity_page_size,
-        source_limit=max(256, activity_page_size * 8),
-    )
-    return DeliveryHistoryWorkspaceSnapshot(
-        generated_at=datetime.now(UTC),
-        roots=roots,
-        selected_root=resolved_root,
-        delivery_activity=delivery_activity,
-        delivery_activity_filters=delivery_activity_filters,
-        delivery_activity_by_event_kind=delivery_activity_by_event_kind,
-        delivery_activity_by_root_scope=delivery_activity_by_root_scope,
-        delivery_activity_by_status=delivery_activity_by_status,
-        delivery_activity_pagination=delivery_activity_pagination,
-        telegram_configured=bool(preference_snapshot.telegram_configured),
-        telegram_enabled=bool(preference_snapshot.telegram_enabled),
-    )
+    return _apply_page_utility_shell(html, language=language, page_key=page_key)
 
 
 @router.get("/", include_in_schema=False)
@@ -1145,9 +712,17 @@ async def get_workspace_market_preview(root: str) -> InstrumentMarketSnapshot | 
 
 
 @router.get("/api/v1/workspace/watchlist", response_model=list[WatchlistEntry])
-async def get_workspace_watchlist() -> list[WatchlistEntry]:
+async def get_workspace_watchlist(
+    review_state: str | None = None,
+    root: str | None = None,
+    linked: str | None = None,
+) -> list[WatchlistEntry]:
     _ensure_dashboard_enabled()
-    return get_app_container().dashboard_service.build_workspace_snapshot().watchlist
+    return get_app_container().dashboard_service.list_watchlist_entries(
+        review_state=review_state,
+        root_code=root,
+        linked=linked,
+    )
 
 
 @router.post("/api/v1/workspace/watchlist", response_model=list[WatchlistEntry])
@@ -1164,6 +739,12 @@ async def add_workspace_watchlist_entry(payload: WatchlistEntryCreate) -> list[W
 async def delete_workspace_watchlist_entry(watch_key: str) -> list[WatchlistEntry]:
     _ensure_dashboard_enabled()
     return get_app_container().dashboard_service.remove_watchlist_entry(watch_key)
+
+
+@router.post("/api/v1/workspace/watchlist/{watch_key}/review", response_model=list[WatchlistEntry])
+async def mark_workspace_watchlist_entry_reviewed(watch_key: str) -> list[WatchlistEntry]:
+    _ensure_dashboard_enabled()
+    return get_app_container().dashboard_service.mark_watchlist_entry_reviewed(watch_key)
 
 
 @router.get("/api/v1/workspace/signals/{signal_id}/diff", response_model=SignalChangeSummary | None)
@@ -1205,7 +786,10 @@ async def update_workspace_preferences(payload: NotificationPreferenceUpdate) ->
 
 
 @router.get("/api/v1/runtime/control-panel", response_model=RuntimeControlSnapshot)
-async def get_runtime_control_snapshot(root: str | None = None) -> RuntimeControlSnapshot:
+async def get_runtime_control_snapshot(
+    root: str | None = None,
+    _: None = Depends(require_admin_api_key),
+) -> RuntimeControlSnapshot:
     _ensure_dashboard_enabled()
     prompt_context = None
     if root is not None:
@@ -1215,19 +799,25 @@ async def get_runtime_control_snapshot(root: str | None = None) -> RuntimeContro
 
 
 @router.post("/api/v1/runtime/control-panel/model-route", response_model=RuntimeControlSnapshot)
-async def update_runtime_model_route(payload: RuntimeModelRouteUpdate) -> RuntimeControlSnapshot:
+async def update_runtime_model_route(
+    payload: RuntimeModelRouteUpdate,
+    _: None = Depends(require_admin_api_key),
+) -> RuntimeControlSnapshot:
     _ensure_dashboard_enabled()
     return get_app_container().runtime_control_service.update_model_route(payload)
 
 
 @router.post("/api/v1/runtime/control-panel/model-route/reset", response_model=RuntimeControlSnapshot)
-async def reset_runtime_model_routes() -> RuntimeControlSnapshot:
+async def reset_runtime_model_routes(_: None = Depends(require_admin_api_key)) -> RuntimeControlSnapshot:
     _ensure_dashboard_enabled()
     return get_app_container().runtime_control_service.reset_model_routes()
 
 
 @router.post("/api/v1/runtime/control-panel/role-prompt", response_model=RuntimeControlSnapshot)
-async def update_runtime_role_prompt(payload: RuntimeRolePromptUpdate) -> RuntimeControlSnapshot:
+async def update_runtime_role_prompt(
+    payload: RuntimeRolePromptUpdate,
+    _: None = Depends(require_admin_api_key),
+) -> RuntimeControlSnapshot:
     _ensure_dashboard_enabled()
     try:
         return get_app_container().runtime_control_service.update_role_prompt(payload)
@@ -1239,6 +829,7 @@ async def update_runtime_role_prompt(payload: RuntimeRolePromptUpdate) -> Runtim
 async def preview_runtime_role_prompt_diff(
     payload: RuntimeRolePromptUpdate,
     root: str | None = None,
+    _: None = Depends(require_admin_api_key),
 ) -> RuntimeRolePromptDiff:
     _ensure_dashboard_enabled()
     prompt_context = None
@@ -1255,7 +846,10 @@ async def preview_runtime_role_prompt_diff(
 
 
 @router.post("/api/v1/runtime/control-panel/role-prompt/restore", response_model=RuntimeControlSnapshot)
-async def restore_runtime_role_prompt(payload: RuntimeRolePromptRestoreRequest) -> RuntimeControlSnapshot:
+async def restore_runtime_role_prompt(
+    payload: RuntimeRolePromptRestoreRequest,
+    _: None = Depends(require_admin_api_key),
+) -> RuntimeControlSnapshot:
     _ensure_dashboard_enabled()
     try:
         return get_app_container().runtime_control_service.restore_role_prompt(payload)
@@ -1264,7 +858,10 @@ async def restore_runtime_role_prompt(payload: RuntimeRolePromptRestoreRequest) 
 
 
 @router.post("/api/v1/runtime/control-panel/role-prompt/approve", response_model=RuntimeControlSnapshot)
-async def approve_runtime_role_prompt(payload: RuntimeRolePromptApproveRequest) -> RuntimeControlSnapshot:
+async def approve_runtime_role_prompt(
+    payload: RuntimeRolePromptApproveRequest,
+    _: None = Depends(require_admin_api_key),
+) -> RuntimeControlSnapshot:
     _ensure_dashboard_enabled()
     try:
         return get_app_container().runtime_control_service.approve_role_prompt(payload)
@@ -1273,7 +870,10 @@ async def approve_runtime_role_prompt(payload: RuntimeRolePromptApproveRequest) 
 
 
 @router.post("/api/v1/runtime/control-panel/role-prompt/dismiss", response_model=RuntimeControlSnapshot)
-async def dismiss_runtime_role_prompt(payload: RuntimeRolePromptDismissRequest) -> RuntimeControlSnapshot:
+async def dismiss_runtime_role_prompt(
+    payload: RuntimeRolePromptDismissRequest,
+    _: None = Depends(require_admin_api_key),
+) -> RuntimeControlSnapshot:
     _ensure_dashboard_enabled()
     try:
         return get_app_container().runtime_control_service.dismiss_role_prompt(payload)
@@ -1282,13 +882,16 @@ async def dismiss_runtime_role_prompt(payload: RuntimeRolePromptDismissRequest) 
 
 
 @router.post("/api/v1/runtime/control-panel/role-prompt/reset", response_model=RuntimeControlSnapshot)
-async def reset_runtime_role_prompts() -> RuntimeControlSnapshot:
+async def reset_runtime_role_prompts(_: None = Depends(require_admin_api_key)) -> RuntimeControlSnapshot:
     _ensure_dashboard_enabled()
     return get_app_container().runtime_control_service.reset_role_prompts()
 
 
 @router.post("/api/v1/runtime/control-panel/freshness-policy", response_model=RuntimeControlSnapshot)
-async def update_runtime_freshness_policy(payload: RuntimeFreshnessPolicyUpdate) -> RuntimeControlSnapshot:
+async def update_runtime_freshness_policy(
+    payload: RuntimeFreshnessPolicyUpdate,
+    _: None = Depends(require_admin_api_key),
+) -> RuntimeControlSnapshot:
     _ensure_dashboard_enabled()
     return get_app_container().runtime_control_service.update_freshness_policy(payload)
 
@@ -1475,27 +1078,8 @@ async def export_workspace_delivery_activity(
         source_limit=500,
     )
     items = snapshot[0]
-    if export_format == NotificationDeliveryActivityExportFormat.JSONL:
-        body = "\n".join(json.dumps(item.model_dump(mode="json"), ensure_ascii=False) for item in items)
-        return PlainTextResponse(body, media_type="application/x-ndjson")
-    lines = [
-        "activity_id,action,event_kind,delivery_source,root_scope,status,detail,signal_count,provider_message_id,created_at"
-    ]
-    for item in items:
-        cells = [
-            item.activity_id,
-            item.action.value,
-            item.event_kind.value,
-            item.delivery_source or "",
-            item.root_scope or "",
-            item.status,
-            item.detail.replace('"', "'"),
-            str(len(item.signal_ids)),
-            item.provider_message_id or "",
-            item.created_at.isoformat(),
-        ]
-        lines.append(",".join(f'"{cell}"' for cell in cells))
-    return PlainTextResponse("\n".join(lines), media_type="text/csv")
+    body, media_type = _render_delivery_activity_export(items, export_format)
+    return PlainTextResponse(body, media_type=media_type)
 
 
 @router.get("/api/v1/workspace/journal", response_model=JournalWorkspaceSnapshot)
@@ -1504,6 +1088,7 @@ async def get_workspace_journal_snapshot(
     status: SignalStatus | None = None,
     kind: JournalEntryKind | None = None,
     signal_id: str | None = None,
+    tag: str | None = None,
 ) -> JournalWorkspaceSnapshot:
     _ensure_dashboard_enabled()
     return get_app_container().dashboard_service.build_journal_snapshot(
@@ -1511,6 +1096,7 @@ async def get_workspace_journal_snapshot(
         status=status,
         kind=kind,
         signal_id=signal_id,
+        tag=tag,
     )
 
 
@@ -1521,6 +1107,7 @@ async def get_workspace_journal_page(
     status: SignalStatus | None = None,
     kind: JournalEntryKind | None = None,
     signal_id: str | None = None,
+    tag: str | None = None,
 ) -> HTMLResponse:
     _ensure_dashboard_enabled()
     language = _resolve_language(request)
@@ -1529,6 +1116,7 @@ async def get_workspace_journal_page(
         status=status,
         kind=kind,
         signal_id=signal_id,
+        tag=tag,
     )
     return HTMLResponse(_decorate_html_page(_render_journal_workspace(snapshot), language=language, page_key="journal"))
 
@@ -2091,55 +1679,6 @@ def _render_dashboard(snapshot: DashboardSnapshot, *, language: str) -> str:
   </div>
 </body>
 </html>"""
-
-
-def _surface_state_palette(tone: str) -> tuple[str, str, str]:
-    if tone == "positive":
-        return ("rgba(47, 126, 87, 0.14)", "rgba(47, 126, 87, 0.28)", "#2f7e57")
-    if tone == "negative":
-        return ("rgba(180, 74, 61, 0.14)", "rgba(180, 74, 61, 0.28)", "#b44a3d")
-    if tone == "warning":
-        return ("rgba(186, 112, 33, 0.14)", "rgba(186, 112, 33, 0.28)", "#ba7021")
-    return ("rgba(23, 56, 79, 0.08)", "rgba(23, 56, 79, 0.12)", "#17384f")
-
-
-def _render_surface_state_strip(
-    *,
-    strip_key: str,
-    title: str,
-    note: str,
-    items: list[dict[str, str]],
-) -> str:
-    if not items:
-        return ""
-    cards = []
-    for item in items:
-        tone = item.get("tone", "neutral")
-        background, border, ink = _surface_state_palette(tone)
-        cards.append(
-            '<article data-surface-state-card '
-            f'data-state-tone="{escape(tone)}" '
-            f'style="padding:16px 18px;border-radius:20px;border:1px solid {border};background:{background};display:grid;gap:8px;align-content:start;">'
-            '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">'
-            f'<strong style="font-size:15px;line-height:1.35;">{escape(item.get("label", "State"))}</strong>'
-            f'<span style="display:inline-flex;align-items:center;justify-content:center;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,0.74);color:{ink};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">{escape(item.get("status", tone))}</span>'
-            "</div>"
-            f'<p class="muted" style="margin:0;line-height:1.55;">{escape(item.get("detail", ""))}</p>'
-            "</article>"
-        )
-    return (
-        f'<section class="panel" data-surface-state-strip="{escape(strip_key)}">'
-        '<div class="panel-head">'
-        f'<h2>{escape(title)}</h2>'
-        f'<p>{escape(note)}</p>'
-        "</div>"
-        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">'
-        f'{"".join(cards)}'
-        "</div>"
-        "</section>"
-    )
-
-
 def _render_runtime_control_page(
     snapshot: RuntimeControlSnapshot,
     *,
@@ -2198,6 +1737,21 @@ def _render_runtime_control_page(
         "status_preview_blocked": "Prompt diff is ready, but blocking issues must be fixed before save." if not is_ru else "Diff готов, но перед сохранением нужно исправить блокирующие проблемы.",
         "status_failed": "Runtime update failed." if not is_ru else "Не удалось обновить runtime.",
     }
+    copy.update(
+        {
+            "admin_key_title": "Admin API key",
+            "admin_key_note": "Save the operator key in this browser so protected admin and runtime API calls include X-IMOEX-Admin-Key. The key stays local to this browser.",
+            "admin_key_label": "X-IMOEX-Admin-Key",
+            "admin_key_placeholder": "Paste operator key",
+            "admin_key_save": "Save key in this browser",
+            "admin_key_clear": "Clear key",
+            "admin_key_present": "Admin key is saved in this browser.",
+            "admin_key_missing": "No admin key is saved in this browser.",
+            "admin_key_saved": "Admin key saved locally.",
+            "admin_key_cleared": "Admin key cleared from this browser.",
+            "admin_key_required": "Enter a non-empty admin key.",
+        }
+    )
     copy.update(
         {
             "save_draft": "Save draft" if not is_ru else "Сохранить черновик",
@@ -2338,92 +1892,6 @@ def _render_runtime_control_page(
         )
         for item in snapshot.model_routes
     ) or f'<p class="empty">{"No model routes configured yet." if not is_ru else "Маршруты ролей пока не настроены."}</p>'
-    def _render_prompt_history_entry(
-        item: object,
-        role_key: str,
-        current_version_id: str | None,
-        approved_version_id: str | None,
-        pending_version_id: str | None,
-    ) -> str:
-        badges: list[str] = []
-        version_id = getattr(item, "version_id", None)
-        if version_id == approved_version_id:
-            badges.append(f'<span class="badge prompt-current-badge">{escape(copy["approved_version"])}</span>')
-        if version_id == pending_version_id:
-            badges.append(f'<span class="badge prompt-pending-badge">{escape(copy["pending_version"])}</span>')
-        elif version_id == current_version_id:
-            badges.append(f'<span class="badge prompt-current-badge">{escape(copy["current_version"])}</span>')
-        restored_note = ""
-        restored_from_version_id = getattr(item, "restored_from_version_id", None)
-        if restored_from_version_id:
-            restored_note = (
-                f'<p class="muted">{escape(copy["restored_from"])} '
-                f'{escape(restored_from_version_id)}</p>'
-            )
-        version_state = str(getattr(item, "lifecycle_state", "superseded"))
-        version_state_label = escape(copy.get(f"version_state_{version_state}", version_state.replace("_", " ").title()))
-        badges.append(f'<span class="badge" data-runtime-prompt-version-state>{version_state_label}</span>')
-        release_note_markup = (
-            f'<p class="muted" data-runtime-prompt-release-note>{escape(copy["release_note"])}: '
-            f'{escape(getattr(item, "release_note"))}</p>'
-            if getattr(item, "release_note", None)
-            else ""
-        )
-        restore_button = (
-            f'<button class="button" type="button" data-runtime-prompt-restore '
-            f'data-role-key="{escape(role_key)}" data-version-id="{escape(getattr(item, "version_id"))}">'
-            f'{escape(copy["restore"])}</button>'
-            if getattr(item, "restorable", True)
-            else ""
-        )
-        return (
-            '<article class="prompt-version" data-runtime-prompt-version>'
-            f'<div class="route-head"><div><strong>{escape(getattr(item, "summary"))}</strong>'
-            f'<p class="muted">{escape(getattr(item, "action"))} · '
-            f'{escape(_format_timestamp(getattr(item, "created_at")))}</p></div>'
-            f'{"".join(badges)}</div>'
-            f'{restored_note}'
-            f'{release_note_markup}'
-            f'<div class="prompt-version-actions">{restore_button}</div>'
-            '</article>'
-        )
-
-    def _render_prompt_history(item: object) -> str:
-        default_version_id = f"default:{getattr(item, 'role_key')}"
-        history_cards = "".join(
-            _render_prompt_history_entry(
-                version,
-                getattr(item, "role_key"),
-                getattr(item, "current_version_id", None),
-                getattr(item, "approved_version_id", None),
-                getattr(item, "pending_version_id", None),
-            )
-            for version in getattr(item, "version_history", [])
-        )
-        if not history_cards:
-            history_cards = f'<p class="empty">{escape(copy["history_empty"])}</p>'
-        return (
-            f'<section class="prompt-history" data-runtime-prompt-history>'
-            f'<div class="panel-head"><h3>{escape(copy["history"])}</h3>'
-            f'<button class="button" type="button" data-runtime-prompt-restore '
-            f'data-role-key="{escape(getattr(item, "role_key"))}" '
-            f'data-version-id="{escape(default_version_id)}">'
-            f'{escape(copy["restore_default"])}</button></div>'
-            f'<p class="panel-note">{escape(copy["default_available"])}</p>'
-            '<div data-runtime-prompt-version-state hidden></div>'
-            '<div data-runtime-prompt-release-note hidden></div>'
-            f'{history_cards}'
-            '</section>'
-        )
-
-    def _approval_state_label(state: str) -> str:
-        mapping = {
-            "live": copy["approval_state_live"],
-            "approved": copy["approval_state_approved"],
-            "pending_approval": copy["approval_state_pending"],
-        }
-        return str(mapping.get(state, state.replace("_", " ").title()))
-
     def _render_runtime_prompt_card(item: object) -> str:
         approval_state = str(getattr(item, "approval_state", "live"))
         save_label = copy["save_draft"] if bool(getattr(item, "approval_required", False)) else copy["save_prompt"]
@@ -2432,9 +1900,8 @@ def _render_runtime_control_page(
         pending_version = getattr(item, "pending_version_id", None)
         approval_note = getattr(item, "approval_note", None)
         approval_reasons = list(getattr(item, "approval_reasons", []) or [])
-        effective_prompt_template = getattr(item, "effective_prompt_template", None) or getattr(item, "prompt_template")
-        effective_rendered_prompt = getattr(item, "effective_rendered_prompt", None) or effective_prompt_template
-        working_rendered_prompt = getattr(item, "rendered_prompt", None) or getattr(item, "prompt_template")
+        effective_rendered_prompt = _runtime_prompt_effective_rendered_prompt(item)
+        working_rendered_prompt = _runtime_prompt_working_rendered_prompt(item)
         approve_button = (
             f'<button class="button" type="button" data-runtime-prompt-approve '
             f'data-role-key="{escape(getattr(item, "role_key"))}" '
@@ -2482,7 +1949,7 @@ def _render_runtime_control_page(
             f'<p class="muted">{escape(getattr(item, "role_key"))} Â· {escape(workspace_snapshot.selected_root)}</p></div>'
             f'<div class="action-row">'
             f'<span class="badge">{escape(getattr(item, "control_mode"))}</span>'
-            f'<span class="badge prompt-approval-badge" data-runtime-prompt-approval-state>{escape(_approval_state_label(approval_state))}</span>'
+            f'<span class="badge prompt-approval-badge" data-runtime-prompt-approval-state>{escape(_runtime_prompt_approval_state_label(approval_state, copy))}</span>'
             f'</div></div>'
             f'<form class="route-form" data-runtime-prompt-form>'
             f'<input type="hidden" name="role_key" value="{escape(getattr(item, "role_key"))}">'
@@ -2519,7 +1986,7 @@ def _render_runtime_control_page(
             '<div data-runtime-prompt-diff-approval hidden></div>'
             '<div data-runtime-prompt-validation hidden></div>'
             '</section>'
-            f'{_render_prompt_history(item)}'
+            f'{_render_runtime_prompt_history(item, copy=copy)}'
             "</form>"
             "</article>"
         )
@@ -2528,44 +1995,6 @@ def _render_runtime_control_page(
         _render_runtime_prompt_card(item)
         for item in snapshot.role_prompts
     ) or f'<p class="empty">{"No council prompts configured yet." if not is_ru else "ÐŸÑ€Ð¾Ð¼Ð¿Ñ‚Ñ‹ ÑÐ¾Ð²ÐµÑ‚Ð° Ð¿Ð¾ÐºÐ° Ð½Ðµ Ð½Ð°ÑÑ‚Ñ€Ð¾ÐµÐ½Ñ‹."}</p>'
-    legacy_prompt_cards = "".join(
-        (
-            '<article class="route-card" data-runtime-prompt-card>'
-            f'<div class="route-head"><div><strong>{escape(item.role_label)}</strong>'
-            f'<p class="muted">{escape(item.role_key)} · {escape(workspace_snapshot.selected_root)}</p></div>'
-            f'<span class="badge">{escape(item.control_mode)}</span></div>'
-            f'<form class="route-form" data-runtime-prompt-form>'
-            f'<input type="hidden" name="role_key" value="{escape(item.role_key)}">'
-            '<div class="field-grid">'
-            f'<label><span>{"Control mode" if not is_ru else "Режим управления"}</span>'
-            f'<select name="control_mode"><option value="editable"{" selected" if item.control_mode == "editable" else ""}>editable</option>'
-            f'<option value="fixed"{" selected" if item.control_mode == "fixed" else ""}>fixed</option></select></label>'
-            f'<label><span>{"Variables" if not is_ru else "Переменные"}</span>'
-            f'<input value="{escape(", ".join(item.variables) or "n/a")}" readonly></label>'
-            "</div>"
-            f'<label><span>{"Prompt template" if not is_ru else "Шаблон промпта"}</span>'
-            f'<textarea name="prompt_template" rows="12" data-runtime-prompt-template>{escape(item.prompt_template)}</textarea></label>'
-            f'<label class="detail-field"><span>{"Detail" if not is_ru else "Пояснение"}</span>'
-            f'<textarea name="detail" rows="2">{escape(item.detail or "")}</textarea></label>'
-            f'<label class="detail-field"><span>{"Current prompt preview" if not is_ru else "Текущий prompt preview"}</span>'
-            f'<pre data-runtime-prompt-preview>{escape(item.rendered_prompt or item.prompt_template)}</pre></label>'
-            f'<p class="muted" data-runtime-prompt-current-version>{escape(copy["current_version"])}: '
-            f'{escape(item.current_version_id or copy["built_in_default"])}</p>'
-            '<div class="action-row">'
-            f'<button class="button primary" type="submit">{escape(copy["save_prompt"])}</button>'
-            f'<button class="button" type="button" data-runtime-prompt-diff-button>{escape(copy["preview_diff"])}</button>'
-            '</div>'
-            f'<section class="prompt-diff" data-runtime-prompt-diff hidden>'
-            f'<div class="panel-head"><h3>{escape(copy["diff_title"])}</h3></div>'
-            f'<div data-runtime-prompt-diff-body><p class="empty">{escape(copy["diff_empty"])}</p></div>'
-            '<div data-runtime-prompt-validation hidden></div>'
-            '</section>'
-            f'{_render_prompt_history(item)}'
-            "</form>"
-            "</article>"
-        )
-        for item in snapshot.role_prompts
-    ) or f'<p class="empty">{"No council prompts configured yet." if not is_ru else "Промпты совета пока не настроены."}</p>'
     freshness = snapshot.freshness_policy
     audit_cards = "".join(
         (
@@ -2888,6 +2317,23 @@ def _render_runtime_control_page(
       </aside>
     </section>
     {runtime_state_strip}
+    <section class="panel" id="runtime-admin-key" data-runtime-admin-key-panel>
+      <div class="panel-head"><h2>{escape(copy["admin_key_title"])}</h2></div>
+      <p class="panel-note">{escape(copy["admin_key_note"])}</p>
+      <form data-runtime-admin-key-form>
+        <div class="field-grid">
+          <label class="detail-field">
+            <span>{escape(copy["admin_key_label"])}</span>
+            <input type="password" name="admin_key" autocomplete="off" placeholder="{escape(copy["admin_key_placeholder"])}" data-runtime-admin-key-input>
+          </label>
+        </div>
+        <div class="action-row" style="margin-top:14px;">
+          <button class="button primary" type="submit">{escape(copy["admin_key_save"])}</button>
+          <button class="button" type="button" data-runtime-admin-key-clear>{escape(copy["admin_key_clear"])}</button>
+          <span class="badge" data-runtime-admin-key-state>{escape(copy["admin_key_missing"])}</span>
+        </div>
+      </form>
+    </section>
     <section class="panel">
       <div class="panel-head">
         <h2>{escape(copy["routes"])}</h2>
@@ -2938,14 +2384,76 @@ def _render_runtime_control_page(
         status.textContent = message;
         status.dataset.tone = tone === "error" ? "error" : "ok";
       }};
+      const adminKeyForm = document.querySelector("[data-runtime-admin-key-form]");
+      const adminKeyInput = document.querySelector("[data-runtime-admin-key-input]");
+      const adminKeyState = document.querySelector("[data-runtime-admin-key-state]");
+      const readAdminKey = () => {{
+        try {{
+          return window.localStorage ? window.localStorage.getItem("imoex_admin_key") || "" : "";
+        }} catch (error) {{
+          return "";
+        }}
+      }};
+      const updateAdminKeyState = () => {{
+        if (!adminKeyState) {{
+          return;
+        }}
+        const hasKey = Boolean(readAdminKey());
+        adminKeyState.textContent = hasKey
+          ? {json.dumps(copy["admin_key_present"], ensure_ascii=False)}
+          : {json.dumps(copy["admin_key_missing"], ensure_ascii=False)};
+        adminKeyState.dataset.tone = hasKey ? "ok" : "warning";
+      }};
+      if (adminKeyForm) {{
+        updateAdminKeyState();
+        adminKeyForm.addEventListener("submit", (event) => {{
+          event.preventDefault();
+          const value = adminKeyInput ? adminKeyInput.value.trim() : "";
+          if (!value) {{
+            setStatus({json.dumps(copy["admin_key_required"], ensure_ascii=False)}, "error");
+            return;
+          }}
+          try {{
+            window.localStorage.setItem("imoex_admin_key", value);
+            if (adminKeyInput) {{
+              adminKeyInput.value = "";
+            }}
+            updateAdminKeyState();
+            setStatus({json.dumps(copy["admin_key_saved"], ensure_ascii=False)});
+          }} catch (error) {{
+            setStatus(error?.message || {json.dumps(copy["status_failed"], ensure_ascii=False)}, "error");
+          }}
+        }});
+      }}
+      const clearAdminKeyButton = document.querySelector("[data-runtime-admin-key-clear]");
+      if (clearAdminKeyButton) {{
+        clearAdminKeyButton.addEventListener("click", () => {{
+          try {{
+            window.localStorage.removeItem("imoex_admin_key");
+            updateAdminKeyState();
+            setStatus({json.dumps(copy["admin_key_cleared"], ensure_ascii=False)});
+          }} catch (error) {{
+            setStatus(error?.message || {json.dumps(copy["status_failed"], ensure_ascii=False)}, "error");
+          }}
+        }});
+      }}
       const postJson = async (url, payload) => {{
+        const headers = {{
+          "Content-Type": "application/json",
+          "X-Requested-With": "imoex-ui",
+        }};
+        try {{
+          const adminKey = window.localStorage ? window.localStorage.getItem("imoex_admin_key") : "";
+          if (adminKey) {{
+            headers["X-IMOEX-Admin-Key"] = adminKey;
+          }}
+        }} catch (error) {{
+          // localStorage can be disabled; API auth still works through external clients.
+        }}
         const response = await fetch(url, {{
           method: "POST",
           credentials: "same-origin",
-          headers: {{
-            "Content-Type": "application/json",
-            "X-Requested-With": "imoex-ui",
-          }},
+          headers,
           body: JSON.stringify(payload),
         }});
         if (!response.ok) {{
@@ -3218,7 +2726,6 @@ def _render_runtime_control_page(
 </body>
 </html>"""
 
-
 def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
     sidebar = _render_page_sidebar(
         "workspace",
@@ -3306,11 +2813,13 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
     payload = escape(json.dumps(snapshot.model_dump(mode="json"), ensure_ascii=False))
     selected_signal_id = escape(snapshot.selected_signal_id or "")
     form_disabled = "disabled" if focus is None else ""
+    journal_tag_picker = _render_tag_picker(snapshot.review_bundle.tag_suggestions, disabled=focus is None)
     workflow_panel = _render_workflow_panel(focus, status_id="workspace-workflow-status")
     primary_label = "This browser workspace"
     if snapshot.telegram_delivery_ready:
         primary_label = "Browser workspace + Telegram brief"
     trust_ribbon = _render_trust_ribbon(snapshot.trust_ribbon)
+    operator_onboarding = _render_operator_onboarding(language)
     watchlist = _render_watchlist(snapshot.watchlist)
     comparison = _render_horizon_comparison(snapshot.comparison)
     diff_block = _render_signal_diff(snapshot.focus_signal_diff)
@@ -4494,6 +4003,84 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       color: var(--teal);
       border-color: rgba(17, 104, 102, 0.28);
     }}
+    .tag-picker {{
+      display: grid;
+      gap: 8px;
+    }}
+    .tag-picker-options,
+    .tag-chip-row {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }}
+    .tag-option {{
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+    }}
+    .tag-option input {{
+      width: auto;
+      margin: 0;
+      accent-color: var(--teal);
+    }}
+    .operator-onboarding {{
+      background:
+        radial-gradient(circle at top left, rgba(17, 104, 102, 0.11), transparent 32%),
+        linear-gradient(135deg, rgba(255, 255, 255, 0.82), rgba(255, 247, 236, 0.9));
+    }}
+    .operator-onboarding[hidden],
+    .operator-onboarding-body[hidden] {{
+      display: none;
+    }}
+    .operator-onboarding .panel-head {{
+      align-items: flex-start;
+    }}
+    .operator-onboarding-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }}
+    .operator-onboarding-grid article,
+    .operator-glossary-item {{
+      display: grid;
+      gap: 8px;
+      align-content: start;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.7);
+    }}
+    .operator-step-number {{
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      display: inline-grid;
+      place-items: center;
+      background: var(--navy);
+      color: #fffaf2;
+      font-weight: 800;
+      font-size: 13px;
+    }}
+    .operator-glossary {{
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }}
+    .operator-glossary-list {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }}
     .summary-card {{
       display: flex;
       flex-direction: column;
@@ -4659,6 +4246,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
     </section>
     {trust_ribbon}
     {workspace_state_strip}
+    {operator_onboarding}
     <section class="panel">
       <div class="panel-head">
         <h2>Root lane</h2>
@@ -4799,6 +4387,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
             </select>
             <input type="text" name="title" placeholder="Short title" {form_disabled}>
             <textarea name="note" placeholder="Write what changed, why it matters, and what you will watch next." {form_disabled}></textarea>
+            {journal_tag_picker}
             <button class="button primary" type="submit" {form_disabled}>Save journal note</button>
             <div class="status" id="journal-status"></div>
           </form>
@@ -4868,6 +4457,183 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
     const journalForm = document.getElementById("workspace-journal-form");
     const journalStatus = document.getElementById("journal-status");
     const deliveryStatus = document.getElementById("delivery-action-status");
+    const watchlistStatus = document.getElementById("watchlist-action-status");
+    const operatorOnboarding = document.querySelector("[data-operator-onboarding]");
+    const watchlistFilterReview = document.querySelector("[data-watchlist-filter-review]");
+    const watchlistFilterRoot = document.querySelector("[data-watchlist-filter-root]");
+    const watchlistFilterLinked = document.querySelector("[data-watchlist-filter-linked]");
+    const watchlistFilterCount = document.querySelector("[data-watchlist-filter-count]");
+    const watchlistBulkReview = document.querySelector("[data-watchlist-bulk-review]");
+    const watchlistBulkRemove = document.querySelector("[data-watchlist-bulk-remove]");
+    if (operatorOnboarding) {{
+      const onboardingHiddenKey = "imoex_operator_onboarding_hidden";
+      const onboardingCollapsedKey = "imoex_operator_onboarding_collapsed";
+      const onboardingBody = operatorOnboarding.querySelector("[data-operator-onboarding-body]");
+      const onboardingCollapse = operatorOnboarding.querySelector("[data-operator-onboarding-collapse]");
+      const onboardingDismiss = operatorOnboarding.querySelector("[data-operator-onboarding-dismiss]");
+      const applyOnboardingCollapsed = (collapsed) => {{
+        operatorOnboarding.classList.toggle("is-collapsed", collapsed);
+        if (onboardingBody) {{
+          onboardingBody.hidden = collapsed;
+        }}
+        if (onboardingCollapse) {{
+          onboardingCollapse.textContent = collapsed
+            ? onboardingCollapse.dataset.expandLabel || "Expand"
+            : onboardingCollapse.dataset.collapseLabel || "Collapse";
+        }}
+      }};
+      try {{
+        if (window.localStorage.getItem(onboardingHiddenKey) === "1") {{
+          operatorOnboarding.hidden = true;
+        }}
+        applyOnboardingCollapsed(window.localStorage.getItem(onboardingCollapsedKey) === "1");
+      }} catch (error) {{
+        applyOnboardingCollapsed(false);
+      }}
+      onboardingCollapse?.addEventListener("click", () => {{
+        const collapsed = !operatorOnboarding.classList.contains("is-collapsed");
+        applyOnboardingCollapsed(collapsed);
+        try {{
+          window.localStorage.setItem(onboardingCollapsedKey, collapsed ? "1" : "0");
+        }} catch (error) {{
+        }}
+      }});
+      onboardingDismiss?.addEventListener("click", () => {{
+        operatorOnboarding.hidden = true;
+        try {{
+          window.localStorage.setItem(onboardingHiddenKey, "1");
+        }} catch (error) {{
+        }}
+      }});
+    }}
+    const applyWatchlistFilters = () => {{
+      const reviewValue = watchlistFilterReview?.value || "all";
+      const rootValue = watchlistFilterRoot?.value || "all";
+      const linkedValue = watchlistFilterLinked?.value || "all";
+      let visibleCount = 0;
+      for (const item of document.querySelectorAll("[data-watchlist-item]")) {{
+        const reviewMatches = reviewValue === "all" || item.dataset.watchlistReviewState === reviewValue;
+        const rootMatches = rootValue === "all" || item.dataset.watchlistRoot === rootValue;
+        const linkedMatches = linkedValue === "all" || item.dataset.watchlistLinked === linkedValue;
+        const visible = reviewMatches && rootMatches && linkedMatches;
+        item.hidden = !visible;
+        if (visible) {{
+          visibleCount += 1;
+        }}
+      }}
+      if (watchlistFilterCount) {{
+        watchlistFilterCount.textContent = `${{visibleCount}} visible`;
+      }}
+    }};
+    for (const filter of [watchlistFilterReview, watchlistFilterRoot, watchlistFilterLinked]) {{
+      if (filter) {{
+        filter.addEventListener("change", applyWatchlistFilters);
+      }}
+    }}
+    applyWatchlistFilters();
+    const setWatchlistStatus = (message) => {{
+      if (watchlistStatus) {{
+        watchlistStatus.textContent = message;
+      }}
+    }};
+    const visibleWatchlistItems = () => Array.from(document.querySelectorAll("[data-watchlist-item]"))
+      .filter((item) => !item.hidden && item.dataset.watchlistWatchKey);
+    const runWatchlistAction = async (watchKey, action) => {{
+      const encodedKey = encodeURIComponent(watchKey);
+      const url = action === "remove"
+        ? `/api/v1/workspace/watchlist/${{encodedKey}}`
+        : `/api/v1/workspace/watchlist/${{encodedKey}}/review`;
+      const response = await fetch(url, {{
+        method: action === "remove" ? "DELETE" : "POST",
+        headers: {{ "Content-Type": "application/json" }},
+      }});
+      return response.ok;
+    }};
+    const refreshWatchlistSoon = (message) => {{
+      setWatchlistStatus(message);
+      window.setTimeout(() => {{
+        void window.__imoexRefreshPage();
+      }}, 500);
+    }};
+    for (const button of document.querySelectorAll("[data-watchlist-review]")) {{
+      button.addEventListener("click", async (event) => {{
+        event.preventDefault();
+        const watchKey = button.dataset.watchKey;
+        if (!watchKey) {{
+          return;
+        }}
+        button.disabled = true;
+        setWatchlistStatus("Marking reviewed...");
+        const ok = await runWatchlistAction(watchKey, "review");
+        if (!ok) {{
+          button.disabled = false;
+          setWatchlistStatus("Watchlist review failed.");
+          return;
+        }}
+        refreshWatchlistSoon("Reviewed. Reloading...");
+      }});
+    }}
+    for (const button of document.querySelectorAll("[data-watchlist-remove]")) {{
+      button.addEventListener("click", async (event) => {{
+        event.preventDefault();
+        const watchKey = button.dataset.watchKey;
+        if (!watchKey) {{
+          return;
+        }}
+        button.disabled = true;
+        setWatchlistStatus("Removing from watchlist...");
+        const ok = await runWatchlistAction(watchKey, "remove");
+        if (!ok) {{
+          button.disabled = false;
+          setWatchlistStatus("Watchlist remove failed.");
+          return;
+        }}
+        refreshWatchlistSoon("Removed. Reloading...");
+      }});
+    }}
+    if (watchlistBulkReview) {{
+      watchlistBulkReview.addEventListener("click", async () => {{
+        const items = visibleWatchlistItems();
+        if (!items.length) {{
+          setWatchlistStatus("No visible watchlist items to review.");
+          return;
+        }}
+        watchlistBulkReview.disabled = true;
+        setWatchlistStatus(`Marking ${{items.length}} visible item(s) reviewed...`);
+        for (const item of items) {{
+          const ok = await runWatchlistAction(item.dataset.watchlistWatchKey, "review");
+          if (!ok) {{
+            watchlistBulkReview.disabled = false;
+            setWatchlistStatus("Bulk watchlist review failed.");
+            return;
+          }}
+        }}
+        refreshWatchlistSoon("Visible watchlist reviewed. Reloading...");
+      }});
+    }}
+    if (watchlistBulkRemove) {{
+      watchlistBulkRemove.addEventListener("click", async () => {{
+        const items = visibleWatchlistItems();
+        if (!items.length) {{
+          setWatchlistStatus("No visible watchlist items to remove.");
+          return;
+        }}
+        if (!window.confirm(`Remove ${{items.length}} visible watchlist item(s) from the queue?`)) {{
+          return;
+        }}
+        watchlistBulkRemove.disabled = true;
+        setWatchlistStatus(`Removing ${{items.length}} visible watchlist item(s)...`);
+        for (const item of items) {{
+          const ok = await runWatchlistAction(item.dataset.watchlistWatchKey, "remove");
+          if (!ok) {{
+            watchlistBulkRemove.disabled = false;
+            setWatchlistStatus("Bulk watchlist remove failed.");
+            return;
+          }}
+        }}
+        refreshWatchlistSoon("Visible watchlist removed. Reloading...");
+      }});
+    }}
     if (journalForm) {{
       journalForm.addEventListener("submit", async (event) => {{
         event.preventDefault();
@@ -4884,6 +4650,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
           title: formData.get("title"),
           note: formData.get("note"),
           author: "workspace",
+          tags: formData.getAll("tags").map((value) => String(value)).filter(Boolean),
         }};
         if (!payload.title || !payload.note) {{
           if (journalStatus) {{
@@ -7997,18 +7764,7 @@ def _build_council_prompt_context(snapshot: WorkspaceSnapshot, *, language: str)
     market = snapshot.market_snapshot
     is_ru = language == "ru"
     primary_feed = _primary_market_feed(panel)
-    role_labels = {
-        "trend_vol": "Аналитик тренда и волатильности" if is_ru else "Trend / volatility analyst",
-        "flow_liquidity": "Аналитик потока и ликвидности" if is_ru else "Flow / liquidity analyst",
-        "oi_roll": "Аналитик OI и ролла" if is_ru else "OI / roll analyst",
-        "macro_event": "Аналитик макро-событий" if is_ru else "Macro-event analyst",
-        "skeptic": "Скептик" if is_ru else "Skeptic",
-        "arbiter": "Арбитр" if is_ru else "Arbiter",
-    }
-
-    def _bullets(values: list[str], fallback: str) -> str:
-        entries = [f"- {item}" for item in values if item]
-        return "\n".join(entries) if entries else f"- {fallback}"
+    role_labels = _council_role_labels(language)
 
     missing_value = "н/д" if is_ru else "n/a"
     current_price = missing_value
@@ -8086,28 +7842,20 @@ def _build_council_prompt_context(snapshot: WorkspaceSnapshot, *, language: str)
             else "No focus signal has been selected yet."
         )
     )
-    def _joined(values: list[str], fallback: str) -> str:
-        entries = [item for item in values if item]
-        return "; ".join(entries) if entries else fallback
-
-    def _packet(items: list[tuple[str, str]], fallback: str) -> str:
-        lines = [f"- {label}: {value}" for label, value in items if value]
-        return "\n".join(lines) if lines else f"- {fallback}"
-
-    driver_summary = _joined(
+    driver_summary = _council_joined(
         focus.drivers if focus is not None else [],
         "Ð´Ñ€Ð°Ð¹Ð²ÐµÑ€Ñ‹ Ð¿Ð¾ÐºÐ° Ð½Ðµ Ð·Ð°Ñ„Ð¸ÐºÑÐ¸Ñ€Ð¾Ð²Ð°Ð½Ñ‹" if is_ru else "no drivers recorded yet",
     )
-    objection_summary = _joined(
+    objection_summary = _council_joined(
         focus.objections if focus is not None else [],
         "Ð²Ð¾Ð·Ñ€Ð°Ð¶ÐµÐ½Ð¸Ñ Ð¿Ð¾ÐºÐ° Ð½Ðµ Ð·Ð°Ñ„Ð¸ÐºÑÐ¸Ñ€Ð¾Ð²Ð°Ð½Ñ‹" if is_ru else "no objections recorded yet",
     )
-    invalidation_summary = _joined(
+    invalidation_summary = _council_joined(
         focus.invalidation_conditions if focus is not None else [],
         "ÑƒÑÐ»Ð¾Ð²Ð¸Ñ Ð¾Ñ‚Ð¼ÐµÐ½Ñ‹ Ð¿Ð¾ÐºÐ° Ð½Ðµ Ð·Ð°Ñ„Ð¸ÐºÑÐ¸Ñ€Ð¾Ð²Ð°Ð½Ñ‹" if is_ru else "no invalidation conditions recorded yet",
     )
     role_context_packets = {
-        "trend_vol": _packet(
+        "trend_vol": _council_packet(
             [
                 ("Ð“Ð¾Ñ€Ð¸Ð·Ð¾Ð½Ñ‚ Ð¸ ÑÐµÑÑÐ¸Ñ" if is_ru else "Horizon and session", f"{horizon} · {session_type}"),
                 ("Ð¦ÐµÐ½Ð° Ð¸ Ð´Ð½ÐµÐ²Ð½Ð¾Ðµ Ð¸Ð·Ð¼ÐµÐ½ÐµÐ½Ð¸Ðµ" if is_ru else "Price and day change", f"{current_price} · {price_change_pct}"),
@@ -8117,7 +7865,7 @@ def _build_council_prompt_context(snapshot: WorkspaceSnapshot, *, language: str)
             ],
             "Ð´Ð»Ñ Ñ€ÐµÐ¶Ð¸Ð¼Ð° Ð¸ Ð²Ð¾Ð»Ð°Ñ‚Ð¸Ð»ÑŒÐ½Ð¾ÑÑ‚Ð¸ Ð¿Ð¾ÐºÐ° Ð½ÐµÑ‚ Ð¾Ñ‚Ð´ÐµÐ»ÑŒÐ½Ð¾Ð³Ð¾ packet" if is_ru else "no regime packet yet",
         ),
-        "flow_liquidity": _packet(
+        "flow_liquidity": _council_packet(
             [
                 ("Ð¦ÐµÐ½Ð° Ð¸ Ð´Ð½ÐµÐ²Ð½Ð¾Ðµ Ð¸Ð·Ð¼ÐµÐ½ÐµÐ½Ð¸Ðµ" if is_ru else "Price and day change", f"{current_price} · {price_change_pct}"),
                 ("Ð¡ÐµÑÑÐ¸Ñ" if is_ru else "Session", session_type),
@@ -8128,7 +7876,7 @@ def _build_council_prompt_context(snapshot: WorkspaceSnapshot, *, language: str)
             ],
             "Ð´Ð»Ñ Ð¿Ð¾Ñ‚Ð¾ÐºÐ° Ð¸ Ð»Ð¸ÐºÐ²Ð¸Ð´Ð½Ð¾ÑÑ‚Ð¸ Ð¿Ð¾ÐºÐ° Ð½ÐµÑ‚ Ð¾Ñ‚Ð´ÐµÐ»ÑŒÐ½Ð¾Ð³Ð¾ packet" if is_ru else "no flow packet yet",
         ),
-        "oi_roll": _packet(
+        "oi_roll": _council_packet(
             [
                 ("ÐÐºÑ‚Ð¸Ð²Ð½Ð°Ñ ÑÐµÑ€Ð¸Ñ" if is_ru else "Active series", active_contract),
                 ("Ð¡Ð»ÐµÐ´ÑƒÑŽÑ‰Ð¸Ð¹ ÐºÐ¾Ð½Ñ‚Ñ€Ð°ÐºÑ‚" if is_ru else "Next contract", next_contract),
@@ -8139,7 +7887,7 @@ def _build_council_prompt_context(snapshot: WorkspaceSnapshot, *, language: str)
             ],
             "Ð´Ð»Ñ OI Ð¸ Ñ€Ð¾Ð»Ð»Ð° Ð¿Ð¾ÐºÐ° Ð½ÐµÑ‚ Ð¾Ñ‚Ð´ÐµÐ»ÑŒÐ½Ð¾Ð³Ð¾ packet" if is_ru else "no roll packet yet",
         ),
-        "macro_event": _packet(
+        "macro_event": _council_packet(
             [
                 ("Ð¢Ð¾Ñ€Ð³Ð¾Ð²Ñ‹Ð¹ Ð´ÐµÐ½ÑŒ Ð¸ ÑÐµÑÑÐ¸Ñ" if is_ru else "Trading day and session", f"{(root_details.session.trading_day.isoformat() if root_details is not None else missing_value)} · {session_type}"),
                 ("Ð ÐµÐ¶Ð¸Ð¼ Ð´Ð°Ð½Ð½Ñ‹Ñ…" if is_ru else "Data mode", _control_panel_data_mode_label(panel.data_mode)),
@@ -8149,7 +7897,7 @@ def _build_council_prompt_context(snapshot: WorkspaceSnapshot, *, language: str)
             ],
             "Ð´Ð»Ñ macro/event Ð¿Ð¾ÐºÐ° Ð½ÐµÑ‚ Ð¾Ñ‚Ð´ÐµÐ»ÑŒÐ½Ð¾Ð³Ð¾ packet" if is_ru else "no macro packet yet",
         ),
-        "skeptic": _packet(
+        "skeptic": _council_packet(
             [
                 ("Ð¢ÐµÐºÑƒÑ‰ÐµÐµ Ñ€ÐµÑˆÐµÐ½Ð¸Ðµ" if is_ru else "Current decision", f"{signal_direction} / {signal_status} / {workflow_state}"),
                 ("Confidence Ñ„Ð¸Ð½Ð°Ð»Ð°" if is_ru else "Final confidence", f"{focus.confidence_final:.2f}" if focus is not None else missing_value),
@@ -8160,7 +7908,7 @@ def _build_council_prompt_context(snapshot: WorkspaceSnapshot, *, language: str)
             ],
             "Ð´Ð»Ñ ÑÐºÐµÐ¿Ñ‚Ð¸ÐºÐ° Ð¿Ð¾ÐºÐ° Ð½ÐµÑ‚ Ð¾Ñ‚Ð´ÐµÐ»ÑŒÐ½Ð¾Ð³Ð¾ packet" if is_ru else "no skeptic packet yet",
         ),
-        "arbiter": _packet(
+        "arbiter": _council_packet(
             [
                 ("ÐÑ‚Ð¾Ð³ ÑÐµÐ¹Ñ‡Ð°Ñ" if is_ru else "Current state", f"{signal_direction} / {signal_status} / {workflow_state}"),
                 ("Confidence / skeptic" if is_ru else "Confidence / skeptic", f"{(f'{focus.confidence_final:.2f}' if focus is not None else missing_value)} · {(f'{focus.skeptic_score:.2f}' if focus is not None else missing_value)}"),
@@ -8190,15 +7938,15 @@ def _build_council_prompt_context(snapshot: WorkspaceSnapshot, *, language: str)
         "signal_direction": signal_direction,
         "signal_status": signal_status,
         "signal_summary": signal_summary,
-        "why_now": _bullets(
+        "why_now": _council_bullets(
             focus.drivers if focus is not None else [],
             "Драйверы ещё не записаны." if is_ru else "No drivers recorded yet.",
         ),
-        "pushback": _bullets(
+        "pushback": _council_bullets(
             focus.objections if focus is not None else [],
             "Возражения ещё не записаны." if is_ru else "No objections recorded yet.",
         ),
-        "invalidation": _bullets(
+        "invalidation": _council_bullets(
             focus.invalidation_conditions if focus is not None else [],
             "Условия отмены ещё не записаны." if is_ru else "No invalidation conditions recorded yet.",
         ),
@@ -8679,24 +8427,49 @@ def _render_council_page(
 def _render_journal_workspace(snapshot: JournalWorkspaceSnapshot) -> str:
     sidebar = _render_page_sidebar("journal", root=snapshot.selected_root, roots=snapshot.roots)
     sidebar_styles = _render_page_sidebar_styles("1280px")
-    root_filters = ['<a class="chip{}" href="/workspace/journal">All roots</a>'.format(" is-active" if snapshot.selected_root is None else "")]
+    selected_tag = snapshot.selected_tag
+    root_filters = [
+        '<a class="chip{}" href="{}">All roots</a>'.format(
+            " is-active" if snapshot.selected_root is None else "",
+            escape(_journal_filter_href(status=snapshot.selected_status, kind=snapshot.selected_kind, tag=selected_tag)),
+        )
+    ]
     for root in snapshot.roots:
-        query = urlencode({"root": root.root_code, **({"status": snapshot.selected_status.value} if snapshot.selected_status is not None else {}), **({"kind": snapshot.selected_kind.value} if snapshot.selected_kind is not None else {})})
         root_filters.append(
-            f'<a class="chip{" is-active" if snapshot.selected_root == root.root_code else ""}" href="/workspace/journal?{escape(query)}">{escape(root.root_code)}</a>'
+            f'<a class="chip{" is-active" if snapshot.selected_root == root.root_code else ""}" '
+            f'href="{escape(_journal_filter_href(root=root.root_code, status=snapshot.selected_status, kind=snapshot.selected_kind, tag=selected_tag))}">{escape(root.root_code)}</a>'
         )
 
-    status_filters = ['<a class="chip{}" href="{}">All statuses</a>'.format(" is-active" if snapshot.selected_status is None else "", escape(_journal_filter_href(root=snapshot.selected_root, kind=snapshot.selected_kind)))]
+    status_filters = ['<a class="chip{}" href="{}">All statuses</a>'.format(" is-active" if snapshot.selected_status is None else "", escape(_journal_filter_href(root=snapshot.selected_root, kind=snapshot.selected_kind, tag=selected_tag)))]
     for status in SignalStatus:
         status_filters.append(
-            f'<a class="chip{" is-active" if snapshot.selected_status == status else ""}" href="{escape(_journal_filter_href(root=snapshot.selected_root, status=status, kind=snapshot.selected_kind))}">{escape(status.value)}</a>'
+            f'<a class="chip{" is-active" if snapshot.selected_status == status else ""}" href="{escape(_journal_filter_href(root=snapshot.selected_root, status=status, kind=snapshot.selected_kind, tag=selected_tag))}">{escape(status.value)}</a>'
         )
 
-    kind_filters = ['<a class="chip{}" href="{}">All kinds</a>'.format(" is-active" if snapshot.selected_kind is None else "", escape(_journal_filter_href(root=snapshot.selected_root, status=snapshot.selected_status)))]
+    kind_filters = ['<a class="chip{}" href="{}">All kinds</a>'.format(" is-active" if snapshot.selected_kind is None else "", escape(_journal_filter_href(root=snapshot.selected_root, status=snapshot.selected_status, tag=selected_tag)))]
     for kind in JournalEntryKind:
         kind_filters.append(
-            f'<a class="chip{" is-active" if snapshot.selected_kind == kind else ""}" href="{escape(_journal_filter_href(root=snapshot.selected_root, status=snapshot.selected_status, kind=kind))}">{escape(kind.value)}</a>'
+            f'<a class="chip{" is-active" if snapshot.selected_kind == kind else ""}" href="{escape(_journal_filter_href(root=snapshot.selected_root, status=snapshot.selected_status, kind=kind, tag=selected_tag))}">{escape(kind.value)}</a>'
         )
+
+    tag_filters = [
+        '<a class="chip{}" href="{}">All tags</a>'.format(
+            " is-active" if selected_tag is None else "",
+            escape(_journal_filter_href(root=snapshot.selected_root, status=snapshot.selected_status, kind=snapshot.selected_kind)),
+        )
+    ]
+    for item in snapshot.tag_counts:
+        tag_filters.append(
+            f'<a class="chip{" is-active" if selected_tag == item.tag else ""}" '
+            f'href="{escape(_journal_filter_href(root=snapshot.selected_root, status=snapshot.selected_status, kind=snapshot.selected_kind, tag=item.tag))}">{escape(item.tag)} ({item.count})</a>'
+        )
+    tag_cards = "".join(
+        '<article>'
+        f'<strong>{escape(item.tag)}</strong>'
+        f'<p class="muted">{item.count} note(s) | roots {escape(", ".join(item.roots) or "n/a")} | kinds {escape(", ".join(item.kinds) or "n/a")}</p>'
+        "</article>"
+        for item in snapshot.tag_counts
+    ) or '<p class="empty">No journal tags captured yet.</p>'
 
     entry_cards = "".join(_render_journal_workspace_entry(item) for item in snapshot.entries) or '<p class="empty">No journal entries match the current filters yet.</p>'
     decision_cards = "".join(_render_journal_decision_log_item(item) for item in snapshot.decision_log) or '<p class="empty">No decision cards available for the current filter window.</p>'
@@ -8934,6 +8707,7 @@ def _render_journal_workspace(snapshot: JournalWorkspaceSnapshot) -> str:
       <div class="chips">{''.join(root_filters)}</div>
       <div class="chips">{''.join(status_filters)}</div>
       <div class="chips">{''.join(kind_filters)}</div>
+      <div class="chips" data-journal-tag-filters>{''.join(tag_filters)}</div>
     </section>
     <section class="panel">
       <h2>Decision log</h2>
@@ -8954,6 +8728,11 @@ def _render_journal_workspace(snapshot: JournalWorkspaceSnapshot) -> str:
         </section>
       </div>
       <div class="stack">
+        <section class="panel" data-journal-tag-drilldown>
+          <h2>Tag quality drill-down</h2>
+          <p class="muted">Review notes by operator tag to find false urgency, late timing, data issues, and useful skeptic catches.</p>
+          <div class="metric-grid">{tag_cards}</div>
+        </section>
         <section class="panel">
           <h2>Current signal lane</h2>
           <div class="related-list">{related}</div>
@@ -11197,9 +10976,9 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot, *, language: str
         }}
         const overlaySummary = renderOverlaySummary(series, snapshot.unit);
         const distanceBar = buildMarketDistanceBar(series, snapshot.unit);
-        return `<article style="padding:14px 16px;border-radius:18px;border:1px solid rgba(21, 32, 42, 0.1);background:rgba(255,255,255,0.72);display:grid;gap:10px;"><div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;"><strong>${{escapePreviewText(series.label)}}</strong><span style="font-weight:700;color:${{series.change_abs >= 0 ? "#2f7e57" : "#b44a3d"}};">${{formatPreviewPrice(series.current_price)}}${{unitSuffix}}</span></div>${{renderMarketChart(series)}}<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#5c6970;"><span>${{escapePreviewText(series.points[0] ? series.points[0].label : series.label)}}</span><span>${{escapePreviewText(series.points[series.points.length - 1] ? series.points[series.points.length - 1].label : series.label)}}</span></div><p class="muted">${{escapePreviewText(marketPanelCopy.open)}} ${{formatPreviewPrice(series.open_price)}}${{unitSuffix}} | ${{escapePreviewText(marketPanelCopy.change)}} ${{series.change_abs >= 0 ? "+" : ""}}${{formatPreviewPrice(series.change_abs)}}${{unitSuffix}} (${{formatPreviewPct(series.change_pct)}})</p><p class="muted">${{escapePreviewText(marketPanelCopy.range)}} ${{formatPreviewPrice(series.low_price)}}${{unitSuffix}} - ${{formatPreviewPrice(series.high_price)}}${{unitSuffix}}</p>${{distanceBar}}${{overlaySummary ? `<p class="muted">${{escapePreviewText(marketPanelCopy.levels)}} ${{escapePreviewText(overlaySummary)}}</p>` : ""}}</article>`;
+        return `<article data-market-chart-card data-market-timeframe="${{escapePreviewText(series.label || "")}}" style="padding:14px 16px;border-radius:18px;border:1px solid rgba(21, 32, 42, 0.1);background:rgba(255,255,255,0.72);display:grid;gap:10px;"><div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;"><strong>${{escapePreviewText(series.label)}}</strong><span style="font-weight:700;color:${{series.change_abs >= 0 ? "#2f7e57" : "#b44a3d"}};">${{formatPreviewPrice(series.current_price)}}${{unitSuffix}}</span></div>${{renderMarketChart(series)}}<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#5c6970;"><span>${{escapePreviewText(series.points[0] ? series.points[0].label : series.label)}}</span><span>${{escapePreviewText(series.points[series.points.length - 1] ? series.points[series.points.length - 1].label : series.label)}}</span></div><p class="muted">${{escapePreviewText(marketPanelCopy.open)}} ${{formatPreviewPrice(series.open_price)}}${{unitSuffix}} | ${{escapePreviewText(marketPanelCopy.change)}} ${{series.change_abs >= 0 ? "+" : ""}}${{formatPreviewPrice(series.change_abs)}}${{unitSuffix}} (${{formatPreviewPct(series.change_pct)}})</p><p class="muted">${{escapePreviewText(marketPanelCopy.range)}} ${{formatPreviewPrice(series.low_price)}}${{unitSuffix}} - ${{formatPreviewPrice(series.high_price)}}${{unitSuffix}}</p>${{distanceBar}}${{overlaySummary ? `<p class="muted">${{escapePreviewText(marketPanelCopy.levels)}} ${{escapePreviewText(overlaySummary)}}</p>` : ""}}</article>`;
       }};
-      return `<div class="panel-head"><h2>${{escapePreviewText(marketPanelCopy.title)}}</h2><p>${{escapePreviewText(marketPanelCopy.subtitle)}}</p></div>${{warning}}<div class="metric-list" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));"><article><span>${{escapePreviewText(marketPanelCopy.current_price)}}</span><strong>${{formatPreviewPrice(snapshot.current_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.root_code)}} · ${{escapePreviewText(snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.daily_change)}}</span><strong>${{snapshot.price_change_abs >= 0 ? "+" : ""}}${{formatPreviewPrice(snapshot.price_change_abs)}}${{unitSuffix}}</strong><p class="muted">${{formatPreviewPct(snapshot.price_change_pct)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.day_high)}}</span><strong>${{formatPreviewPrice(snapshot.daily.high_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.daily.points[snapshot.daily.points.length - 1] ? snapshot.daily.points[snapshot.daily.points.length - 1].label : snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.day_low)}}</span><strong>${{formatPreviewPrice(snapshot.daily.low_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.daily.points[0] ? snapshot.daily.points[0].label : snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.updated)}}</span><strong>${{escapePreviewText(formatPreviewTime(snapshot.as_of))}}</strong><p class="muted">${{escapePreviewText(marketPanelCopy.status)}}: ${{escapePreviewText(snapshot.status || "n/a")}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.source)}}</span><strong>${{escapePreviewText(snapshot.price_source)}}</strong><p class="muted">${{escapePreviewText(snapshot.base_asset)}}</p></article></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:16px;">${{renderChartCard(snapshot.daily)}}${{renderChartCard(snapshot.weekly)}}${{renderChartCard(snapshot.monthly)}}</div>`;
+      return `<div class="panel-head"><h2>${{escapePreviewText(marketPanelCopy.title)}}</h2><p>${{escapePreviewText(marketPanelCopy.subtitle)}}</p></div>${{warning}}<div class="metric-list" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));"><article data-market-current-price><span>${{escapePreviewText(marketPanelCopy.current_price)}}</span><strong>${{formatPreviewPrice(snapshot.current_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.root_code)}} · ${{escapePreviewText(snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.daily_change)}}</span><strong>${{snapshot.price_change_abs >= 0 ? "+" : ""}}${{formatPreviewPrice(snapshot.price_change_abs)}}${{unitSuffix}}</strong><p class="muted">${{formatPreviewPct(snapshot.price_change_pct)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.day_high)}}</span><strong>${{formatPreviewPrice(snapshot.daily.high_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.daily.points[snapshot.daily.points.length - 1] ? snapshot.daily.points[snapshot.daily.points.length - 1].label : snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.day_low)}}</span><strong>${{formatPreviewPrice(snapshot.daily.low_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.daily.points[0] ? snapshot.daily.points[0].label : snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.updated)}}</span><strong>${{escapePreviewText(formatPreviewTime(snapshot.as_of))}}</strong><p class="muted">${{escapePreviewText(marketPanelCopy.status)}}: ${{escapePreviewText(snapshot.status || "n/a")}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.source)}}</span><strong>${{escapePreviewText(snapshot.price_source)}}</strong><p class="muted">${{escapePreviewText(snapshot.base_asset)}}</p></article></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:16px;">${{renderChartCard(snapshot.daily)}}${{renderChartCard(snapshot.weekly)}}${{renderChartCard(snapshot.monthly)}}</div>`;
     }};
     const syncMarketPanel = (snapshot) => {{
       if (!liveMarketPanelNode) {{
@@ -11250,6 +11029,7 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot, *, language: str
           title: formData.get("title"),
           note: formData.get("note"),
           author: "signal-page",
+          tags: formData.getAll("tags").map((value) => String(value)).filter(Boolean),
         }};
         if (!payload.title || !payload.note) {{
           if (journalStatus) {{
@@ -11334,1497 +11114,3 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot, *, language: str
   </script>
 </body>
 </html>"""
-
-
-def _workflow_state_label(state: SignalWorkflowState) -> str:
-    labels = {
-        SignalWorkflowState.WATCHING: "watching",
-        SignalWorkflowState.VALIDATING: "validating",
-        SignalWorkflowState.READY: "ready",
-        SignalWorkflowState.IGNORED: "ignored",
-        SignalWorkflowState.ESCALATE: "escalated",
-        SignalWorkflowState.RESOLVED: "resolved",
-    }
-    return labels.get(state, state.value)
-
-
-def _workflow_state_tone(state: SignalWorkflowState) -> str:
-    tones = {
-        SignalWorkflowState.WATCHING: "watch",
-        SignalWorkflowState.VALIDATING: "review",
-        SignalWorkflowState.READY: "ready",
-        SignalWorkflowState.IGNORED: "ignore",
-        SignalWorkflowState.ESCALATE: "escalate",
-        SignalWorkflowState.RESOLVED: "resolved",
-    }
-    return tones.get(state, "watch")
-
-
-def _workflow_state_hint(state: SignalWorkflowState) -> str:
-    hints = {
-        SignalWorkflowState.WATCHING: "Keep this setup in view and wait for stronger confirmation.",
-        SignalWorkflowState.VALIDATING: "Manually verify the setup before taking action.",
-        SignalWorkflowState.READY: "The setup is actionable; manage it closely.",
-        SignalWorkflowState.IGNORED: "This signal is deprioritized until the context changes.",
-        SignalWorkflowState.ESCALATE: "This signal needs a higher-attention review right now.",
-        SignalWorkflowState.RESOLVED: "The setup is closed and should now feed the review loop.",
-    }
-    return hints.get(state, "Manual workflow state for the current signal.")
-
-
-def _render_workflow_chip(signal) -> str:
-    state = getattr(signal, "workflow_state", SignalWorkflowState.WATCHING)
-    tone = _workflow_state_tone(state)
-    label = _workflow_state_label(state)
-    return f'<span class="workflow-chip tone-{escape(tone)}">{escape(label)}</span>'
-
-
-def _render_workflow_panel(signal, *, status_id: str) -> str:
-    if signal is None:
-        buttons = "".join(
-            f'<button class="workflow-button tone-{escape(_workflow_state_tone(state))}" type="button" disabled>{escape(_workflow_state_label(state))}</button>'
-            for state in SignalWorkflowState
-        )
-        return (
-            '<div class="workflow-panel">'
-            '<div class="workflow-meta">'
-            '<div><span>Workflow</span><strong>Pick a signal first</strong></div>'
-            "</div>"
-            '<p class="workflow-summary">Select a signal to set how you want to handle it.</p>'
-            f'<div class="workflow-actions">{buttons}</div>'
-            f'<div class="status" id="{escape(status_id)}"></div>'
-            "</div>"
-        )
-
-    state = signal.workflow_state
-    buttons = []
-    for candidate in SignalWorkflowState:
-        tone = _workflow_state_tone(candidate)
-        active = " is-active" if candidate == state else ""
-        buttons.append(
-            f'<button class="workflow-button tone-{escape(tone)}{active}" '
-            f'type="button" data-workflow-state="{escape(candidate.value)}" data-signal-id="{escape(signal.signal_id)}">'
-            f"{escape(_workflow_state_label(candidate))}"
-            "</button>"
-        )
-    return (
-        '<div class="workflow-panel">'
-        '<div class="workflow-meta">'
-        f'<div><span>Workflow</span><strong>{escape(_workflow_state_label(state))}</strong></div>'
-        f"{_render_workflow_chip(signal)}"
-        "</div>"
-        f'<p class="workflow-summary">{escape(_workflow_state_hint(state))}</p>'
-        f'<div class="workflow-actions">{"".join(buttons)}</div>'
-        f'<div class="status" id="{escape(status_id)}"></div>'
-        "</div>"
-    )
-
-
-def _render_root_pulse_card(item, *, selected_root: str, language: str) -> str:
-    price_line = f"{item.active_signals} active | roll {item.next_contract_share:.0%}"
-    if item.current_price is not None:
-        unit = f" {escape(item.price_unit)}" if item.price_unit else ""
-        price_line = (
-            f"L {_format_price_value(item.current_price)}{unit} | "
-            f"D {_format_signed_pct(item.price_change_pct)} | "
-            f"{item.active_signals} active | roll {item.next_contract_share:.0%}"
-        )
-    copy = {
-        "open": "Открыть" if language == "ru" else "Open",
-        "preview_ready": "Выберите таймфрейм" if language == "ru" else "Pick a timeframe",
-        "preview_note": "Быстрый просмотр свечей без перехода" if language == "ru" else "Quick candle preview without navigation",
-        "pin_a": "Серия A" if language == "ru" else "Root A",
-        "pin_b": "Серия B" if language == "ru" else "Root B",
-        "level_waiting": "Ждём уровни" if language == "ru" else "Waiting for levels",
-        "level_waiting_note": "Нужны вход, инвалидация и цель." if language == "ru" else "Need entry, invalidation, and target.",
-    }
-    preview_buttons = "".join(
-        (
-            f'<button class="rail-preview-button{" is-active" if timeframe == "1D" else ""}" '
-            f'type="button" data-root-preview-button data-root-code="{escape(item.root_code)}" '
-            f'data-timeframe="{timeframe}">{timeframe}</button>'
-        )
-        for timeframe in ("1D", "1W", "1M")
-    )
-    return (
-        f'<article class="rail-card tone-{escape(item.tone)}{" is-active" if item.root_code == selected_root else ""}" '
-        f'data-root-preview-card data-root-code="{escape(item.root_code)}">'
-        f'<a class="rail-card-link" href="/workspace?root={escape(item.root_code)}">'
-        f"<strong>{escape(item.root_code)}</strong>"
-        f"<span>{escape(item.base_asset)}</span>"
-        f"<small>{escape(item.headline)}</small>"
-        f'<em data-root-price-line data-active-signals="{item.active_signals}" data-roll-share="{item.next_contract_share:.0%}">{price_line}</em>'
-        f'<div class="market-level-chip tone-neutral" data-root-level-chip><strong>{escape(copy["level_waiting"])}</strong><span>{escape(copy["level_waiting_note"])}</span></div>'
-        "</a>"
-        '<div class="rail-card-footer">'
-        f'<div class="rail-card-tabs">{preview_buttons}</div>'
-        f'<a class="rail-open-link" href="/workspace?root={escape(item.root_code)}">{escape(copy["open"])}</a>'
-        "</div>"
-        f'<div class="rail-preview-popover" hidden data-root-preview-popover data-root-code="{escape(item.root_code)}">'
-        '<div class="rail-preview-head">'
-        f'<strong>{escape(item.root_code)} · <span data-root-preview-label>1D</span></strong>'
-        f'<small data-root-preview-updated>{escape(copy["preview_ready"])}</small>'
-        "</div>"
-        f'<div class="rail-preview-chart" data-root-preview-chart><div class="empty">{escape(copy["preview_note"])}</div></div>'
-        f'<div class="rail-preview-meta" data-root-preview-meta>{escape(price_line)}</div>'
-        '<div class="signal-preview-actions">'
-        f'<button class="preview-pin-button" type="button" data-pin-root-preview data-root-code="{escape(item.root_code)}" data-compare-slot="a" data-timeframe="1D">{escape(copy["pin_a"])}</button>'
-        f'<button class="preview-pin-button" type="button" data-pin-root-preview data-root-code="{escape(item.root_code)}" data-compare-slot="b" data-timeframe="1D">{escape(copy["pin_b"])}</button>'
-        f'<a class="rail-open-link" href="/workspace?root={escape(item.root_code)}">{escape(copy["open"])}</a>'
-        "</div>"
-        "</div>"
-        "</article>"
-    )
-
-
-def _market_overlay_copy(language: str) -> dict[str, str]:
-    return {
-        "entry": "Вход" if language == "ru" else "Entry",
-        "invalidation": "Инвалидация" if language == "ru" else "Invalidation",
-        "target": "Цель" if language == "ru" else "Target",
-        "levels": "Уровни" if language == "ru" else "Levels",
-    }
-
-
-def _market_level_copy(language: str) -> dict[str, str]:
-    return {
-        "price_map": "Цена vs идея" if language == "ru" else "Price vs setup",
-        "price_short": "Цена" if language == "ru" else "Price",
-        "entry_short": "Вход" if language == "ru" else "Entry",
-        "target_short": "Цель" if language == "ru" else "Target",
-        "invalidation_short": "Инв." if language == "ru" else "Invalid.",
-        "distance_bar": "Шкала уровней" if language == "ru" else "Level distance bar",
-        "pending": "Ждём уровни" if language == "ru" else "Waiting for levels",
-        "pending_detail": (
-            "Нужны вход, инвалидация и цель."
-            if language == "ru"
-            else "Need entry, invalidation, and target."
-        ),
-        "target_hit": "Цель достигнута" if language == "ru" else "Target reached",
-        "above_entry": "Выше входа" if language == "ru" else "Above entry",
-        "below_entry": "Ниже входа" if language == "ru" else "Below entry",
-        "above_invalidation": "Выше инвалидации" if language == "ru" else "Above invalidation",
-        "below_invalidation": "Ниже инвалидации" if language == "ru" else "Below invalidation",
-        "to_target": "До цели" if language == "ru" else "To target",
-        "to_entry": "До входа" if language == "ru" else "To entry",
-        "past_target": "После цели" if language == "ru" else "Past target",
-        "beyond_invalidation": "За инвалидацией" if language == "ru" else "Beyond invalidation",
-    }
-
-
-def _market_overlay_style(key: str) -> tuple[str, str]:
-    mapping = {
-        "entry": ("#17364d", "4 3"),
-        "invalidation": ("#bb7122", "5 4"),
-        "target": ("#116966", "6 4"),
-    }
-    return mapping.get(key, ("#5c6970", "4 3"))
-
-
-def _market_overlay_summary(series, *, unit: str, language: str) -> str:
-    overlays = getattr(series, "overlays", [])
-    if not overlays:
-        return ""
-    labels = _market_overlay_copy(language)
-    unit_suffix = f" {escape(unit)}" if unit else ""
-    return " | ".join(
-        f"{escape(labels.get(overlay.key, overlay.key.title()))} {_format_price_value(overlay.value)}{unit_suffix}"
-        for overlay in overlays
-    )
-
-
-def _format_level_distance(from_value: float | None, to_value: float | None) -> str:
-    if from_value is None or to_value is None:
-        return "n/a"
-    base = max(abs(from_value), 0.01)
-    return f"{abs(to_value - from_value) / base * 100:.2f}%"
-
-
-def _market_level_record(series) -> dict[str, float]:
-    record: dict[str, float] = {}
-    for overlay in getattr(series, "overlays", []):
-        if overlay.value is not None:
-            record[str(overlay.key)] = overlay.value
-    return record
-
-
-def _render_market_distance_bar(series, *, unit: str, language: str) -> str:
-    overlays = _market_level_record(series)
-    current_price = getattr(series, "current_price", None)
-    if (
-        current_price is None
-        or overlays.get("entry") is None
-        or overlays.get("target") is None
-        or overlays.get("invalidation") is None
-    ):
-        return ""
-
-    copy = _market_level_copy(language)
-    points = [
-        ("invalidation", copy["invalidation_short"], overlays["invalidation"], "#bb7122"),
-        ("entry", copy["entry_short"], overlays["entry"], "#17364d"),
-        ("price", copy["price_short"], current_price, "#15202a"),
-        ("target", copy["target_short"], overlays["target"], "#116966"),
-    ]
-    low = min(point[2] for point in points)
-    high = max(point[2] for point in points)
-    span = max(high - low, max(abs(current_price), 0.01) * 0.001, 0.01)
-    unit_suffix = f" {escape(unit)}" if unit else ""
-    markers: list[str] = []
-    chips: list[str] = []
-    for key, label, value, color in points:
-        left = max(0.0, min(100.0, ((value - low) / span) * 100.0))
-        size = 12 if key == "price" else 9
-        markers.append(
-            f'<div style="position:absolute;left:calc({left:.2f}% - {size / 2:.1f}px);top:{"4px" if key == "price" else "8px"};display:grid;justify-items:center;gap:3px;">'
-            f'<span style="font-size:10px;line-height:1;color:{color};font-weight:700;">{escape(label)}</span>'
-            f'<span style="width:{size}px;height:{size}px;border-radius:999px;background:{color};box-shadow:0 0 0 2px rgba(255,255,255,0.94);"></span>'
-            "</div>"
-        )
-        detail = (
-            f"{_format_price_value(value)}{unit_suffix}"
-            if key == "price"
-            else _format_level_distance(current_price, value)
-        )
-        chips.append(
-            '<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 8px;border-radius:999px;'
-            'background:rgba(255,255,255,0.82);border:1px solid rgba(21,32,42,0.08);font-size:11px;color:#5c6970;">'
-            f'<span style="width:7px;height:7px;border-radius:999px;background:{color};"></span>'
-            f"{escape(label)} {escape(detail)}"
-            "</span>"
-        )
-    return (
-        '<div data-market-distance-bar style="display:grid;gap:8px;">'
-        f'<div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#5c6970;">{escape(copy["distance_bar"])}</div>'
-        '<div style="position:relative;height:34px;">'
-        '<div style="position:absolute;left:0;right:0;top:18px;height:4px;border-radius:999px;'
-        'background:linear-gradient(90deg, rgba(187,113,34,0.22), rgba(23,54,77,0.18), rgba(17,105,102,0.22));"></div>'
-        f'{"".join(markers)}'
-        "</div>"
-        f'<div style="display:flex;flex-wrap:wrap;gap:8px;">{"".join(chips)}</div>'
-        "</div>"
-    )
-
-
-def _render_market_unavailable_snapshot(
-    *,
-    language: str,
-    root_code: str | None = None,
-    signal_id: str | None = None,
-) -> str:
-    copy = {
-        "title": "Текущая цена и графики" if language == "ru" else "Current price and charts",
-        "subtitle": (
-            "По выбранному инструменту: текущая цена и три масштаба просмотра без переключения страницы."
-            if language == "ru"
-            else "Current price plus day, week, and month views for the selected instrument."
-        ),
-        "warning_title": (
-            "Рыночные данные временно недоступны"
-            if language == "ru"
-            else "Market data is temporarily unavailable"
-        ),
-        "warning_body": (
-            "Графики скрыты, чтобы не показывать приблизительные или устаревшие цены. Проверьте статус live feed в runtime."
-            if language == "ru"
-            else "Charts are hidden so the app does not display approximate or stale prices. Check the live-feed status in runtime."
-        ),
-    }
-    signal_attr = f' data-market-signal-id="{escape(signal_id)}"' if signal_id else ""
-    return (
-        f'<section class="panel" data-market-panel data-market-root-code="{escape(root_code or "")}"{signal_attr}>'
-        '<div class="panel-head">'
-        f'<h2>{escape(copy["title"])}</h2>'
-        f'<p>{escape(copy["subtitle"])}</p>'
-        "</div>"
-        '<div class="metric-list" data-market-unavailable>'
-        '<article class="action-card tone-warning">'
-        f'<strong>{escape(copy["warning_title"])}</strong>'
-        f'<p class="muted">{escape(copy["warning_body"])}</p>'
-        "</article>"
-        "</div>"
-        "</section>"
-    )
-
-
-def _render_market_snapshot(
-    snapshot,
-    *,
-    language: str,
-    root_code: str | None = None,
-    signal_id: str | None = None,
-) -> str:
-    if snapshot is None:
-        return _render_market_unavailable_snapshot(language=language, root_code=root_code, signal_id=signal_id)
-
-    copy = {
-        "title": "Текущая цена и графики" if language == "ru" else "Current price and charts",
-        "subtitle": (
-            "По выбранному инструменту: текущая цена и три масштаба просмотра без переключения страниц."
-            if language == "ru"
-            else "Current price plus day, week, and month views for the selected instrument."
-        ),
-        "current_price": "Последняя цена" if language == "ru" else "Last",
-        "daily_change": "Дневное изменение" if language == "ru" else "Daily change",
-        "day_high": "Дневной максимум" if language == "ru" else "Day high",
-        "day_low": "Дневной минимум" if language == "ru" else "Day low",
-        "updated": "Обновлено" if language == "ru" else "Updated",
-        "source": "Источник" if language == "ru" else "Source",
-        "warning_title": "Поток цены требует внимания" if language == "ru" else "Price feed needs attention",
-        "warning_body": (
-            "Данные выглядят несвежими или деградировавшими, поэтому цену стоит читать с осторожностью."
-            if language == "ru"
-            else "The feed looks stale or degraded, so treat the displayed price with caution."
-        ),
-        "status": "Статус" if language == "ru" else "Status",
-        "hover_hint": "Наведите на свечу, чтобы увидеть OHLC." if language == "ru" else "Hover a candle to inspect OHLC.",
-    }
-    unit = f" {escape(snapshot.unit)}" if snapshot.unit else ""
-    tone = _market_status_tone(snapshot.status)
-    warning = ""
-    if tone != "positive":
-        warning_detail = snapshot.status_detail or copy["warning_body"]
-        warning = (
-            '<div class="metric-list" style="margin-bottom:12px;">'
-            f'<article class="action-card tone-{tone}">'
-            f'<strong>{escape(copy["warning_title"])}</strong>'
-            f'<p class="muted">{escape(_market_status_label(snapshot.status, language=language))} | {escape(warning_detail)}</p>'
-            "</article>"
-            "</div>"
-        )
-    charts = "".join(
-        _render_market_chart_card(series, unit=snapshot.unit, language=language)
-        for series in (snapshot.daily, snapshot.weekly, snapshot.monthly)
-    )
-    signal_attr = f' data-market-signal-id="{escape(signal_id)}"' if signal_id else ""
-    return (
-        f'<section class="panel" data-market-panel data-market-root-code="{escape(snapshot.root_code)}"{signal_attr}>'
-        '<div class="panel-head">'
-        f'<h2>{escape(copy["title"])}</h2>'
-        f'<p>{escape(copy["subtitle"])}</p>'
-        "</div>"
-        f"{warning}"
-        '<div class="metric-list" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));">'
-        f'<article><span>{escape(copy["current_price"])}</span><strong>{_format_price_value(snapshot.current_price)}{unit}</strong><p class="muted">{escape(snapshot.root_code)} · {escape(snapshot.contract)}</p></article>'
-        f'<article><span>{escape(copy["daily_change"])}</span><strong>{_format_signed_value(snapshot.price_change_abs)}{unit}</strong><p class="muted">{_format_signed_pct(snapshot.price_change_pct)}</p></article>'
-        f'<article><span>{escape(copy["day_high"])}</span><strong>{_format_price_value(snapshot.daily.high_price)}{unit}</strong><p class="muted">{escape(snapshot.daily.points[-1].label if snapshot.daily.points else snapshot.contract)}</p></article>'
-        f'<article><span>{escape(copy["day_low"])}</span><strong>{_format_price_value(snapshot.daily.low_price)}{unit}</strong><p class="muted">{escape(snapshot.daily.points[0].label if snapshot.daily.points else snapshot.contract)}</p></article>'
-        f'<article><span>{escape(copy["updated"])}</span><strong>{escape(_format_timestamp(snapshot.as_of))}</strong><p class="muted">{escape(copy["status"])}: {escape(_market_status_label(snapshot.status, language=language))}</p></article>'
-        f'<article><span>{escape(copy["source"])}</span><strong>{escape(snapshot.price_source)}</strong><p class="muted">{escape(snapshot.base_asset)}</p></article>'
-        "</div>"
-        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:16px;">'
-        f"{charts}"
-        "</div>"
-        "</section>"
-    )
-
-
-def _render_market_chart_card(series, *, unit: str, language: str) -> str:
-    if not series.points:
-        return ""
-    overlay_copy = _market_overlay_copy(language)
-    level_copy = _market_level_copy(language)
-    chart_labels = {
-        "1D": "День" if language == "ru" else "Day",
-        "1W": "Неделя" if language == "ru" else "Week",
-        "1M": "Месяц" if language == "ru" else "Month",
-    }
-    label = chart_labels.get(series.label, series.label)
-    overlay_values = [overlay.value for overlay in getattr(series, "overlays", [])]
-    low = min([point.low for point in series.points] + overlay_values + [series.current_price])
-    high = max([point.high for point in series.points] + overlay_values + [series.current_price])
-    span = max(high - low, 0.0001)
-    width = 220.0
-    height = 92.0
-    tone = "#2f7e57" if series.change_abs >= 0 else "#b44a3d"
-    unit_suffix = f" {escape(unit)}" if unit else ""
-    first_label = escape(series.points[0].label)
-    last_label = escape(series.points[-1].label)
-    range_label = "Диапазон" if language == "ru" else "Range"
-    open_label = "Открытие" if language == "ru" else "Open"
-    close_label = "Закрытие" if language == "ru" else "Close"
-    change_label = "Изменение" if language == "ru" else "Change"
-    levels_label = overlay_copy["levels"]
-    candles: list[str] = []
-    overlay_lines: list[str] = []
-    body_width = max(6.0, min(16.0, width / max(len(series.points) * 1.9, 1)))
-
-    def _map_price_y(value: float) -> float:
-        return height - (((value - low) / span) * (height - 14.0)) - 7.0
-
-    for index, point in enumerate(series.points):
-        x = width / 2 if len(series.points) == 1 else (index / float(len(series.points) - 1)) * width
-        open_y = _map_price_y(point.open)
-        close_y = _map_price_y(point.close)
-        high_y = _map_price_y(point.high)
-        low_y = _map_price_y(point.low)
-        body_top = min(open_y, close_y)
-        body_height = max(abs(close_y - open_y), 3.0)
-        candle_tone = "#2f7e57" if point.close >= point.open else "#b44a3d"
-        candles.append(
-            f'<line x1="{x:.1f}" y1="{high_y:.1f}" x2="{x:.1f}" y2="{low_y:.1f}" '
-            f'stroke="{candle_tone}" stroke-width="1.8" stroke-linecap="round"></line>'
-            f'<rect x="{(x - (body_width / 2)):.1f}" y="{body_top:.1f}" width="{body_width:.1f}" '
-            f'height="{body_height:.1f}" rx="2" fill="{candle_tone}" fill-opacity="0.92"></rect>'
-        )
-    for overlay in getattr(series, "overlays", []):
-        stroke, dasharray = _market_overlay_style(overlay.key)
-        y = _map_price_y(overlay.value)
-        overlay_label = escape(overlay_copy.get(overlay.key, overlay.key.title()))
-        overlay_lines.append(
-            f'<line x1="0" y1="{y:.1f}" x2="{width:.1f}" y2="{y:.1f}" '
-            f'stroke="{stroke}" stroke-width="1.2" stroke-dasharray="{dasharray}" opacity="0.95"></line>'
-            f'<text x="{width - 6:.1f}" y="{max(12.0, min(height - 4.0, y - 2.0)):.1f}" '
-            f'text-anchor="end" fill="{stroke}" font-size="10" font-weight="700">{overlay_label}</text>'
-        )
-    current_y = _map_price_y(series.current_price)
-    current_line = (
-        f'<line x1="0" y1="{current_y:.1f}" x2="{width:.1f}" y2="{current_y:.1f}" stroke="#15202a" '
-        'stroke-width="1.3" opacity="0.78" data-market-current-line></line>'
-        f'<circle cx="{width - 6:.1f}" cy="{current_y:.1f}" r="3.4" fill="#15202a"></circle>'
-        f'<text x="6" y="{max(12.0, min(height - 4.0, current_y - 4.0)):.1f}" fill="#15202a" '
-        f'font-size="10" font-weight="700">{escape(level_copy["price_short"])}</text>'
-    )
-    overlay_summary = _market_overlay_summary(series, unit=unit, language=language)
-    distance_bar = _render_market_distance_bar(series, unit=unit, language=language)
-    levels_line = f'<p class="muted">{escape(levels_label)} {overlay_summary}</p>' if overlay_summary else ""
-    return (
-        '<article style="padding:14px 16px;border-radius:18px;border:1px solid rgba(21, 32, 42, 0.1);background:rgba(255,255,255,0.72);display:grid;gap:10px;">'
-        '<div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;">'
-        f'<strong>{escape(label)} · {escape(series.label)}</strong>'
-        f'<span style="font-weight:700;color:{tone};">{_format_price_value(series.current_price)}{unit_suffix}</span>'
-        "</div>"
-        f'<svg viewBox="0 0 220 92" preserveAspectRatio="none" style="width:100%;height:92px;border-radius:14px;background:linear-gradient(180deg, rgba(15,108,103,0.06), rgba(255,255,255,0.6));">'
-        f'<line x1="0" y1="{_map_price_y(series.open_price):.1f}" x2="220" y2="{_map_price_y(series.open_price):.1f}" stroke="rgba(21,32,42,0.08)" stroke-width="1" stroke-dasharray="4 4"></line>'
-        f'{"".join(overlay_lines)}'
-        f"{current_line}"
-        f'{"".join(candles)}'
-        "</svg>"
-        '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#5c6970;">'
-        f"<span>{first_label}</span><span>{last_label}</span>"
-        "</div>"
-        f'<p class="muted">{escape(open_label)} {_format_price_value(series.open_price)}{unit_suffix} | {escape(close_label)} {_format_price_value(series.current_price)}{unit_suffix} | {escape(change_label)} {_format_signed_value(series.change_abs)}{unit_suffix} ({_format_signed_pct(series.change_pct)})</p>'
-        f'<p class="muted">{escape(range_label)} {_format_price_value(series.low_price)}{unit_suffix} - {_format_price_value(series.high_price)}{unit_suffix}</p>'
-        f"{distance_bar}"
-        f"{levels_line}"
-        "</article>"
-    )
-
-
-def _render_trust_ribbon(ribbon) -> str:
-    items = "".join(
-        f'<article class="action-card tone-{escape(item.tone)}"><strong>{escape(item.label)}</strong><p class="muted">{escape(item.value)} | {escape(item.detail or "")}</p></article>'
-        for item in ribbon.items
-    )
-    return (
-        '<section class="panel">'
-        '<div class="panel-head">'
-        '<h2>Trust ribbon</h2>'
-        f'<p>{escape(ribbon.headline)}</p>'
-        "</div>"
-        f'<div class="action-list">{items}</div>'
-        "</section>"
-    )
-
-
-def _render_watchlist(items) -> str:
-    body = "".join(
-        f'<article><strong>{escape(item.root_code)}</strong><p class="muted">{escape(item.note or (item.signal.summary if item.signal is not None else "Root-level watch item"))}</p></article>'
-        for item in items
-    ) or '<p class="empty">No watchlist entries yet.</p>'
-    return (
-        '<section class="panel">'
-        '<div class="panel-head">'
-        '<h2>Watchlist</h2>'
-        '<p>Promoted roots and signals stay visible between cycles.</p>'
-        "</div>"
-        f'<div class="metric-list">{body}</div>'
-        "</section>"
-    )
-
-
-def _render_horizon_comparison(snapshot) -> str:
-    if snapshot is None:
-        return (
-            '<section class="panel">'
-            '<div class="panel-head"><h2>Horizon compare</h2><p>No horizon comparison is available yet.</p></div>'
-            "</section>"
-        )
-    rows = "".join(
-        (
-            "<article>"
-            f"<strong>{escape(item.horizon)} | {escape(item.direction)}</strong>"
-            f'<p class="muted">confidence {item.confidence:.2f} | skeptic {item.skeptic_score:.2f} | attention {item.attention_score:.2f}</p>'
-            f'<p class="muted">{escape(item.summary)}</p>'
-            "</article>"
-        )
-        for item in snapshot.items
-    )
-    return (
-        '<section class="panel">'
-        '<div class="panel-head"><h2>Horizon compare</h2><p>Read the root across multiple horizons in one place.</p></div>'
-        f'<div class="metric-list">{rows}</div>'
-        "</section>"
-    )
-
-
-def _render_signal_diff(diff) -> str:
-    if diff is None:
-        return ""
-    return (
-        '<section class="panel">'
-        '<div class="panel-head"><h2>What changed since last cycle?</h2><p>Diff vs the previous recalculation.</p></div>'
-        '<div class="metric-list">'
-        f'<article><strong>{escape(diff.summary)}</strong><p class="muted">Prob up {diff.probability_up_delta:+.2f} | confidence {diff.confidence_delta:+.2f} | skeptic {diff.skeptic_delta:+.2f} | freshness {diff.freshness_delta:+.2f}</p></article>'
-        f'<article><strong>Drivers</strong><p class="muted">Added: {escape(", ".join(diff.drivers_added) or "none")} | Removed: {escape(", ".join(diff.drivers_removed) or "none")}</p></article>'
-        f'<article><strong>Invalidation</strong><p class="muted">Added: {escape(", ".join(diff.invalidations_added) or "none")} | Removed: {escape(", ".join(diff.invalidations_removed) or "none")}</p></article>'
-        "</div>"
-        "</section>"
-    )
-
-
-def _render_confidence_decomposition(decomposition) -> str:
-    if decomposition is None:
-        return ""
-    items = "".join(
-        f'<article><strong>{escape(item.label)}</strong><p class="muted">{item.value:.2f} | {escape(item.detail or "")}</p></article>'
-        for item in decomposition.factors
-    )
-    return (
-        '<section class="panel">'
-        '<div class="panel-head"><h2>Confidence decomposition</h2><p>'
-        f"{escape(decomposition.headline)}"
-        "</p></div>"
-        f'<div class="metric-list">{items}</div>'
-        "</section>"
-    )
-
-
-def _render_decision_timeline(items, *, title: str) -> str:
-    rows = "".join(
-        f'<article class="timeline-item tone-{escape(item.tone)}"><strong>{escape(item.title)}</strong><p class="muted">{escape(_format_timestamp(item.at))} | {escape(item.detail)}</p></article>'
-        for item in items
-    ) or '<p class="empty">No decision events yet.</p>'
-    return (
-        '<section class="panel">'
-        f'<div class="panel-head"><h2>{escape(title)}</h2><p>Narrative timeline across workflow, journal, and resolution.</p></div>'
-        f'<div class="timeline-list">{rows}</div>'
-        "</section>"
-    )
-
-
-def _render_review_bundle(bundle) -> str:
-    highlights = "".join(f"<li>{escape(item)}</li>" for item in bundle.highlights) or "<li>No review highlights yet.</li>"
-    return (
-        '<section class="panel">'
-        '<div class="panel-head"><h2>Review bundle</h2><p>End-of-day and post-resolution recall in one block.</p></div>'
-        '<div class="metric-list">'
-        f'<article><strong>Watched roots</strong><p class="muted">{bundle.watched_roots}</p></article>'
-        f'<article><strong>Decisions logged</strong><p class="muted">{bundle.decisions_logged}</p></article>'
-        f'<article><strong>Ignored / resolved</strong><p class="muted">{bundle.ignored_signals} / {bundle.resolved_signals}</p></article>'
-        f'<article><strong>Highlights</strong><ul>{highlights}</ul></article>'
-        "</div>"
-        "</section>"
-    )
-
-
-def _render_similar_setups(items) -> str:
-    body = "".join(
-        f'<article><strong>{escape(item.outcome)}</strong><p class="muted">{escape(_format_timestamp(item.resolved_at))} | {item.realized_return_bps:.1f} bps | similarity {item.similarity_score:.2f}</p><p class="muted">{escape(item.note)}</p></article>'
-        for item in items
-    ) or '<p class="empty">No similar historical setups are available yet.</p>'
-    return (
-        '<section class="panel">'
-        '<div class="panel-head"><h2>Similar historical setups</h2><p>Resolved analogs for quick precedent checks.</p></div>'
-        f'<div class="metric-list">{body}</div>'
-        "</section>"
-    )
-
-
-def _render_workspace_signal_tile(signal, selected_signal_id: str | None, *, language: str) -> str:
-    is_focus = signal.signal_id == selected_signal_id or (selected_signal_id is None and signal.status.value == "active")
-    copy = {
-        "open": "Открыть" if language == "ru" else "Open",
-        "focus": "В фокус" if language == "ru" else "Focus",
-        "pin_a": "Сигнал A" if language == "ru" else "Signal A",
-        "pin_b": "Сигнал B" if language == "ru" else "Signal B",
-        "preview_ready": "Выберите таймфрейм" if language == "ru" else "Pick a timeframe",
-        "preview_note": (
-            "Быстрый просмотр сигнала без перехода на полную страницу."
-            if language == "ru"
-            else "Quick signal preview without leaving the lane."
-        ),
-        "level_waiting": "Ждём уровни" if language == "ru" else "Waiting for levels",
-        "level_waiting_note": "Нужны вход, инвалидация и цель." if language == "ru" else "Need entry, invalidation, and target.",
-    }
-    preview_buttons = "".join(
-        (
-            f'<button class="signal-preview-button{" is-active" if timeframe == "1D" else ""}" '
-            f'type="button" data-signal-preview-button data-signal-id="{escape(signal.signal_id)}" '
-            f'data-timeframe="{timeframe}">{timeframe}</button>'
-        )
-        for timeframe in ("1D", "1W", "1M")
-    )
-    return (
-        f'<article class="signal-tile{" is-focus" if is_focus else ""}" '
-        f'data-signal-preview-card data-signal-id="{escape(signal.signal_id)}">'
-        f'<a class="signal-tile-link" href="/workspace?root={escape(signal.root)}&signal_id={escape(signal.signal_id)}">'
-        '<div class="signal-top">'
-        f'<div><strong>{escape(signal.root)} | {escape(signal.contract)}</strong><p class="muted">{escape(signal.summary)}</p></div>'
-        f'<span class="badge">{escape(signal.direction_final.value)} | {escape(signal.horizon.value)}</span>'
-        "</div>"
-        '<div class="metric-row">'
-        f"<small>confidence {signal.confidence_final:.2f}</small>"
-        f"<small>skeptic {signal.skeptic_score:.2f}</small>"
-        f"<small>priority {signal.priority_score}</small>"
-        f"<small>workflow {_workflow_state_label(signal.workflow_state)}</small>"
-        "</div>"
-        f'<div class="market-level-chip tone-neutral" data-signal-level-chip><strong>{escape(copy["level_waiting"])}</strong><span>{escape(copy["level_waiting_note"])}</span></div>'
-        "</a>"
-        '<div class="signal-tile-footer">'
-        f'<div class="signal-preview-tabs">{preview_buttons}</div>'
-        f'<a class="rail-open-link" href="/workspace/signals/{escape(signal.signal_id)}">{escape(copy["open"])}</a>'
-        "</div>"
-        f'<div class="signal-preview-popover" hidden data-signal-preview-popover data-signal-id="{escape(signal.signal_id)}">'
-        '<div class="signal-preview-head">'
-        f'<strong>{escape(signal.root)} | {escape(signal.horizon.value)} | <span data-signal-preview-label>1D</span></strong>'
-        f'<small data-signal-preview-updated>{escape(copy["preview_ready"])}</small>'
-        "</div>"
-        f'<div class="signal-preview-chart" data-signal-preview-chart><div class="empty">{escape(copy["preview_note"])}</div></div>'
-        '<div class="signal-preview-grid" data-signal-preview-grid></div>'
-        f'<div class="signal-preview-summary" data-signal-preview-summary>{escape(signal.summary)}</div>'
-        '<div class="signal-preview-actions">'
-        f'<button class="preview-pin-button" type="button" data-pin-signal-preview data-signal-id="{escape(signal.signal_id)}" data-compare-slot="a" data-timeframe="1D">{escape(copy["pin_a"])}</button>'
-        f'<button class="preview-pin-button" type="button" data-pin-signal-preview data-signal-id="{escape(signal.signal_id)}" data-compare-slot="b" data-timeframe="1D">{escape(copy["pin_b"])}</button>'
-        f'<a class="rail-open-link" href="/workspace?root={escape(signal.root)}&signal_id={escape(signal.signal_id)}">{escape(copy["focus"])}</a>'
-        f'<a class="rail-open-link" href="/workspace/signals/{escape(signal.signal_id)}">{escape(copy["open"])}</a>'
-        "</div>"
-        "</div>"
-        "</article>"
-    )
-
-
-def _render_action_item(item: WorkspaceActionItem) -> str:
-    return (
-        f'<article class="action-card tone-{escape(item.tone)}">'
-        f"<strong>{escape(item.title)}</strong>"
-        f'<p class="muted">{escape(item.detail)}</p>'
-        "</article>"
-    )
-
-
-def _render_journal_entry(entry) -> str:
-    return (
-        '<article class="journal-entry">'
-        f"<strong>{escape(entry.title)}</strong>"
-        f"<small>{escape(entry.kind.value)} | {escape(entry.author)} | {escape(_format_timestamp(entry.created_at))}</small>"
-        f'<p class="muted">{escape(entry.note)}</p>'
-        "</article>"
-    )
-
-
-def _render_related_signal(signal) -> str:
-    return (
-        f'<a class="related-card" href="/workspace/signals/{escape(signal.signal_id)}">'
-        f"<strong>{escape(signal.root)} | {escape(signal.contract)} | {escape(signal.horizon.value)}</strong>"
-        f'<p class="muted">{escape(signal.summary)}</p>'
-        f'<p class="muted">confidence {signal.confidence_final:.2f} | skeptic {signal.skeptic_score:.2f} | {escape(signal.direction_final.value)} | workflow {_workflow_state_label(signal.workflow_state)}</p>'
-        "</a>"
-    )
-
-
-def _render_journal_decision_log_item(item) -> str:
-    signal = item.signal
-    latest_entry = item.latest_entry
-    why_now = "".join(f"<li>{escape(point)}</li>" for point in item.why_now)
-    next_watch = "".join(f"<li>{escape(point)}</li>" for point in item.next_watch)
-    latest_note = (
-        f'Latest note: {escape(latest_entry.title)} | {escape(latest_entry.author)} | {escape(_format_timestamp(latest_entry.created_at))}'
-        if latest_entry is not None
-        else f'Latest note: none yet | updated {escape(_format_timestamp(item.updated_at))}'
-    )
-    return (
-        '<article class="decision-card">'
-        '<div class="decision-head">'
-        f'<div><strong>{escape(signal.root)} | {escape(signal.contract)} | {escape(signal.horizon.value)}</strong><p class="muted">{escape(signal.summary)}</p></div>'
-        '<div class="decision-head-actions">'
-        f'<span class="badge">{escape(signal.direction_final.value)} | {escape(signal.status.value)}</span>'
-        f"{_render_workflow_chip(signal)}"
-        "</div>"
-        "</div>"
-        '<div class="decision-grid">'
-        f'<article><span>Decision</span><p>{escape(item.decision_summary)}</p></article>'
-        f'<article><span>Why this is the current call</span><ul>{why_now}</ul></article>'
-        f'<article><span>What should change next</span><ul>{next_watch}</ul></article>'
-        "</div>"
-        f'<p class="muted" style="margin-top:12px;">{latest_note}</p>'
-        '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;">'
-        f'<a class="button" href="/workspace/signals/{escape(signal.signal_id)}">Open signal page</a>'
-        f'<a class="button" href="/workspace?root={escape(signal.root)}&signal_id={escape(signal.signal_id)}">Open in workspace</a>'
-        "</div>"
-        "</article>"
-    )
-
-
-def _render_journal_workspace_entry(item) -> str:
-    signal = item.signal
-    entry = item.entry
-    return (
-        '<article class="entry-card">'
-        '<div class="entry-meta">'
-        f'<div><strong>{escape(entry.title)}</strong><p class="muted">{escape(signal.root)} | {escape(signal.contract)} | {escape(signal.horizon.value)}</p></div>'
-        f'<span class="badge">{escape(entry.kind.value)} | {escape(signal.status.value)}</span>'
-        "</div>"
-        f'<p class="muted">{escape(entry.note)}</p>'
-        f'<p class="muted">author {escape(entry.author)} | created {escape(_format_timestamp(entry.created_at))}</p>'
-        '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;">'
-        f'<a class="button" href="/workspace/signals/{escape(signal.signal_id)}">Open signal page</a>'
-        f'<a class="button" href="/workspace?root={escape(signal.root)}&signal_id={escape(signal.signal_id)}">Open in workspace</a>'
-        "</div>"
-        "</article>"
-    )
-
-
-def _render_metric_bars(items, *, compact: bool) -> str:
-    if not items:
-        return '<p class="empty">No chart data available yet.</p>'
-    rendered = []
-    for item in items:
-        ratio = 0.0
-        if item.max_value > 0:
-            ratio = max(0.0, min(float(item.value) / float(item.max_value), 1.0))
-        detail = f'<p class="muted">{escape(item.detail)}</p>' if item.detail and not compact else ""
-        rendered.append(
-            '<article class="metric-bar">'
-            '<div class="metric-bar-head">'
-            f"<strong>{escape(item.label)}</strong>"
-            f"<span>{item.value:.2f}</span>"
-            "</div>"
-            '<div class="metric-bar-track">'
-            f'<div class="metric-bar-fill tone-{escape(item.tone)}" style="width:{ratio * 100:.0f}%"></div>'
-            "</div>"
-            f"{detail}"
-            "</article>"
-        )
-    return "".join(rendered)
-
-
-def _render_timeline(items, *, compact: bool) -> str:
-    if not items:
-        return '<p class="empty">No lifecycle events recorded yet.</p>'
-    limit = 4 if compact else len(items)
-    rendered = []
-    for item in items[-limit:]:
-        rendered.append(
-            f'<article class="timeline-item tone-{escape(item.tone)}">'
-            f"<strong>{escape(item.title)}</strong>"
-            f'<p class="muted">{escape(_format_timestamp(item.at))} | {escape(item.kind)}</p>'
-            f'<p class="muted">{escape(item.detail)}</p>'
-            "</article>"
-        )
-    return "".join(rendered)
-
-
-def _render_horizon_pulse(items) -> str:
-    if not items:
-        return '<p class="empty">No horizon pulse data available yet.</p>'
-    rendered = []
-    for item in items:
-        rendered.append(
-            f'<article class="horizon-card tone-{escape(item.tone)}">'
-            f"<strong>{escape(item.horizon)}</strong>"
-            f'<p class="muted">signal probability {item.signal_probability:.2f}</p>'
-            f'<p class="muted">return score {item.return_score:.2f}</p>'
-            f'<p class="muted">volatility {item.realized_volatility:.2f} | trend {item.trend_slope:.2f}</p>'
-            "</article>"
-        )
-    return "".join(rendered)
-
-
-def _render_delivery_windows(items) -> str:
-    if not items:
-        return '<p class="empty">No delivery windows configured yet.</p>'
-    rendered = []
-    for item in items:
-        next_run = escape(_format_timestamp(item.next_run_at)) if item.next_run_at is not None else "not scheduled"
-        last_status = escape(item.last_run_status or "never")
-        detail = escape(item.last_run_detail or item.quiet_hours_policy)
-        skip_label = "Mute next digest" if item.event_kind == NotificationEventKind.DIGEST else "Skip next brief"
-        skip_button = (
-            f'<button class="button delivery-undo-skip" type="button" data-event-kind="{escape(item.event_kind.value)}">Undo skip</button>'
-            if item.skip_next_pending
-            else f'<button class="button delivery-skip-next" type="button" data-event-kind="{escape(item.event_kind.value)}">{escape(skip_label)}</button>'
-        )
-        rendered.append(
-            f'<article class="delivery-card tone-{"positive" if item.subscription_enabled else "warning"}">'
-            f"<strong>{escape(item.event_kind.value)}</strong>"
-            f'<p class="muted">{escape(item.label)}</p>'
-            f'<p class="muted">root {escape(item.root_scope)} | next {next_run}</p>'
-            f'<p class="muted">subscription {"on" if item.subscription_enabled else "off"} | {escape(item.quiet_hours_policy)}</p>'
-            f'<p class="muted">skip next {"pending" if item.skip_next_pending else "off"}</p>'
-            f'<p class="muted">last run {last_status} | {detail}</p>'
-            '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">'
-            f'<button class="button delivery-send-now" type="button" data-event-kind="{escape(item.event_kind.value)}">Send now</button>'
-            f'<button class="button delivery-send-now-force" type="button" data-event-kind="{escape(item.event_kind.value)}">Send now ignoring quiet hours</button>'
-            f"{skip_button}"
-            "</div>"
-            "</article>"
-        )
-    return "".join(rendered)
-
-
-def _render_delivery_activity(items) -> str:
-    if not items:
-        return '<p class="empty">No delivery actions recorded yet.</p>'
-    rendered = []
-    for item in items:
-        title = {
-            NotificationDeliveryActivityAction.SEND_NOW: "Manual send",
-            NotificationDeliveryActivityAction.SEND_NOW_FORCE: "Manual send with quiet-hours override",
-            NotificationDeliveryActivityAction.SCHEDULE_DELIVERY: "Scheduled delivery",
-            NotificationDeliveryActivityAction.SKIP_NEXT: "Skip next",
-            NotificationDeliveryActivityAction.UNDO_SKIP: "Undo skip",
-        }.get(item.action, item.action.value)
-        signal_info = (
-            f"signals {len(item.signal_ids)}"
-            if item.signal_ids
-            else "no signal ids"
-        )
-        source = escape(item.delivery_source or "manual")
-        root_scope = escape(item.root_scope or "profile default")
-        rendered.append(
-            f'<article class="delivery-card tone-{"positive" if item.status == "sent" else "warning"}">'
-            f"<strong>{escape(title)}</strong>"
-            f'<p class="muted">{escape(item.event_kind.value)} | {escape(_format_timestamp(item.created_at))}</p>'
-            f'<p class="muted">root {root_scope} | source {source} | status {escape(item.status)}</p>'
-            f'<p class="muted">{escape(item.detail)}</p>'
-            f'<p class="muted">{escape(signal_info)}'
-            f'{" | provider message " + escape(item.provider_message_id) if item.provider_message_id else ""}</p>'
-            "</article>"
-        )
-    return "".join(rendered)
-
-
-def _delivery_activity_filter_href(
-    base_path: str,
-    *,
-    root: str | None = None,
-    signal_id: str | None = None,
-    activity_root_scope: str | None = None,
-    activity_event_kind: NotificationEventKind | None = None,
-    activity_status: str | None = None,
-) -> str:
-    params: dict[str, str] = {}
-    if root is not None:
-        params["root"] = root
-    if signal_id is not None:
-        params["signal_id"] = signal_id
-    if activity_root_scope is not None:
-        params["activity_root_scope"] = activity_root_scope
-    if activity_event_kind is not None:
-        params["activity_event_kind"] = activity_event_kind.value
-    if activity_status is not None:
-        params["activity_status"] = activity_status
-    if not params:
-        return base_path
-    return f"{base_path}?{urlencode(params)}"
-
-
-def _render_delivery_activity_controls(
-    *,
-    base_path: str,
-    filters: NotificationDeliveryActivityFilters,
-    by_event_kind: list[NotificationDeliveryActivityGroup],
-    by_root_scope: list[NotificationDeliveryActivityGroup],
-    by_status: list[NotificationDeliveryActivityGroup],
-    root: str | None = None,
-    signal_id: str | None = None,
-) -> str:
-    clear_href = _delivery_activity_filter_href(base_path, root=root, signal_id=signal_id)
-    event_links = [
-        (
-            '<a class="filter-chip'
-            f'{" is-active" if filters.event_kind is None else ""}" '
-            f'href="{escape(clear_href)}">All events</a>'
-        )
-    ]
-    for item in by_event_kind:
-        href = _delivery_activity_filter_href(
-            base_path,
-            root=root,
-            signal_id=signal_id,
-            activity_root_scope=filters.root_scope,
-            activity_event_kind=NotificationEventKind(item.value),
-            activity_status=filters.status,
-        )
-        event_links.append(
-            '<a class="filter-chip'
-            f'{" is-active" if filters.event_kind is not None and filters.event_kind.value == item.value else ""}" '
-            f'href="{escape(href)}">{escape(item.label)} ({item.count})</a>'
-        )
-    root_links: list[str] = []
-    if len(by_root_scope) > 1:
-        root_links.append(
-            '<a class="filter-chip'
-            f'{" is-active" if filters.root_scope is None else ""}" '
-            f'href="{escape(_delivery_activity_filter_href(base_path, root=root, signal_id=signal_id, activity_event_kind=filters.event_kind, activity_status=filters.status))}">All roots</a>'
-        )
-        for item in by_root_scope:
-            href = _delivery_activity_filter_href(
-                base_path,
-                root=root,
-                signal_id=signal_id,
-                activity_root_scope=item.value,
-                activity_event_kind=filters.event_kind,
-                activity_status=filters.status,
-            )
-            root_links.append(
-                '<a class="filter-chip'
-                f'{" is-active" if filters.root_scope == item.value else ""}" '
-                f'href="{escape(href)}">{escape(item.label)} ({item.count})</a>'
-            )
-    status_links = [
-        (
-            '<a class="filter-chip'
-            f'{" is-active" if filters.status is None else ""}" '
-            f'href="{escape(_delivery_activity_filter_href(base_path, root=root, signal_id=signal_id, activity_root_scope=filters.root_scope, activity_event_kind=filters.event_kind))}">All statuses</a>'
-        )
-    ]
-    for item in by_status:
-        href = _delivery_activity_filter_href(
-            base_path,
-            root=root,
-            signal_id=signal_id,
-            activity_root_scope=filters.root_scope,
-            activity_event_kind=filters.event_kind,
-            activity_status=item.value,
-        )
-        status_links.append(
-            '<a class="filter-chip'
-            f'{" is-active" if filters.status == item.value else ""}" '
-            f'href="{escape(href)}">{escape(item.label)} ({item.count})</a>'
-        )
-    summary_cards = []
-    for group_title, groups in (
-        ("By event", by_event_kind),
-        ("By root", by_root_scope),
-        ("By status", by_status),
-    ):
-        if not groups:
-            continue
-        summary_cards.append(
-            '<article class="summary-card">'
-            f"<strong>{escape(group_title)}</strong>"
-            f'<span>{escape(", ".join(f"{item.label} {item.count}" for item in groups[:4]))}</span>'
-            "</article>"
-        )
-    blocks = [
-        '<div class="filter-stack">',
-        '<div><strong>Event kind</strong><div class="filter-row">' + "".join(event_links) + "</div></div>",
-    ]
-    if root_links:
-        blocks.append('<div><strong>Root scope</strong><div class="filter-row">' + "".join(root_links) + "</div></div>")
-    blocks.append('<div><strong>Status</strong><div class="filter-row">' + "".join(status_links) + "</div></div>")
-    blocks.append('<div class="stack" style="margin-top:8px;">' + "".join(summary_cards) + "</div>")
-    blocks.append("</div>")
-    return "".join(blocks)
-
-
-def _render_delivery_activity_footer(
-    *,
-    base_path: str,
-    export_path: str,
-    filters: NotificationDeliveryActivityFilters,
-    pagination: NotificationDeliveryActivityPagination,
-    root: str | None = None,
-    signal_id: str | None = None,
-) -> str:
-    links: list[str] = []
-    if pagination.has_previous:
-        prev_href = _delivery_activity_filter_href(
-            base_path,
-            root=root,
-            signal_id=signal_id,
-            activity_root_scope=filters.root_scope,
-            activity_event_kind=filters.event_kind,
-            activity_status=filters.status,
-        )
-        sep = "&" if "?" in prev_href else "?"
-        links.append(f'<a class="filter-chip" href="{escape(prev_href)}{sep}activity_page={pagination.page - 1}&activity_page_size={pagination.page_size}">Previous</a>')
-    if pagination.has_next:
-        next_href = _delivery_activity_filter_href(
-            base_path,
-            root=root,
-            signal_id=signal_id,
-            activity_root_scope=filters.root_scope,
-            activity_event_kind=filters.event_kind,
-            activity_status=filters.status,
-        )
-        sep = "&" if "?" in next_href else "?"
-        links.append(f'<a class="filter-chip" href="{escape(next_href)}{sep}activity_page={pagination.page + 1}&activity_page_size={pagination.page_size}">Next</a>')
-    export_base = _delivery_activity_filter_href(
-        export_path,
-        root=root,
-        signal_id=signal_id,
-        activity_root_scope=filters.root_scope,
-        activity_event_kind=filters.event_kind,
-        activity_status=filters.status,
-    )
-    export_csv = f'{escape(export_base)}{"&" if "?" in export_base else "?"}export_format=csv'
-    export_jsonl = f'{escape(export_base)}{"&" if "?" in export_base else "?"}export_format=jsonl'
-    meta = (
-        f'<p class="muted">Page {pagination.page} of {pagination.total_pages} | '
-        f'{pagination.total_items} total events | page size {pagination.page_size}</p>'
-    )
-    return (
-        '<div class="filter-stack" style="margin-top:14px;">'
-        f"{meta}"
-        '<div class="filter-row">'
-        + "".join(links)
-        + f'<a class="filter-chip" href="{export_csv}">Export CSV</a>'
-        + f'<a class="filter-chip" href="{export_jsonl}">Export JSONL</a>'
-        + "</div></div>"
-    )
-
-
-def _journal_filter_href(
-    *,
-    root: str | None = None,
-    status: SignalStatus | None = None,
-    kind: JournalEntryKind | None = None,
-) -> str:
-    params: dict[str, str] = {}
-    if root is not None:
-        params["root"] = root
-    if status is not None:
-        params["status"] = status.value
-    if kind is not None:
-        params["kind"] = kind.value
-    if not params:
-        return "/workspace/journal"
-    return f"/workspace/journal?{urlencode(params)}"
-
-
-def _with_optional_root(path: str, *, root: str | None = None) -> str:
-    if not root:
-        return path
-    return f"{path}?{urlencode({'root': root})}"
-
-
-def _sidebar_selected_root(roots, root: str | None):
-    if roots:
-        if root:
-            match = next((item for item in roots if item.root_code == root), None)
-            if match is not None:
-                return match
-        return roots[0]
-    return None
-
-
-def _render_page_sidebar_styles(max_width: str) -> str:
-    return f"""
-    .page-shell {{
-      width: min({max_width}, calc(100% - 28px));
-      margin: 20px auto 36px;
-      display: grid;
-      grid-template-columns: 248px minmax(0, 1fr);
-      gap: 16px;
-      align-items: start;
-    }}
-    .shell {{
-      width: 100%;
-      margin: 0;
-    }}
-    .page-sidebar {{
-      position: sticky;
-      top: 18px;
-      align-self: start;
-    }}
-    .sidebar-card {{
-      background: var(--paper, var(--panel));
-      border: 1px solid var(--line);
-      border-radius: 28px;
-      box-shadow: var(--shadow);
-      padding: 18px;
-      display: grid;
-      gap: 12px;
-      backdrop-filter: blur(14px);
-    }}
-    .sidebar-kicker {{
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 12px;
-      border-radius: 999px;
-      background: rgba(23, 56, 79, 0.08);
-      color: var(--navy, var(--teal));
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      font-size: 12px;
-    }}
-    .sidebar-title {{
-      margin: 0;
-      font-family: Georgia, "Palatino Linotype", serif;
-      font-size: 22px;
-    }}
-    .sidebar-nav {{
-      display: grid;
-      gap: 8px;
-    }}
-    .sidebar-link {{
-      display: block;
-      padding: 12px 14px;
-      border-radius: 16px;
-      border: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.68);
-      font-weight: 700;
-    }}
-    .sidebar-link.is-active {{
-      background: rgba(17, 104, 102, 0.12);
-      color: var(--teal);
-      border-color: rgba(17, 104, 102, 0.28);
-    }}
-    .sidebar-meta {{
-      padding: 14px 16px;
-      border-radius: 18px;
-      border: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.62);
-    }}
-    .sidebar-switch {{
-      padding: 14px 16px;
-      border-radius: 18px;
-      border: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.62);
-      display: grid;
-      gap: 10px;
-    }}
-    .sidebar-switch select {{
-      width: 100%;
-      padding: 12px 14px;
-      border-radius: 14px;
-      border: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.84);
-      color: var(--ink);
-      font: inherit;
-    }}
-    .sidebar-meta label {{
-      display: block;
-      margin-bottom: 6px;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      font-size: 11px;
-    }}
-    .sidebar-switch label {{
-      display: block;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      font-size: 11px;
-    }}
-    .sidebar-meta strong {{
-      font-size: 18px;
-    }}
-    .sidebar-meta small {{
-      display: block;
-      margin-top: 6px;
-      color: var(--muted);
-      line-height: 1.45;
-    }}
-    @media (max-width: 1040px) {{
-      .page-shell {{
-        grid-template-columns: 1fr;
-        width: min(100% - 16px, {max_width});
-      }}
-      .page-sidebar {{
-        position: static;
-      }}
-      .sidebar-nav {{
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      }}
-    }}
-"""
-
-
-def _render_page_sidebar(
-    page_key: str,
-    *,
-    root: str | None = None,
-    roots=None,
-    signal_id: str | None = None,
-) -> str:
-    items = [
-        ("workspace", "Workspace", _with_optional_root("/workspace", root=root)),
-        ("dashboard", "Operations", _with_optional_root("/dashboard", root=root)),
-        ("council", "Decision flow", _with_optional_root("/workspace/council", root=root)),
-        ("runtime", "Runtime control", _with_optional_root("/workspace/runtime", root=root)),
-        ("journal", "Journal", _with_optional_root("/workspace/journal", root=root)),
-        ("preferences", "Preferences", _with_optional_root("/workspace/preferences", root=root)),
-        ("delivery-history", "Delivery history", _with_optional_root("/workspace/delivery-history", root=root)),
-    ]
-    if signal_id:
-        items.append(("signal", "Signal detail", f"/workspace/signals/{escape(signal_id)}"))
-
-    links = "".join(
-        f'<a class="sidebar-link{" is-active" if key == page_key else ""}" href="{href}" data-swap-link>{label}</a>'
-        for key, label, href in items
-    )
-    selected_root = _sidebar_selected_root(roots or [], root)
-    current_root = selected_root.root_code if selected_root is not None else (root or "auto")
-    switch_markup = ""
-    if roots:
-        fallback_attr = ' data-fallback-path="/workspace"' if page_key == "signal" else ""
-        options = "".join(
-            (
-                f'<option value="{escape(item.root_code)}"'
-                f'{" selected" if item.root_code == current_root else ""}>'
-                f"{escape(item.root_code)} · {escape(item.active_contract)} · {escape(item.base_asset)}"
-                "</option>"
-            )
-            for item in roots
-        )
-        switch_markup = (
-            '<div class="sidebar-switch">'
-            '<label for="sidebar-root-switch">Switch instrument</label>'
-            f'<select id="sidebar-root-switch" data-root-switch data-page-key="{escape(page_key)}"{fallback_attr}>'
-            f"{options}"
-            "</select>"
-            "</div>"
-        )
-    meta_detail = ""
-    if selected_root is not None:
-        meta_detail = f'<small>{escape(selected_root.active_contract)} · {escape(selected_root.base_asset)}</small>'
-    return (
-        '<aside class="page-sidebar">'
-        '<div class="sidebar-card">'
-        '<span class="sidebar-kicker">Navigation</span>'
-        '<h2 class="sidebar-title">Move around the workspace</h2>'
-        '<p class="muted">Jump between the main pages for the current root and signal.</p>'
-        f'<div class="sidebar-nav">{links}</div>'
-        f"{switch_markup}"
-        f'<div class="sidebar-meta"><label>Current instrument</label><strong>{escape(current_root)}</strong>{meta_detail}</div>'
-        "</div>"
-        "</aside>"
-    )
-
-
-def _render_signal_card(signal) -> str:
-    return (
-        '<article class="signal-card">'
-        '<div class="signal-top">'
-        f'<div><strong>{escape(signal.root)} · {escape(signal.contract)}</strong><div class="signal-summary">{escape(signal.summary)}</div></div>'
-        f'<span class="badge">{escape(signal.direction_final.value)} · {escape(signal.horizon.value)}</span>'
-        "</div>"
-        '<div class="signal-meta">'
-        f"<small>confidence {signal.confidence_final:.2f}</small>"
-        f"<small>skeptic {signal.skeptic_score:.2f}</small>"
-        f"<small>priority {signal.priority_score}</small>"
-        f"<small>workflow {_workflow_state_label(signal.workflow_state)}</small>"
-        "</div>"
-        "</article>"
-    )
-
-
-def _render_signal_row(signal) -> str:
-    return (
-        '<article class="signal-row">'
-        f"<strong>{escape(signal.root)} · {escape(signal.horizon.value)} · {escape(signal.direction_final.value)}</strong>"
-        f"<small>{escape(signal.summary)} | workflow {_workflow_state_label(signal.workflow_state)}</small>"
-        "</article>"
-    )
-
-
-def _control_panel_data_mode_tone(mode: str) -> str:
-    if mode == "live":
-        return "tone-positive"
-    if mode == "snapshot":
-        return "tone-warning"
-    return "tone-negative"
-
-
-def _control_panel_data_mode_label(mode: str) -> str:
-    labels = {
-        "live": "Live",
-        "snapshot": "Snapshot",
-        "degraded_feed": "Degraded feed",
-    }
-    return labels.get(mode, mode.replace("_", " ").title())
-
-
-def _control_panel_reference_sync_tone(status: str) -> str:
-    if status == "fresh":
-        return "tone-positive"
-    if status == "stale":
-        return "tone-warning"
-    return "tone-negative"
-
-
-def _control_panel_reference_sync_label(status: str) -> str:
-    labels = {
-        "fresh": "Fresh",
-        "stale": "Stale",
-        "fallback": "Fallback",
-    }
-    return labels.get(status, status.replace("_", " ").title())
-
-
-def _control_panel_reference_sync_source(source: str) -> str:
-    labels = {
-        "moex_iss": "MOEX ISS",
-        "bundled_fallback": "Bundled fallback",
-    }
-    return labels.get(source, source.replace("_", " ").title())
-
-
-def _primary_market_feed(panel):
-    primary = next((item for item in panel.market_data_feeds if item.primary), None)
-    if primary is not None:
-        return primary
-    return panel.market_data_feeds[0] if panel.market_data_feeds else None
-
-
-def _render_market_data_context(panel) -> str:
-    primary_feed = _primary_market_feed(panel)
-    if primary_feed is None:
-        return (
-            '<article><span>Price Source</span><strong>n/a</strong>'
-            '<p class="muted">No market-data feed is attached yet.</p></article>'
-        )
-
-    data_mode_label = _control_panel_data_mode_label(panel.data_mode)
-    updated_at = _format_timestamp(primary_feed.last_update_at)
-    return (
-        f'<article><span>Price Source</span><strong>{escape(primary_feed.owner)}</strong>'
-        f'<p class="muted">{escape(data_mode_label)} | Updated {escape(updated_at)}</p></article>'
-    )
-
-
-def _render_control_panel(panel) -> str:
-    latest_market_data = _format_timestamp(panel.latest_market_data_at)
-    data_mode_label = _control_panel_data_mode_label(panel.data_mode)
-    data_mode_tone = _control_panel_data_mode_tone(panel.data_mode)
-    data_mode_detail = escape(panel.data_mode_detail or "No detail available.")
-    reference_sync_label = _control_panel_reference_sync_label(panel.reference_sync.status)
-    reference_sync_source = _control_panel_reference_sync_source(panel.reference_sync.source)
-    reference_sync_tone = _control_panel_reference_sync_tone(panel.reference_sync.status)
-    reference_sync_detail = escape(panel.reference_sync.detail or "No detail available.")
-    latest_reference_sync = _format_timestamp(panel.reference_sync.last_sync_at)
-    role_cards = "".join(
-        (
-            "<article>"
-            f"<strong>{escape(item.role_label)}</strong>"
-            f"<p>{escape(item.product)} &middot; {escape(item.model)} &middot; {escape(item.owner)}</p>"
-            f'<p class="muted">{escape(item.detail or item.control_mode)}</p>'
-            "</article>"
-        )
-        for item in panel.model_roles
-    ) or '<p class="empty">No model roles configured yet.</p>'
-    feed_cards = "".join(
-        (
-            "<article>"
-            f"<strong>{escape(item.provider)} &middot; {escape(item.owner)}</strong>"
-            f"<p>{escape(item.role)} &middot; {escape(item.status)} &middot; last {escape(_format_timestamp(item.last_update_at))}</p>"
-            f'<p class="muted">{escape(item.detail or "No detail available.")}</p>'
-            "</article>"
-        )
-        for item in panel.market_data_feeds
-    ) or '<p class="empty">No market-data feeds are attached to this root yet.</p>'
-    return (
-        '<div class="control-summary-grid">'
-        f'<article class="control-summary-card"><label>LLM runtime</label><strong>{escape(panel.llm_product)} &middot; {escape(panel.llm_model)}</strong></article>'
-        f'<article class="control-summary-card"><label>LLM owner</label><strong>{escape(panel.llm_owner)}</strong></article>'
-        f'<article class="control-summary-card is-wide {data_mode_tone}"><label>Data mode</label><strong>{escape(data_mode_label)}</strong><small>{data_mode_detail}</small></article>'
-        f'<article class="control-summary-card"><label>Latest market data</label><strong>{escape(latest_market_data)}</strong></article>'
-        f'<article class="control-summary-card is-wide {reference_sync_tone}"><label>Reference sync</label><strong>{escape(reference_sync_label)} &middot; {escape(reference_sync_source)}</strong><small>{escape(panel.reference_sync.owner)} | {reference_sync_detail}</small></article>'
-        f'<article class="control-summary-card"><label>Latest reference sync</label><strong>{escape(latest_reference_sync)}</strong></article>'
-        "</div>"
-        '<div class="panel-head" style="margin-top:18px;"><h3>Role routing</h3></div>'
-        f'<div class="metric-list">{role_cards}</div>'
-        '<div class="panel-head" style="margin-top:18px;"><h3>Market-data feeds</h3></div>'
-        f'<div class="metric-list">{feed_cards}</div>'
-    )
-
-
-def _render_quality_pair(pair: DashboardQualityPair) -> str:
-    latest_contract = pair.latest_contract or "n/a"
-    mismatch = _format_optional(pair.mismatch_rate_overlap)
-    return (
-        "<article>"
-        f"<strong>{escape(pair.provider_a)} vs {escape(pair.provider_b)}</strong>"
-        f"<p>contracts {pair.contracts_count} · latest {escape(latest_contract)} · mismatch {escape(mismatch)}</p>"
-        "</article>"
-    )
-
-
-def _market_status_tone(status: str) -> str:
-    normalized = status.lower()
-    if normalized in {"fresh", "live", "ok"}:
-        return "positive"
-    if normalized in {"aging", "snapshot", "stale", "warning"}:
-        return "warning"
-    return "negative"
-
-
-def _market_status_label(status: str, *, language: str) -> str:
-    labels = {
-        "fresh": "Свежие" if language == "ru" else "Fresh",
-        "live": "Live",
-        "ok": "OK",
-        "aging": "Стареют" if language == "ru" else "Aging",
-        "snapshot": "Снимок" if language == "ru" else "Snapshot",
-        "stale": "Несвежие" if language == "ru" else "Stale",
-        "warning": "Предупреждение" if language == "ru" else "Warning",
-        "degraded": "Деградация" if language == "ru" else "Degraded",
-    }
-    return labels.get(status.lower(), status)
-
-
-def _format_price_value(value: float | None) -> str:
-    if value is None:
-        return "n/a"
-    if abs(value) >= 1000:
-        return f"{value:,.2f}".replace(",", " ")
-    return f"{value:.2f}"
-
-
-def _format_signed_value(value: float | None) -> str:
-    if value is None:
-        return "n/a"
-    return f"{value:+.2f}"
-
-
-def _format_signed_pct(value: float | None) -> str:
-    if value is None:
-        return "n/a"
-    return f"{value:+.2%}"
-
-
-def _format_optional(value: float | None) -> str:
-    if value is None:
-        return "n/a"
-    return f"{value:.4f}"
-
-
-def _format_timestamp(value: datetime | None) -> str:
-    if value is None:
-        return "n/a"
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=UTC)
-    return value.astimezone(MOSCOW_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S MSK")
-
-
-def _format_calendar_date(value: date | None, *, language: str) -> str:
-    if value is None:
-        return "n/a"
-    if language == "ru":
-        return value.strftime("%d.%m.%Y")
-    return value.isoformat()
-
-
-def _format_expiry_countdown(days_to_expiry: int, expiry_date: date | None, *, language: str) -> str:
-    if expiry_date is None:
-        return str(days_to_expiry)
-    formatted_date = _format_calendar_date(expiry_date, language=language)
-    if language == "ru":
-        return f"{days_to_expiry} · до {formatted_date}"
-    return f"{days_to_expiry} · until {formatted_date}"

@@ -111,6 +111,10 @@ class WatchlistEntry(BaseModel):
     root_code: str
     signal_id: str | None = None
     note: str | None = None
+    priority_rank: int = 0
+    focus_reason: str | None = None
+    last_reviewed_at: datetime | None = None
+    review_state: str = "review_due"
     added_at: datetime
     updated_at: datetime
     signal: FinalSignalCard | None = None
@@ -187,10 +191,17 @@ class HorizonComparisonSnapshot(BaseModel):
 
 
 class ReviewBundle(BaseModel):
+    watchlist_items: int = 0
     watched_roots: int = 0
+    watched_root_codes: list[str] = Field(default_factory=list)
+    review_due_items: int = 0
+    reviewed_today_items: int = 0
     decisions_logged: int = 0
     ignored_signals: int = 0
     resolved_signals: int = 0
+    outcome_summary: list[str] = Field(default_factory=list)
+    tag_suggestions: list[str] = Field(default_factory=list)
+    next_review_actions: list[str] = Field(default_factory=list)
     highlights: list[str] = Field(default_factory=list)
 
 
@@ -512,6 +523,13 @@ class JournalDecisionLogItem(BaseModel):
     next_watch: list[str] = Field(default_factory=list)
 
 
+class JournalTagSummary(BaseModel):
+    tag: str
+    count: int
+    roots: list[str] = Field(default_factory=list)
+    kinds: list[str] = Field(default_factory=list)
+
+
 class JournalWorkspaceSnapshot(BaseModel):
     generated_at: datetime
     roots: list[RootSeriesSummary] = Field(default_factory=list)
@@ -519,6 +537,7 @@ class JournalWorkspaceSnapshot(BaseModel):
     selected_status: SignalStatus | None = None
     selected_kind: JournalEntryKind | None = None
     selected_signal_id: str | None = None
+    selected_tag: str | None = None
     decision_log: list[JournalDecisionLogItem] = Field(default_factory=list)
     entries: list[JournalWorkspaceEntry] = Field(default_factory=list)
     related_signals: list[FinalSignalCard] = Field(default_factory=list)
@@ -528,6 +547,7 @@ class JournalWorkspaceSnapshot(BaseModel):
     post_mortems: int = 0
     note_templates: list[dict[str, str]] = Field(default_factory=list)
     tag_suggestions: list[str] = Field(default_factory=list)
+    tag_counts: list[JournalTagSummary] = Field(default_factory=list)
 
 
 class DeliveryHistoryWorkspaceSnapshot(BaseModel):

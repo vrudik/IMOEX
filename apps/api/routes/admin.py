@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from libs.bootstrap.container import get_app_container
 from libs.domain.contracts import (
@@ -19,8 +19,9 @@ from libs.domain.contracts import (
     AdminReplayResult,
 )
 from libs.reference.service import get_moex_reference_service
+from libs.security.admin import require_admin_api_key
 
-router = APIRouter(tags=["admin"])
+router = APIRouter(tags=["admin"], dependencies=[Depends(require_admin_api_key)])
 
 
 @router.get("/admin/health", response_model=AdminHealthSnapshot)
