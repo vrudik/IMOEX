@@ -205,6 +205,26 @@ class ReviewBundle(BaseModel):
     highlights: list[str] = Field(default_factory=list)
 
 
+class AttentionInboxItem(BaseModel):
+    item_key: str
+    item_type: str = "signal"
+    root_code: str
+    signal_id: str | None = None
+    title: str
+    reason: str
+    what_changed: str
+    next_step: str
+    tone: str = "neutral"
+    priority_score: int = 0
+    attention_score: float = 0.0
+    workflow_state: SignalWorkflowState | None = None
+    current_price: float | None = None
+    price_unit: str | None = None
+    market_status: str = "unknown"
+    market_status_detail: str | None = None
+    href: str
+
+
 class RuntimeFreshnessPolicySnapshot(BaseModel):
     fresh_max_seconds: int = 30
     aging_max_seconds: int = 180
@@ -467,6 +487,7 @@ class WorkspaceSnapshot(BaseModel):
     system_confidence: SystemConfidencePanel
     workspace_mode: str = "scan"
     watchlist: list[WatchlistEntry] = Field(default_factory=list)
+    attention_inbox: list[AttentionInboxItem] = Field(default_factory=list)
     comparison: HorizonComparisonSnapshot | None = None
     action_items: list[WorkspaceActionItem] = Field(default_factory=list)
     delivery_windows: list[NotificationDeliveryWindow] = Field(default_factory=list)

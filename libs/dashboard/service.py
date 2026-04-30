@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from libs.adapters.contracts import Bar
 from libs.dashboard.contracts import (
+    AttentionInboxItem,
     DashboardKpi,
     MarketDataFeedStatus,
     ModelRoleAssignment,
@@ -187,18 +188,28 @@ class DashboardService:
             generated_at=generated_at,
             signal=focus_signal,
         )
+        pulses = self._build_pulses(
+            roots=roots,
+            active_signals=all_active,
+            selected_root=selected_root,
+            generated_at=generated_at,
+        )
+        attention_inbox = self._build_attention_inbox(
+            active_signals=all_active or signal_lane,
+            selected_root=selected_root,
+            selected_signal_id=selected_signal_id,
+            watchlist=watchlist,
+            pulses=pulses,
+            market_snapshot=market_snapshot,
+            focus_signal_diff=focus_signal_diff,
+        )
 
         return WorkspaceSnapshot(
             generated_at=generated_at,
             selected_root=selected_root,
             selected_signal_id=selected_signal_id,
             roots=roots,
-            pulses=self._build_pulses(
-                roots=roots,
-                active_signals=all_active,
-                selected_root=selected_root,
-                generated_at=generated_at,
-            ),
+            pulses=pulses,
             market_snapshot=market_snapshot,
             signal_lane=signal_lane,
             focus_signal=focus_signal,
@@ -211,6 +222,7 @@ class DashboardService:
             system_confidence=system_confidence,
             workspace_mode=workspace_mode,
             watchlist=watchlist,
+            attention_inbox=attention_inbox,
             comparison=comparison,
             action_items=self._build_workspace_actions(
                 focus_signal=focus_signal,
@@ -772,6 +784,215 @@ class DashboardService:
         if watchlist:
             return "scan"
         return "scan"
+
+    def _build_attention_inbox(
+        self,
+        *,
+        active_signals: list[FinalSignalCard],
+        selected_root: str,
+        selected_signal_id: str | None,
+        watchlist: list[WatchlistEntry],
+        pulses: list[WorkspaceRootPulse],
+        market_snapshot: InstrumentMarketSnapshot | None,
+        focus_signal_diff: SignalChangeSummary | None,
+    ) -> list[AttentionInboxItem]:
+        watched_signal_ids = {item.signal_id for item in watchlist if item.signal_id}
+        watched_root_codes = {item.root_code.upper() for item in watchlist}
+        pulse_by_root = {item.root_code.upper(): item for item in pulses}
+        selected_root_key = selected_root.upper()
+
+        items: list[AttentionInboxItem] = []
+        seen_signal_ids: set[str] = set()
+        for signal in active_signals:
+            if signal.signal_id in seen_signal_ids:
+                continue
+            seen_signal_ids.add(signal.signal_id)
+            workflow_value = signal.workflow_state.value
+            if workflow_value in {"ignored", "resolved"}:
+                continue
+
+            root_key = signal.root.upper()
+            is_focus = signal.signal_id == selected_signal_id
+            is_watched = signal.signal_id in watched_signal_ids or root_key in watched_root_codes
+            pulse = pulse_by_root.get(root_key)
+            market_status = "unknown"
+            market_status_detail = "Open the root to inspect chart freshness before acting."
+            if root_key == selected_root_key and market_snapshot is not None:
+                market_status = market_snapshot.status
+                market_status_detail = market_snapshot.status_detail
+            elif root_key == selected_root_key:
+                market_status = "hidden"
+                market_status_detail = "Current price and charts are hidden until a traceable market-data snapshot is available."
+
+            attention_score = self._attention_item_score(
+                signal,
+                is_focus=is_focus,
+                is_watched=is_watched,
+                market_status=market_status,
+            )
+            items.append(
+                AttentionInboxItem(
+                    item_key=f"signal:{signal.signal_id}",
+                    item_type="signal",
+                    root_code=signal.root,
+                    signal_id=signal.signal_id,
+                    title=f"{signal.root} {signal.horizon.value} {signal.direction_final.value}",
+                    reason=self._attention_reason(
+                        signal,
+                        is_focus=is_focus,
+                        is_watched=is_watched,
+                        market_status=market_status,
+                    ),
+                    what_changed=self._attention_change_summary(
+                        signal,
+                        is_focus=is_focus,
+                        focus_signal_diff=focus_signal_diff,
+                    ),
+                    next_step=self._attention_next_step(
+                        signal,
+                        is_watched=is_watched,
+                        market_status=market_status,
+                    ),
+                    tone=self._attention_tone(signal, market_status=market_status),
+                    priority_score=signal.priority_score,
+                    attention_score=attention_score,
+                    workflow_state=signal.workflow_state,
+                    current_price=(
+                        market_snapshot.current_price
+                        if root_key == selected_root_key and market_snapshot is not None
+                        else (pulse.current_price if pulse is not None else None)
+                    ),
+                    price_unit=(
+                        market_snapshot.unit
+                        if root_key == selected_root_key and market_snapshot is not None
+                        else (pulse.price_unit if pulse is not None else None)
+                    ),
+                    market_status=market_status,
+                    market_status_detail=market_status_detail,
+                    href=f"/workspace?root={signal.root}&signal_id={signal.signal_id}",
+                )
+            )
+
+        represented_roots = {item.root_code.upper() for item in items}
+        for watch in watchlist:
+            if watch.signal_id is not None:
+                continue
+            root_key = watch.root_code.upper()
+            if root_key in represented_roots:
+                continue
+            pulse = pulse_by_root.get(root_key)
+            review_due_bonus = 14.0 if watch.review_state == "review_due" else 0.0
+            attention_score = round(max(0.0, min(100.0, 54.0 + review_due_bonus - watch.priority_rank)), 2)
+            items.append(
+                AttentionInboxItem(
+                    item_key=f"watch:{watch.watch_key}",
+                    item_type="root",
+                    root_code=watch.root_code,
+                    title=f"{watch.root_code} watchlist review",
+                    reason=watch.focus_reason or "Root-level watch item needs a scheduled review.",
+                    what_changed=(
+                        pulse.headline
+                        if pulse is not None
+                        else "No active setup is attached yet; root remains in the personal queue."
+                    ),
+                    next_step="Open the root workspace, verify current price and 1D/1W/1M charts, then mark the queue item reviewed.",
+                    tone="warning" if watch.review_state == "review_due" else "neutral",
+                    priority_score=max(0, 100 - watch.priority_rank),
+                    attention_score=attention_score,
+                    current_price=pulse.current_price if pulse is not None else None,
+                    price_unit=pulse.price_unit if pulse is not None else None,
+                    market_status="unknown",
+                    market_status_detail="Open the root to inspect chart freshness before acting.",
+                    href=f"/workspace?root={watch.root_code}",
+                )
+            )
+
+        return sorted(
+            items,
+            key=lambda item: (item.attention_score, item.priority_score),
+            reverse=True,
+        )[:5]
+
+    def _attention_item_score(
+        self,
+        signal: FinalSignalCard,
+        *,
+        is_focus: bool,
+        is_watched: bool,
+        market_status: str,
+    ) -> float:
+        score = self._attention_score(signal) * 100.0
+        if is_focus:
+            score += 8.0
+        if is_watched:
+            score += 12.0
+        if signal.workflow_state.value == "ready":
+            score += 8.0
+        elif signal.workflow_state.value == "escalate":
+            score += 6.0
+        if market_status in {"stale", "degraded", "hidden"}:
+            score += 8.0
+        return round(max(0.0, min(100.0, score)), 2)
+
+    def _attention_reason(
+        self,
+        signal: FinalSignalCard,
+        *,
+        is_focus: bool,
+        is_watched: bool,
+        market_status: str,
+    ) -> str:
+        reasons: list[str] = []
+        if is_focus:
+            reasons.append("current focus signal")
+        if is_watched:
+            reasons.append("promoted to the daily queue")
+        if signal.workflow_state.value in {"ready", "escalate", "validating"}:
+            reasons.append(f"workflow is {signal.workflow_state.value}")
+        if market_status in {"stale", "degraded", "hidden"}:
+            reasons.append(f"market data is {market_status}")
+        if not reasons:
+            reasons.append("highest attention score in the active signal set")
+        return "; ".join(reasons) + "."
+
+    def _attention_change_summary(
+        self,
+        signal: FinalSignalCard,
+        *,
+        is_focus: bool,
+        focus_signal_diff: SignalChangeSummary | None,
+    ) -> str:
+        if is_focus and focus_signal_diff is not None:
+            return focus_signal_diff.summary
+        return (
+            f"{signal.horizon.value} {signal.direction_final.value}: "
+            f"confidence {signal.confidence_final:.2f}, skeptic {signal.skeptic_score:.2f}, "
+            f"freshness {signal.freshness_score:.2f}."
+        )
+
+    def _attention_next_step(
+        self,
+        signal: FinalSignalCard,
+        *,
+        is_watched: bool,
+        market_status: str,
+    ) -> str:
+        if market_status in {"stale", "degraded", "hidden"}:
+            return "Verify the current price and chart freshness before relying on this setup."
+        if signal.workflow_state.value in {"ready", "escalate"}:
+            return "Open the decision pack, compare 1D/1W/1M context, and journal the operator decision."
+        if is_watched:
+            return "Review the watchlist thesis and either keep, remove, or mark the item reviewed."
+        return "Open the focus view and decide whether this setup belongs in the watchlist."
+
+    def _attention_tone(self, signal: FinalSignalCard, *, market_status: str) -> str:
+        if market_status in {"stale", "degraded", "hidden"}:
+            return "warning"
+        if signal.workflow_state.value == "ready":
+            return "positive"
+        if signal.workflow_state.value in {"escalate", "validating"}:
+            return "warning"
+        return "neutral"
 
     def _watchlist_focus_reason(self, *, row, signal: FinalSignalCard | None) -> str:
         note = (row.note or "").strip()

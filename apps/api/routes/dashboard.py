@@ -105,6 +105,7 @@ from apps.api.routes.dashboard_workspace_data import (
     build_workspace_snapshot as _build_workspace_snapshot,
 )
 from apps.api.routes.dashboard_workspace import (
+    render_attention_inbox as _render_attention_inbox,
     render_root_pulse_card as _render_root_pulse_card,
     render_workspace_signal_tile as _render_workspace_signal_tile,
 )
@@ -2821,6 +2822,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
     trust_ribbon = _render_trust_ribbon(snapshot.trust_ribbon)
     operator_onboarding = _render_operator_onboarding(language)
     watchlist = _render_watchlist(snapshot.watchlist)
+    attention_inbox = _render_attention_inbox(snapshot.attention_inbox, language=language)
     comparison = _render_horizon_comparison(snapshot.comparison)
     diff_block = _render_signal_diff(snapshot.focus_signal_diff)
     confidence_block = _render_confidence_decomposition(snapshot.focus_confidence)
@@ -3927,6 +3929,33 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       letter-spacing: 0.08em;
       font-size: 12px;
     }}
+    .attention-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+    }}
+    .attention-inbox .decision-card {{
+      display: grid;
+      gap: 12px;
+      padding: 16px 18px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,.78), rgba(255,248,239,.9));
+      box-shadow: 0 12px 30px rgba(31, 45, 53, 0.07);
+    }}
+    .attention-inbox .decision-card.tone-positive {{
+      border-color: rgba(47, 125, 91, 0.26);
+    }}
+    .attention-inbox .decision-card.tone-warning {{
+      border-color: rgba(182, 109, 31, 0.28);
+      background: linear-gradient(180deg, rgba(255,255,255,.78), rgba(255,244,225,.94));
+    }}
+    .attention-inbox .card-actions {{
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }}
     .focus-card {{
       display: grid;
       gap: 16px;
@@ -4247,6 +4276,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
     {trust_ribbon}
     {workspace_state_strip}
     {operator_onboarding}
+    {attention_inbox}
     <section class="panel">
       <div class="panel-head">
         <h2>Root lane</h2>

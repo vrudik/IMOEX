@@ -79,7 +79,11 @@ from apps.api.routes.dashboard_tags import render_tag_chips, render_tag_picker
 from apps.api.routes.dashboard_trust import render_trust_ribbon
 from apps.api.routes.dashboard_visuals import render_horizon_pulse, render_metric_bars, render_timeline
 from apps.api.routes.dashboard_watchlist import render_watchlist
-from apps.api.routes.dashboard_workspace import render_root_pulse_card, render_workspace_signal_tile
+from apps.api.routes.dashboard_workspace import (
+    render_attention_inbox,
+    render_root_pulse_card,
+    render_workspace_signal_tile,
+)
 import apps.api.routes.dashboard_workspace_data as dashboard_workspace_data
 from apps.api.routes.dashboard_workspace_data import build_signal_workspace_snapshot
 from apps.api.routes.dashboard_workflow import (
@@ -548,9 +552,29 @@ def test_dashboard_workspace_lane_renderers_preserve_preview_contracts() -> None
         workflow_state=SimpleNamespace(value="escalate"),
         status=SimpleNamespace(value="active"),
     )
+    attention = SimpleNamespace(
+        item_key="signal:SIG<attention>",
+        item_type="signal",
+        root_code="Si",
+        signal_id="SIG<attention>",
+        title="Signal <attention>",
+        reason="Promoted <reason>.",
+        what_changed="Confidence <changed>.",
+        next_step="Next <step>.",
+        tone="warning",
+        priority_score=98,
+        attention_score=87.6,
+        workflow_state=SimpleNamespace(value="ready"),
+        current_price=96325.5,
+        price_unit="R<UB>",
+        market_status="fresh",
+        market_status_detail="Provider <detail>.",
+        href="/workspace?root=Si&signal_id=SIG<attention>",
+    )
 
     root_html = render_root_pulse_card(root, selected_root="Si", language="en")
     signal_html = render_workspace_signal_tile(signal, selected_signal_id="SIG<demo>", language="en")
+    attention_html = render_attention_inbox([attention], language="en")
 
     assert 'data-root-preview-card data-root-code="Si"' in root_html
     assert 'class="rail-card tone-positive is-active"' in root_html
@@ -564,13 +588,22 @@ def test_dashboard_workspace_lane_renderers_preserve_preview_contracts() -> None
     assert "confidence 0.81" in signal_html
     assert "workflow escalated" in signal_html
     assert 'data-pin-signal-preview data-signal-id="SIG&lt;demo&gt;" data-compare-slot="b"' in signal_html
+    assert 'data-attention-inbox' in attention_html
+    assert 'data-attention-card' in attention_html
+    assert 'data-attention-signal-id="SIG&lt;attention&gt;"' in attention_html
+    assert "Signal &lt;attention&gt;" in attention_html
+    assert "96 325.50 R&lt;UB&gt;" in attention_html
+    assert "Next &lt;step&gt;." in attention_html
+    assert '/workspace?root=Si&amp;signal_id=SIG&lt;attention&gt;' in attention_html
 
 
 def test_dashboard_route_keeps_workspace_lane_rendering_outside_route_module() -> None:
     source = Path("apps/api/routes/dashboard.py").read_text(encoding="utf-8")
 
+    assert "render_attention_inbox as _render_attention_inbox" in source
     assert "render_root_pulse_card as _render_root_pulse_card" in source
     assert "render_workspace_signal_tile as _render_workspace_signal_tile" in source
+    assert "def _render_attention_inbox" not in source
     assert "def _render_root_pulse_card" not in source
     assert "def _render_workspace_signal_tile" not in source
 

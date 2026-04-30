@@ -8,6 +8,11 @@ This checklist is the final non-production acceptance gate before any private-be
 
 Attach or archive these artifacts for the candidate build:
 
+- Optional local candidate output from `scripts/private_beta_candidate_check.ps1` when the evidence pack is produced on the operator workstation.
+- Operator-readable candidate summary from `candidate-summary.md` when `scripts/private_beta_candidate_check.ps1` is used, including candidate git revision, working-tree state, evidence validation status, warnings, failures, and next actions.
+- Candidate-local acceptance checklist draft from `acceptance-checklist-draft.md` when `scripts/private_beta_candidate_check.ps1` is used, including the generated `Candidate Output Prefill`.
+- Private-beta evidence manifest from `scripts/private_beta_evidence_pack.ps1`.
+- Evidence validation JSON from `scripts/validate_private_beta_evidence.ps1`, including manifest flags, browser-smoke checks, restore-drill status, performance labels, and release-note safety phrases.
 - `release_check.ps1` output showing `product readiness OK` and `OK`.
 - Browser smoke JSON from `scripts/browser_smoke.ps1`, including workspace, runtime prompt governance, multi-root switch, current price, day/week/month charts, drag measurement, mobile charts, and no horizontal overflow.
 - Product-readiness JSON for the target environment, including backup freshness, restore-drill evidence, scheduler, delivery, migration, market-data policy, and admin/runtime security checks.
@@ -16,7 +21,10 @@ Attach or archive these artifacts for the candidate build:
 - Performance baseline output for dashboard, workspace, signal detail, runtime, council, journal, and product-readiness surfaces.
 - External alerting map from `docs/alerting_expectations.md`, including destinations or explicit non-production deferral.
 - Product analytics mode from `docs/product_analytics_events.md`: disabled, local-only export, or explicitly approved opt-in telemetry.
-- Release notes listing accepted warnings and explicit non-goals.
+- Private-beta sales-readiness pack from `docs/private_beta_sales_readiness.md`, including positioning, demo path, support boundaries, and onboarding checklist.
+- Release notes based on `docs/private_beta_release_notes_template.md`, where the release notes candidate revision and analytics mode both match the evidence manifest, Telegram mode as `disabled`, `preview`, `dry-run`, or `configured`, recording market-data mode as `live`, `hidden`, `degraded`, or `fixture for browser smoke only`, accepted warnings as `None` or concrete `warning, owner, expiry/follow-up` entries, explicit non-goals, operator walkthrough results with every check marked `pass`, support-boundary confirmation, concrete rollback owner/revision/artifact/stop-owner fields, rollback verification coverage, concrete decision owner, `yes/no/deferred` decision status, and ISO-8601 UTC decision timestamp, with no unresolved `<...>` placeholders and every support-boundary confirmation answered `yes`.
+- Full local candidate generation must pass completed release notes through `scripts/private_beta_candidate_check.ps1 -PreparedReleaseNotes`; otherwise the output remains draft evidence only.
+- Draft evidence must never record `Private-beta candidate accepted: yes`; accepted candidates require final evidence without `-AllowDraft`.
 
 ## Operator Acceptance Flow
 
@@ -59,12 +67,35 @@ These are acceptable only when documented in release notes:
 
 Before allowing the build into private beta, record:
 
-- Candidate git revision.
+- Candidate git revision, and it must not be `unknown` for final candidate approval.
+- Candidate git working-tree state and `git-status.txt` snapshot when local candidate tooling is used.
+- Confirmation of a clean git working tree for final candidate approval, or an explicitly accepted dirty-tree exception documented in release notes.
+- Operator-readable candidate summary path.
+- Candidate-local acceptance checklist draft path.
+- Generated `Candidate Output Prefill` values reviewed for this candidate.
+- Candidate summary next actions.
+- Candidate summary validation status and accepted warnings/failures.
+- Private-beta evidence manifest path.
+- Private-beta evidence validation path.
 - Database class and restore-drill artifact path.
 - Browser smoke artifact path.
 - Product-readiness artifact path.
 - Accepted warnings.
+- Release notes path and decision owner.
+- Confirmation that release notes candidate revision matches the evidence manifest.
+- Confirmation that release notes analytics mode matches the evidence manifest.
+- Confirmation that release notes record Telegram mode as `disabled`, `preview`, `dry-run`, or `configured`.
+- Confirmation that release notes record market-data mode as `live`, `hidden`, `degraded`, or `fixture for browser smoke only`.
+- Confirmation that release notes record accepted warnings as `None` or concrete `warning, owner, expiry/follow-up` entries.
+- Confirmation that release notes mark every operator walkthrough check as `pass`.
+- Confirmation that release notes include a concrete decision owner, `yes/no/deferred` decision status, and ISO-8601 UTC decision timestamp.
+- Confirmation that any `Private-beta candidate accepted: yes` decision is backed by final evidence, not draft validation.
+- Confirmation that release notes include concrete rollback owner, previous revision, backup/restore artifact, stop command/process owner, and rollback verification coverage.
+- Confirmation that release notes have no unresolved template placeholders.
+- Confirmation that release notes answer every support-boundary confirmation as `yes`.
+- Confirmation that final local candidate generation used `-PreparedReleaseNotes` instead of template draft release notes.
 - Rollback owner and rollback command sequence.
 - Alert routing owner and any accepted alerting deferrals.
 - Analytics mode and confirmation that no secrets, prompt bodies, journal text, credentials, or API keys are collected.
+- Private-beta positioning owner and confirmation that support boundaries were accepted before the walkthrough.
 - Confirmation that the app remains decision support only, with no order routing or autotrading.

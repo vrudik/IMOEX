@@ -1,6 +1,6 @@
 # Product-Ready Execution Plan
 
-Updated: 2026-04-27
+Updated: 2026-04-28
 
 This document is the working execution plan for taking the IMOEX app from a feature-rich operator prototype to a product-ready decision-support system. The priority order is strict:
 
@@ -157,6 +157,7 @@ This tranche is `Operator-Ready Beta`. It turns the stabilized control plane int
 - [x] Extract runtime prompt history rendering into the dashboard control module with boundary checks.
 - [x] Remove obsolete legacy runtime prompt-card renderer after the dedicated renderer path is covered.
 - [x] Start Operator-Ready Beta with daily watchlist queue metadata and UI cards for priority, focus reason, and review state.
+- [x] Add workspace Attention Inbox for the highest-priority signal/root next actions.
 - [x] Add watchlist review actions so the daily queue can be marked reviewed directly from the workspace.
 - [x] Add watchlist filters for review state, root, and signal-linked versus root-level items.
 - [x] Add first-run workspace onboarding and an operator glossary for trust, price, horizons, council roles, stale states, and prompt governance.
@@ -172,13 +173,42 @@ This tranche is `Operator-Ready Beta`. It turns the stabilized control plane int
 - [x] Add a private-beta acceptance checklist with evidence-pack requirements and release blockers.
 - [x] Define external alerting expectations for feed loss, stale references, scheduler drift, backup failures, and product-readiness failures.
 - [x] Define a privacy-first product analytics event catalog before adding any telemetry.
+- [x] Add private-beta sales-readiness positioning, demo narrative, support boundaries, and onboarding checklist without pricing or deployment commitments.
+- [x] Add a local private-beta evidence manifest generator so candidate artifacts can be checked without authorizing deployment, pricing, or execution.
+- [x] Add a private-beta release-notes template for accepted warnings, explicit non-goals, support boundaries, rollback, and decision owner.
+- [x] Add a local private-beta candidate evidence wrapper that collects release-check logs, product-readiness/admin snapshots, draft release notes, and an evidence manifest without authorizing launch.
+- [x] Add a private-beta evidence validator so draft/full candidate packs can be checked for required artifacts and no-launch/no-pricing/no-order-routing guardrails.
+- [x] Add behavioral release-gate tests for the private-beta evidence validator, including complete, draft-missing, and forbidden-launch-flag manifests.
+- [x] Tighten private-beta evidence validation so browser smoke, restore drill, and performance baseline artifacts are checked for required content, not just file presence.
+- [x] Add an operator-readable private-beta candidate summary so evidence directories can be reviewed without opening multiple JSON files.
+- [x] Add evidence validation status plus warning/failure rollups to the private-beta candidate summary for faster operator review.
+- [x] Add candidate git revision, working-tree state, and git-status snapshot to private-beta candidate summaries.
+- [x] Add an opt-in clean-git guard to private-beta candidate generation for final candidate approval.
+- [x] Add candidate review status, skipped-gate rollup, and next actions to private-beta candidate summaries.
+- [x] Require a known candidate git revision in full private-beta evidence validation while allowing draft warning mode.
+- [x] Add a candidate-local acceptance checklist draft to private-beta candidate output directories.
+- [x] Prefill candidate-local acceptance checklist drafts with candidate metadata, artifact paths, validation status, and safety flags.
+- [x] Wire candidate-local acceptance checklist drafts into private-beta evidence manifests.
+- [x] Validate that full private-beta evidence includes a candidate-local acceptance checklist prefill and no-authorization safety phrase.
+- [x] Validate that full private-beta release notes are completed and do not contain unresolved template placeholders.
+- [x] Require prepared release notes for full private-beta candidate generation while keeping draft evidence explicit.
+- [x] Validate that full private-beta release notes explicitly confirm every support-boundary item as accepted.
+- [x] Validate that full private-beta release notes include decision status, concrete owner, and UTC decision timestamp.
+- [x] Validate that full private-beta release notes include concrete rollback owner, revision, artifact, stop-owner, and verification coverage.
+- [x] Validate that full private-beta release notes mark every operator walkthrough check as pass.
+- [x] Block draft private-beta evidence if release notes claim the candidate is accepted.
+- [x] Validate that full private-beta release notes record accepted warnings as None or concrete entries.
+- [x] Validate that accepted warning entries include warning, owner, and expiry or follow-up.
+- [x] Validate that full private-beta release notes record a truthful market-data mode.
+- [x] Validate that full private-beta release notes candidate revision matches the evidence manifest.
+- [x] Validate that full private-beta release notes analytics mode matches the evidence manifest.
+- [x] Validate that full private-beta release notes record an explicit Telegram mode.
 
 ## Immediate Next Steps
 
 Safe cleanup is now at the point where remaining extractions are no longer obvious low-risk tail work. Further route-module reductions should happen only when they support a product feature or a well-scoped renderer migration with browser coverage.
 
 1. Productization: define packaging, pricing, and deployment only after explicit operator approval.
-2. Sales-readiness: draft private-beta positioning, support boundaries, and onboarding checklist after launch gates are green.
-3. Private-beta readiness: run the full acceptance checklist against a non-production candidate build.
-4. Launch hardening: collect external alert destination test evidence once a deployment target is chosen.
-5. Product analytics: implement opt-in/local-only telemetry only after explicit approval and privacy tests.
+2. Private-beta readiness: run the full acceptance checklist and evidence manifest against a non-production candidate build.
+3. Launch hardening: collect external alert destination test evidence once a deployment target is chosen.
+4. Product analytics: implement opt-in/local-only telemetry only after explicit approval and privacy tests.

@@ -51,6 +51,14 @@ def test_workspace_snapshot_returns_user_facing_payload(client: TestClient) -> N
     assert {"open", "high", "low", "close"} <= set(payload["market_snapshot"]["daily"]["points"][0])
     assert payload["market_snapshot"]["daily"]["overlays"]
     assert {item["key"] for item in payload["market_snapshot"]["daily"]["overlays"]} >= {"entry", "invalidation", "target"}
+    assert payload["attention_inbox"]
+    top_attention = payload["attention_inbox"][0]
+    assert top_attention["root_code"]
+    assert top_attention["href"].startswith("/workspace")
+    assert top_attention["reason"]
+    assert top_attention["what_changed"]
+    assert top_attention["next_step"]
+    assert top_attention["market_status"] in {"fresh", "aging", "stale", "degraded", "hidden", "unknown"}
     assert payload["focus_signal"]["root"] == "Si"
     assert payload["focus_signal"]["workflow_state"] == "watching"
     assert payload["trust_ribbon"]["items"]
@@ -147,8 +155,11 @@ def test_workspace_page_renders_user_journey_html(client: TestClient) -> None:
     assert 'data-operator-onboarding' in response.text
     assert 'data-operator-onboarding-collapse' in response.text
     assert 'data-operator-onboarding-dismiss' in response.text
+    assert 'data-attention-inbox' in response.text
+    assert 'data-attention-card' in response.text
     assert 'imoex_operator_onboarding_hidden' in response.text
     assert 'imoex_operator_onboarding_collapsed' in response.text
+    assert "\u0422\u0440\u0435\u0431\u0443\u0435\u0442 \u0432\u043d\u0438\u043c\u0430\u043d\u0438\u044f" in response.text
     assert "\u041a\u0430\u043a \u0447\u0438\u0442\u0430\u0442\u044c workspace" in response.text
     assert "\u0413\u043b\u043e\u0441\u0441\u0430\u0440\u0438\u0439 \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u0430" in response.text
     assert "\u0422\u0435\u043a\u0443\u0449\u0430\u044f \u0446\u0435\u043d\u0430 \u0438 \u0433\u0440\u0430\u0444\u0438\u043a\u0438" in response.text

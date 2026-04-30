@@ -64,7 +64,7 @@ Invoke-ReleaseStep "checking tracked local artifacts" {
 
 if ($SkipFullPytest) {
 Invoke-ReleaseStep "running focused release tests" {
-    & $python -m pytest tests\test_alembic_migrations.py tests\test_api_health.py tests\test_api_dashboard.py tests\test_dashboard_formatting.py tests\test_marketdata_service.py tests\test_maintenance_backup.py tests\test_security_admin.py tests\test_release_readiness_assets.py -q
+    & $python -m pytest tests\test_alembic_migrations.py tests\test_api_health.py tests\test_api_dashboard.py tests\test_dashboard_formatting.py tests\test_marketdata_service.py tests\test_maintenance_backup.py tests\test_security_admin.py tests\test_release_readiness_assets.py tests\test_private_beta_evidence_validation.py -q
     Assert-NativeSuccess "focused release tests"
   }
 } else {

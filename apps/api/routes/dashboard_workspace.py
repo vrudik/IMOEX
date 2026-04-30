@@ -5,6 +5,66 @@ from html import escape
 from apps.api.routes.dashboard_formatting import format_price_value, format_signed_pct
 
 
+def render_attention_inbox(items, *, language: str) -> str:
+    copy = _attention_inbox_copy(language)
+    if not items:
+        cards = f'<p class="empty">{escape(copy["empty"])}</p>'
+    else:
+        cards = "".join(_render_attention_card(item, copy=copy) for item in items)
+    return (
+        '<section class="panel attention-inbox" data-attention-inbox>'
+        '<div class="panel-head">'
+        "<div>"
+        f'<h2>{escape(copy["title"])}</h2>'
+        f'<p>{escape(copy["subtitle"])}</p>'
+        "</div>"
+        f'<span class="filter-chip is-active">{len(items)} {escape(copy["count_label"])}</span>'
+        "</div>"
+        f'<div class="attention-grid">{cards}</div>'
+        "</section>"
+    )
+
+
+def _render_attention_card(item, *, copy: dict[str, str]) -> str:
+    workflow = _workflow_state_label(item.workflow_state) if item.workflow_state is not None else copy["root_item"]
+    unit = f" {escape(item.price_unit)}" if item.price_unit else ""
+    price = (
+        f"{format_price_value(item.current_price)}{unit}"
+        if item.current_price is not None
+        else copy["price_hidden"]
+    )
+    signal_link = (
+        f'<a class="button" href="/workspace/signals/{escape(item.signal_id)}">{escape(copy["details"])}</a>'
+        if item.signal_id
+        else ""
+    )
+    detail = f'<small>{escape(item.market_status_detail)}</small>' if item.market_status_detail else ""
+    return (
+        f'<article class="decision-card tone-{escape(item.tone)}" data-attention-card '
+        f'data-attention-item-key="{escape(item.item_key)}" '
+        f'data-attention-root-code="{escape(item.root_code)}" '
+        f'data-attention-signal-id="{escape(item.signal_id or "")}">'
+        '<div class="signal-top">'
+        f'<div><strong>{escape(item.title)}</strong><p class="muted">{escape(item.reason)}</p></div>'
+        f'<span class="badge">{escape(copy["score"])} {item.attention_score:.0f}</span>'
+        "</div>"
+        '<div class="metric-row">'
+        f'<small>{escape(copy["price"])} {price}</small>'
+        f'<small>{escape(copy["status"])} {escape(item.market_status)}</small>'
+        f'<small>{escape(copy["priority"])} {item.priority_score}</small>'
+        f'<small>{escape(copy["workflow"])} {escape(workflow)}</small>'
+        "</div>"
+        f'<p><strong>{escape(copy["changed"])}</strong> {escape(item.what_changed)}</p>'
+        f'<p><strong>{escape(copy["next_step"])}</strong> {escape(item.next_step)}</p>'
+        f'<p class="muted">{detail}</p>'
+        '<div class="card-actions">'
+        f'<a class="button primary" href="{escape(item.href)}">{escape(copy["focus"])}</a>'
+        f"{signal_link}"
+        "</div>"
+        "</article>"
+    )
+
+
 def render_root_pulse_card(item, *, selected_root: str, language: str) -> str:
     price_line = f"{item.active_signals} active | roll {item.next_contract_share:.0%}"
     if item.current_price is not None:
@@ -130,6 +190,44 @@ def _workspace_lane_copy(language: str, *, root_card: bool) -> dict[str, str]:
         ),
         "level_waiting": "\u0416\u0434\u0451\u043c \u0443\u0440\u043e\u0432\u043d\u0438" if language == "ru" else "Waiting for levels",
         "level_waiting_note": "\u041d\u0443\u0436\u043d\u044b \u0432\u0445\u043e\u0434, \u0438\u043d\u0432\u0430\u043b\u0438\u0434\u0430\u0446\u0438\u044f \u0438 \u0446\u0435\u043b\u044c." if language == "ru" else "Need entry, invalidation, and target.",
+    }
+
+
+def _attention_inbox_copy(language: str) -> dict[str, str]:
+    if language == "ru":
+        return {
+            "title": "\u0422\u0440\u0435\u0431\u0443\u0435\u0442 \u0432\u043d\u0438\u043c\u0430\u043d\u0438\u044f \u0441\u0435\u0439\u0447\u0430\u0441",
+            "subtitle": "\u041b\u0438\u0447\u043d\u0430\u044f \u043e\u0447\u0435\u0440\u0435\u0434\u044c: \u0441\u0438\u0433\u043d\u0430\u043b\u044b \u0438 \u0441\u0435\u0440\u0438\u0438, \u043a\u043e\u0442\u043e\u0440\u044b\u0435 \u0441\u0442\u043e\u0438\u0442 \u0440\u0430\u0437\u043e\u0431\u0440\u0430\u0442\u044c \u043f\u0435\u0440\u0432\u044b\u043c\u0438.",
+            "count_label": "\u0432 \u043e\u0447\u0435\u0440\u0435\u0434\u0438",
+            "score": "\u0412\u043d\u0438\u043c\u0430\u043d\u0438\u0435",
+            "price": "\u0426\u0435\u043d\u0430",
+            "status": "\u0414\u0430\u043d\u043d\u044b\u0435",
+            "priority": "\u041f\u0440\u0438\u043e\u0440\u0438\u0442\u0435\u0442",
+            "workflow": "\u0421\u0442\u0430\u0442\u0443\u0441",
+            "changed": "\u0427\u0442\u043e \u0438\u0437\u043c\u0435\u043d\u0438\u043b\u043e\u0441\u044c:",
+            "next_step": "\u0421\u043b\u0435\u0434\u0443\u044e\u0449\u0438\u0439 \u0448\u0430\u0433:",
+            "focus": "\u0412 \u0444\u043e\u043a\u0443\u0441",
+            "details": "\u0414\u0435\u0442\u0430\u043b\u0438",
+            "price_hidden": "\u0441\u043a\u0440\u044b\u0442\u0430",
+            "root_item": "\u0441\u0435\u0440\u0438\u044f",
+            "empty": "\u041f\u043e\u043a\u0430 \u043d\u0435\u0442 \u0430\u043a\u0442\u0438\u0432\u043d\u044b\u0445 \u043a\u0430\u043d\u0434\u0438\u0434\u0430\u0442\u043e\u0432 \u043d\u0430 \u0432\u043d\u0438\u043c\u0430\u043d\u0438\u0435.",
+        }
+    return {
+        "title": "Needs attention now",
+        "subtitle": "A personal queue of signals and roots to review first.",
+        "count_label": "queued",
+        "score": "Attention",
+        "price": "Price",
+        "status": "Data",
+        "priority": "Priority",
+        "workflow": "Workflow",
+        "changed": "What changed:",
+        "next_step": "Next step:",
+        "focus": "Focus",
+        "details": "Details",
+        "price_hidden": "hidden",
+        "root_item": "root",
+        "empty": "No active attention candidates yet.",
     }
 
 

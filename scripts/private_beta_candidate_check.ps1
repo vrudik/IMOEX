@@ -1,0 +1,536 @@
+param(
+  [string]$Root = "Si",
+  [string]$SecondaryRoot = "BR",
+  [string]$OutputDir = "",
+  [string]$BrowserChannel = "",
+  [string]$PreparedReleaseNotes = "",
+  [ValidateSet("disabled", "local-only-export", "approved-opt-in-telemetry")]
+  [string]$AnalyticsMode = "disabled",
+  [switch]$SkipReleaseCheck,
+  [switch]$SkipFullPytest,
+  [switch]$SkipDocker,
+  [switch]$SkipBrowser,
+  [switch]$SkipPerformance,
+  [switch]$SkipRestore,
+  [switch]$RequireCleanGit,
+  [switch]$AllowDraftEvidence
+)
+
+$ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
+
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$venvPython = Join-Path $repoRoot ".venv\Scripts\python.exe"
+$python = if (Test-Path $venvPython) { $venvPython } else { "python" }
+$runId = Get-Date -Format "yyyyMMddHHmmss"
+
+if ([string]::IsNullOrWhiteSpace($OutputDir)) {
+  $OutputDir = Join-Path $env:TEMP "imoex-private-beta-candidates\candidate-$runId"
+}
+
+New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+
+$releaseCheckLog = Join-Path $OutputDir "release-check.log"
+$browserSmokeJson = Join-Path $OutputDir "browser-smoke.json"
+$productReadinessJson = Join-Path $OutputDir "product-readiness.json"
+$adminHealthJson = Join-Path $OutputDir "admin-health.json"
+$telegramPreviewJson = Join-Path $OutputDir "telegram-preview.json"
+$restoreDrillSummary = Join-Path $OutputDir "restore-drill-summary.json"
+$performanceBaselineJson = Join-Path $OutputDir "performance-baseline.json"
+$releaseNotesDraft = Join-Path $OutputDir "release-notes-draft.md"
+$acceptanceChecklistDraft = Join-Path $OutputDir "acceptance-checklist-draft.md"
+$evidenceValidationJson = Join-Path $OutputDir "private-beta-evidence-validation.json"
+$snapshotDb = Join-Path $OutputDir "candidate-snapshot.db"
+$backupsDir = Join-Path $OutputDir "backups"
+$evidenceDir = Join-Path $OutputDir "evidence-pack"
+$gitStatusPath = Join-Path $OutputDir "git-status.txt"
+
+New-Item -ItemType Directory -Force -Path $backupsDir | Out-Null
+
+function Resolve-CandidateInputPath {
+  param([string]$Path)
+
+  if ([string]::IsNullOrWhiteSpace($Path)) {
+    return ""
+  }
+  if ([System.IO.Path]::IsPathRooted($Path)) {
+    return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+  }
+  return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath((Join-Path $repoRoot $Path))
+}
+
+$releaseNotesTemplatePath = Join-Path $repoRoot "docs\private_beta_release_notes_template.md"
+$releaseNotesSource = $releaseNotesTemplatePath
+$releaseNotesMode = "template_draft"
+if (-not [string]::IsNullOrWhiteSpace($PreparedReleaseNotes)) {
+  $preparedReleaseNotesResolved = Resolve-CandidateInputPath $PreparedReleaseNotes
+  if (-not (Test-Path -LiteralPath $preparedReleaseNotesResolved)) {
+    throw "Prepared release notes were not found: $preparedReleaseNotesResolved"
+  }
+  $releaseNotesSource = $preparedReleaseNotesResolved
+  $releaseNotesMode = "prepared"
+}
+
+$fullCandidateAttempt = -not $AllowDraftEvidence -and -not $SkipReleaseCheck -and -not $SkipBrowser -and -not $SkipPerformance -and -not $SkipRestore
+if ($fullCandidateAttempt -and $releaseNotesMode -ne "prepared") {
+  throw "Full private-beta candidate generation requires completed release notes via -PreparedReleaseNotes. Use -AllowDraftEvidence for draft evidence only."
+}
+
+Copy-Item -LiteralPath $releaseNotesSource -Destination $releaseNotesDraft -Force
+Copy-Item -LiteralPath (Join-Path $repoRoot "docs\private_beta_acceptance_checklist.md") -Destination $acceptanceChecklistDraft -Force
+
+$candidateRevision = (& git -C $repoRoot rev-parse --short HEAD 2>$null)
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($candidateRevision)) {
+  $candidateRevision = "unknown"
+} else {
+  $candidateRevision = $candidateRevision.Trim()
+}
+
+$gitStatusLines = @(& git -C $repoRoot status --short 2>$null)
+if ($LASTEXITCODE -ne 0) {
+  $gitStatusLines = @("git status unavailable")
+}
+$candidateWorktreeState = if ($gitStatusLines.Count -eq 0) {
+  "clean"
+} elseif ($gitStatusLines[0] -eq "git status unavailable") {
+  "unknown"
+} else {
+  "dirty"
+}
+$candidateDirtyCount = if ($candidateWorktreeState -eq "dirty") { $gitStatusLines.Count } else { 0 }
+if ($gitStatusLines.Count -eq 0) {
+  "clean" | Set-Content -Path $gitStatusPath -Encoding UTF8
+} else {
+  $gitStatusLines | Set-Content -Path $gitStatusPath -Encoding UTF8
+}
+
+if ($RequireCleanGit -and $candidateWorktreeState -ne "clean") {
+  throw "Private-beta candidate requires a clean git working tree. Current state: $candidateWorktreeState ($candidateDirtyCount entries). Review $gitStatusPath or rerun without -RequireCleanGit for draft evidence only."
+}
+
+function Assert-NativeSuccess {
+  param([string]$Name)
+
+  if ($LASTEXITCODE -ne 0) {
+    throw "$Name failed with exit code $LASTEXITCODE"
+  }
+}
+
+function Invoke-LoggedNative {
+  param(
+    [string]$Name,
+    [string]$LogPath,
+    [scriptblock]$Command
+  )
+
+  Write-Host "[private-beta-candidate] $Name"
+  $output = & $Command 2>&1
+  $exitCode = $LASTEXITCODE
+  $output | Set-Content -Path $LogPath -Encoding UTF8
+  $output | Out-Host
+  if ($exitCode -ne 0) {
+    throw "$Name failed with exit code $exitCode"
+  }
+}
+
+Write-Host "[private-beta-candidate] output: $OutputDir"
+Write-Host "[private-beta-candidate] python: $python"
+Write-Host "[private-beta-candidate] root: $Root"
+
+if (-not $SkipReleaseCheck) {
+  $releaseArgs = @("-ExecutionPolicy", "Bypass", "-File", (Join-Path $repoRoot "scripts\release_check.ps1"), "-Root", $Root)
+  if ($SkipFullPytest) {
+    $releaseArgs += "-SkipFullPytest"
+  }
+  if ($SkipDocker) {
+    $releaseArgs += "-SkipDocker"
+  }
+  if ($SkipPerformance) {
+    $releaseArgs += "-SkipPerformance"
+  }
+  if ($SkipRestore) {
+    $releaseArgs += "-SkipRestore"
+  }
+  if ($SkipBrowser) {
+    $releaseArgs += "-SkipBrowser"
+  }
+  if (-not [string]::IsNullOrWhiteSpace($BrowserChannel)) {
+    $releaseArgs += @("-BrowserChannel", $BrowserChannel)
+  }
+
+  Invoke-LoggedNative "running release check" $releaseCheckLog { powershell @releaseArgs }
+} else {
+  "Skipped by -SkipReleaseCheck. This output directory is draft evidence only." | Set-Content -Path $releaseCheckLog -Encoding UTF8
+}
+
+Write-Host "[private-beta-candidate] priming candidate snapshot"
+$env:PYTHONPATH = "$repoRoot\.vendor;$repoRoot"
+$env:DATABASE_URL = "sqlite:///$($snapshotDb.Replace('\', '/'))"
+$env:BACKUPS_DIR = $backupsDir
+$env:IMOEX_CANDIDATE_ROOT = $Root
+$env:IMOEX_CANDIDATE_OUTPUT_DIR = $OutputDir
+$env:IMOEX_CANDIDATE_PRODUCT_READINESS = $productReadinessJson
+$env:IMOEX_CANDIDATE_ADMIN_HEALTH = $adminHealthJson
+$env:IMOEX_CANDIDATE_TELEGRAM_PREVIEW = $telegramPreviewJson
+
+& $python -m apps.worker.runner recalculate --root $Root | Out-Host
+Assert-NativeSuccess "candidate snapshot recalculate"
+
+@'
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from apps.api.main import app
+
+root = os.environ.get("IMOEX_CANDIDATE_ROOT", "Si")
+
+with TestClient(app) as client:
+    readiness = client.get("/api/v1/health/product-readiness", params={"root": root})
+    readiness.raise_for_status()
+    readiness_payload = readiness.json()
+
+    admin_health = client.get("/api/v1/admin/health")
+    admin_health.raise_for_status()
+    admin_payload = admin_health.json()
+
+    preview = client.get("/api/v1/notifications/telegram/preview", params={"root": root})
+    preview.raise_for_status()
+    preview_payload = preview.json()
+
+Path(os.environ["IMOEX_CANDIDATE_PRODUCT_READINESS"]).write_text(
+    json.dumps(readiness_payload, indent=2),
+    encoding="utf-8",
+)
+Path(os.environ["IMOEX_CANDIDATE_ADMIN_HEALTH"]).write_text(
+    json.dumps(admin_payload, indent=2),
+    encoding="utf-8",
+)
+Path(os.environ["IMOEX_CANDIDATE_TELEGRAM_PREVIEW"]).write_text(
+    json.dumps(preview_payload, indent=2),
+    encoding="utf-8",
+)
+
+assert readiness_payload["release_gate"] == "pass", readiness_payload
+assert admin_payload["status"] in {"ok", "degraded"}, admin_payload
+assert preview_payload["root"] == root, preview_payload
+print("[private-beta-candidate] API snapshots OK")
+'@ | & $python -
+Assert-NativeSuccess "candidate API snapshots"
+
+if (-not $SkipPerformance) {
+  Invoke-LoggedNative "capturing performance baseline" (Join-Path $OutputDir "performance-baseline.log") {
+    powershell -ExecutionPolicy Bypass -File (Join-Path $repoRoot "scripts\performance_baseline.ps1") -Root $Root -OutputPath $performanceBaselineJson
+  }
+}
+
+if (-not $SkipRestore) {
+  Invoke-LoggedNative "running restore drill" (Join-Path $OutputDir "restore-drill.log") {
+    powershell -ExecutionPolicy Bypass -File (Join-Path $repoRoot "scripts\restore_drill.ps1") -Root $Root -OutputPath $restoreDrillSummary
+  }
+}
+
+if (-not $SkipBrowser) {
+  $browserArgs = @((Join-Path $repoRoot "scripts\browser_smoke.py"), "--root", $Root, "--secondary-root", $SecondaryRoot, "--output", $browserSmokeJson)
+  if (-not [string]::IsNullOrWhiteSpace($BrowserChannel)) {
+    $browserArgs += @("--channel", $BrowserChannel)
+  }
+  Invoke-LoggedNative "running browser smoke" (Join-Path $OutputDir "browser-smoke.log") { & $python @browserArgs }
+}
+
+$skippedGates = @()
+if ($SkipReleaseCheck) {
+  $skippedGates += "release_check"
+}
+if ($SkipBrowser) {
+  $skippedGates += "browser_smoke"
+}
+if ($SkipPerformance) {
+  $skippedGates += "performance_baseline"
+}
+if ($SkipRestore) {
+  $skippedGates += "restore_drill"
+}
+$usesDraftReleaseNotes = $releaseNotesMode -ne "prepared"
+
+$summaryPath = Join-Path $OutputDir "candidate-summary.json"
+$summaryMarkdownPath = Join-Path $OutputDir "candidate-summary.md"
+
+$initialAcceptancePrefillLines = @(
+  "",
+  "## Candidate Output Prefill",
+  "",
+  "- Candidate revision: $candidateRevision",
+  "- Candidate review status: pending_validation",
+  "- Working tree state: $candidateWorktreeState",
+  "- Dirty/untracked entry count: $candidateDirtyCount",
+  "- Clean git required: $([bool]$RequireCleanGit)",
+  "- Release notes mode: $releaseNotesMode",
+  "- Release notes source: $releaseNotesSource",
+  "- Skipped gates: $(if ($skippedGates.Count -gt 0) { $skippedGates -join ', ' } else { 'none' })",
+  "- Validation status: pending",
+  "- Validation warnings: pending",
+  "- Validation failures: pending",
+  "- Candidate summary Markdown: $summaryMarkdownPath",
+  "- Candidate summary JSON: $summaryPath",
+  "- Git status snapshot: $gitStatusPath",
+  "- Evidence manifest: $(Join-Path $evidenceDir 'private-beta-evidence-manifest.json')",
+  "- Evidence validation JSON: $evidenceValidationJson",
+  "- Product-readiness JSON: $productReadinessJson",
+  "- Admin-health JSON: $adminHealthJson",
+  "- Telegram preview JSON: $telegramPreviewJson",
+  "- Release-check log: $releaseCheckLog",
+  "- Browser-smoke JSON: $(if ($SkipBrowser) { 'skipped' } else { $browserSmokeJson })",
+  "- Restore-drill summary: $(if ($SkipRestore) { 'skipped' } else { $restoreDrillSummary })",
+  "- Performance baseline JSON: $(if ($SkipPerformance) { 'skipped' } else { $performanceBaselineJson })",
+  "- Release notes draft: $releaseNotesDraft",
+  "",
+  "This prefill is generated by the local candidate wrapper. It does not authorize private beta, production deployment, pricing, broker execution, order routing, or autotrading."
+)
+$initialAcceptancePrefillLines | Add-Content -Path $acceptanceChecklistDraft -Encoding UTF8
+
+$evidenceArgs = @(
+  "-ExecutionPolicy", "Bypass",
+  "-File", (Join-Path $repoRoot "scripts\private_beta_evidence_pack.ps1"),
+  "-OutputDir", $evidenceDir,
+  "-CandidateRevision", $candidateRevision,
+  "-ReleaseCheckLog", $releaseCheckLog,
+  "-ProductReadinessJson", $productReadinessJson,
+  "-AdminHealthJson", $adminHealthJson,
+  "-AcceptanceChecklist", $acceptanceChecklistDraft,
+  "-ReleaseNotes", $releaseNotesDraft,
+  "-AnalyticsMode", $AnalyticsMode
+)
+
+if (-not $SkipBrowser) {
+  $evidenceArgs += @("-BrowserSmokeJson", $browserSmokeJson)
+}
+if (-not $SkipPerformance) {
+  $evidenceArgs += @("-PerformanceBaselineJson", $performanceBaselineJson)
+}
+if (-not $SkipRestore) {
+  $evidenceArgs += @("-RestoreDrillSummary", $restoreDrillSummary)
+}
+if ($AllowDraftEvidence -or $SkipReleaseCheck -or $SkipBrowser -or $SkipPerformance -or $SkipRestore) {
+  $evidenceArgs += "-AllowMissingArtifacts"
+}
+
+Write-Host "[private-beta-candidate] generating evidence manifest"
+powershell @evidenceArgs
+Assert-NativeSuccess "private-beta evidence manifest"
+
+$validationArgs = @(
+  "-ExecutionPolicy", "Bypass",
+  "-File", (Join-Path $repoRoot "scripts\validate_private_beta_evidence.ps1"),
+  "-ManifestPath", (Join-Path $evidenceDir "private-beta-evidence-manifest.json"),
+  "-OutputPath", $evidenceValidationJson
+)
+$draftValidation = $AllowDraftEvidence -or $SkipReleaseCheck -or $SkipBrowser -or $SkipPerformance -or $SkipRestore -or $usesDraftReleaseNotes
+if ($draftValidation) {
+  $validationArgs += "-AllowDraft"
+}
+
+Write-Host "[private-beta-candidate] validating evidence manifest"
+powershell @validationArgs
+Assert-NativeSuccess "private-beta evidence validation"
+
+$validationPayload = Get-Content -Path $evidenceValidationJson -Raw | ConvertFrom-Json
+$validationStatus = [string]$validationPayload.status
+$validationWarnings = @()
+if ($null -ne $validationPayload.warnings) {
+  foreach ($warning in $validationPayload.warnings) {
+    $validationWarnings += $warning
+  }
+}
+$validationFailures = @()
+if ($null -ne $validationPayload.failures) {
+  foreach ($failure in $validationPayload.failures) {
+    $validationFailures += $failure
+  }
+}
+
+$candidateReviewStatus = if ($validationFailures.Count -gt 0) {
+  "blocked"
+} elseif ($AllowDraftEvidence -or $skippedGates.Count -gt 0) {
+  "draft_evidence_only"
+} elseif ($usesDraftReleaseNotes) {
+  "draft_evidence_only"
+} elseif ($candidateWorktreeState -ne "clean") {
+  "needs_clean_git_review"
+} elseif ($validationWarnings.Count -gt 0) {
+  "needs_warning_review"
+} else {
+  "operator_acceptance_ready"
+}
+
+$nextActions = @()
+if ($candidateWorktreeState -ne "clean") {
+  $nextActions += "Review git-status.txt and regenerate the final candidate from a clean tree, or document an accepted dirty-tree exception in release notes."
+}
+if ($skippedGates.Count -gt 0) {
+  $nextActions += "Run the full candidate wrapper without skipped gates before final acceptance: powershell -ExecutionPolicy Bypass -File .\scripts\private_beta_candidate_check.ps1 -Root $Root -SkipDocker -RequireCleanGit"
+}
+if ($usesDraftReleaseNotes) {
+  $nextActions += "Replace release-notes-draft.md placeholders or rerun with -PreparedReleaseNotes <completed-release-notes.md> before final acceptance."
+}
+if ($validationWarnings.Count -gt 0) {
+  $nextActions += "Review validation warnings and record any accepted warnings in release notes."
+}
+if ($validationFailures.Count -gt 0) {
+  $nextActions += "Fix validation failures, regenerate the evidence pack, and rerun validation."
+}
+if ($nextActions.Count -eq 0) {
+  $nextActions += "Complete the private-beta acceptance checklist and record the decision owner; this wrapper still does not authorize launch."
+}
+$nextActions += "Complete acceptance-checklist-draft.md in this candidate directory before any private-beta decision."
+
+$summary = [ordered]@{
+  output_dir = $OutputDir
+  candidate_revision = $candidateRevision
+  candidate_worktree_state = $candidateWorktreeState
+  candidate_dirty_count = $candidateDirtyCount
+  require_clean_git = [bool]$RequireCleanGit
+  candidate_review_status = $candidateReviewStatus
+  release_notes_mode = $releaseNotesMode
+  release_notes_source = $releaseNotesSource
+  skipped_gates = $skippedGates
+  next_actions = $nextActions
+  git_status_path = $gitStatusPath
+  release_check_log = $releaseCheckLog
+  browser_smoke_json = if ($SkipBrowser) { "" } else { $browserSmokeJson }
+  product_readiness_json = $productReadinessJson
+  admin_health_json = $adminHealthJson
+  telegram_preview_json = $telegramPreviewJson
+  restore_drill_summary = if ($SkipRestore) { "" } else { $restoreDrillSummary }
+  performance_baseline_json = if ($SkipPerformance) { "" } else { $performanceBaselineJson }
+  release_notes_draft = $releaseNotesDraft
+  acceptance_checklist_draft = $acceptanceChecklistDraft
+  evidence_manifest = (Join-Path $evidenceDir "private-beta-evidence-manifest.json")
+  evidence_validation = $evidenceValidationJson
+  evidence_validation_status = $validationStatus
+  evidence_validation_warnings = $validationWarnings
+  evidence_validation_failures = $validationFailures
+  signals_only_decision_support = $true
+  release_decision_authorized = $false
+  production_deployment_authorized = $false
+  pricing_commitment_authorized = $false
+  order_routing_authorized = $false
+}
+
+$summary | ConvertTo-Json -Depth 5 | Set-Content -Path $summaryPath -Encoding UTF8
+
+$acceptanceFinalStatusLines = @(
+  "",
+  "## Candidate Output Final Status",
+  "",
+  "- Candidate revision: $candidateRevision",
+  "- Candidate review status: $candidateReviewStatus",
+  "- Working tree state: $candidateWorktreeState",
+  "- Dirty/untracked entry count: $candidateDirtyCount",
+  "- Clean git required: $([bool]$RequireCleanGit)",
+  "- Release notes mode: $releaseNotesMode",
+  "- Release notes source: $releaseNotesSource",
+  "- Skipped gates: $(if ($skippedGates.Count -gt 0) { $skippedGates -join ', ' } else { 'none' })",
+  "- Validation status: $validationStatus",
+  "- Validation warnings: $($validationWarnings.Count)",
+  "- Validation failures: $($validationFailures.Count)",
+  "- Candidate summary Markdown: $summaryMarkdownPath",
+  "- Candidate summary JSON: $summaryPath",
+  "- Git status snapshot: $gitStatusPath",
+  "- Evidence manifest: $(Join-Path $evidenceDir 'private-beta-evidence-manifest.json')",
+  "- Evidence validation JSON: $evidenceValidationJson",
+  "- Product-readiness JSON: $productReadinessJson",
+  "- Admin-health JSON: $adminHealthJson",
+  "- Telegram preview JSON: $telegramPreviewJson",
+  "- Release-check log: $releaseCheckLog",
+  "- Browser-smoke JSON: $(if ($SkipBrowser) { 'skipped' } else { $browserSmokeJson })",
+  "- Restore-drill summary: $(if ($SkipRestore) { 'skipped' } else { $restoreDrillSummary })",
+  "- Performance baseline JSON: $(if ($SkipPerformance) { 'skipped' } else { $performanceBaselineJson })",
+  "- Release notes draft: $releaseNotesDraft",
+  "",
+  "This final status is generated by the local candidate wrapper. It does not authorize private beta, production deployment, pricing, broker execution, order routing, or autotrading."
+)
+$acceptanceFinalStatusLines | Add-Content -Path $acceptanceChecklistDraft -Encoding UTF8
+$acceptanceChecklistEvidenceCopy = Join-Path $evidenceDir "acceptance_checklist-$(Split-Path -Leaf $acceptanceChecklistDraft)"
+if (Test-Path -LiteralPath $acceptanceChecklistEvidenceCopy) {
+  Copy-Item -LiteralPath $acceptanceChecklistDraft -Destination $acceptanceChecklistEvidenceCopy -Force
+}
+
+$validationLines = @(
+  "## Evidence Validation",
+  "",
+  "- Status: $validationStatus",
+  "- Warnings: $($validationWarnings.Count)",
+  "- Failures: $($validationFailures.Count)"
+)
+if ($validationWarnings.Count -gt 0) {
+  $validationLines += ""
+  $validationLines += "### Warnings"
+  foreach ($warning in $validationWarnings) {
+    $validationLines += "- $($warning.code): $($warning.message)"
+  }
+}
+if ($validationFailures.Count -gt 0) {
+  $validationLines += ""
+  $validationLines += "### Failures"
+  foreach ($failure in $validationFailures) {
+    $validationLines += "- $($failure.code): $($failure.message)"
+  }
+}
+
+$nextActionLines = @(
+  "## Next Actions",
+  "",
+  "- Candidate review status: $candidateReviewStatus",
+  "- Skipped gates: $(if ($skippedGates.Count -gt 0) { $skippedGates -join ', ' } else { 'none' })"
+)
+foreach ($action in $nextActions) {
+  $nextActionLines += "- $action"
+}
+
+$summaryMarkdown = @(
+  "# Private-Beta Candidate Summary",
+  "",
+  "- Output directory: $OutputDir",
+  "- Candidate revision: $candidateRevision",
+  "- Working tree state: $candidateWorktreeState",
+  "- Dirty/untracked entry count: $candidateDirtyCount",
+  "- Clean git required: $([bool]$RequireCleanGit)",
+  "- Release notes mode: $releaseNotesMode",
+  "- Release notes source: $releaseNotesSource",
+  "- Git status snapshot: $gitStatusPath",
+  "- Release-check log: $releaseCheckLog",
+  "- Browser-smoke JSON: $(if ($SkipBrowser) { 'skipped' } else { $browserSmokeJson })",
+  "- Product-readiness JSON: $productReadinessJson",
+  "- Admin-health JSON: $adminHealthJson",
+  "- Telegram preview JSON: $telegramPreviewJson",
+  "- Restore-drill summary: $(if ($SkipRestore) { 'skipped' } else { $restoreDrillSummary })",
+  "- Performance baseline JSON: $(if ($SkipPerformance) { 'skipped' } else { $performanceBaselineJson })",
+  "- Release notes draft: $releaseNotesDraft",
+  "- Acceptance checklist draft: $acceptanceChecklistDraft",
+  "- Evidence manifest: $(Join-Path $evidenceDir 'private-beta-evidence-manifest.json')",
+  "- Evidence validation JSON: $evidenceValidationJson",
+  ""
+) + $validationLines + @(
+  ""
+) + $nextActionLines + @(
+  "",
+  "## Safety Flags",
+  "",
+  "- Signals-only decision support: true",
+  "- Release decision authorized by this wrapper: false",
+  "- Production deployment authorized by this wrapper: false",
+  "- Pricing commitment authorized by this wrapper: false",
+  "- Order routing authorized by this wrapper: false",
+  "",
+  "This summary is an operator-readable index only. It does not authorize production deployment, pricing, broker execution, order routing, autotrading, or private-beta launch."
+)
+$summaryMarkdown | Set-Content -Path $summaryMarkdownPath -Encoding UTF8
+
+Write-Host "[private-beta-candidate] summary: $summaryPath"
+Write-Host "[private-beta-candidate] summary markdown: $summaryMarkdownPath"
+Write-Host "[private-beta-candidate] OK"

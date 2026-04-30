@@ -12,7 +12,51 @@ A release is acceptable when the app can support the private-beta daily loop:
 
 without showing false market data, silently hiding failures, or requiring the author to debug the setup live.
 
-Before any private-beta deployment decision, complete `docs/private_beta_acceptance_checklist.md` and archive its evidence pack with the candidate build.
+Before any private-beta deployment decision, complete `docs/private_beta_acceptance_checklist.md`, align the walkthrough with `docs/private_beta_sales_readiness.md`, and archive the evidence pack with the candidate build.
+
+Use `docs/private_beta_release_notes_template.md` for the candidate release notes so accepted warnings, explicit non-goals, support boundaries, rollback owner, and decision owner are captured consistently. Full candidate evidence must use completed release notes with no unresolved `<...>` placeholders.
+
+Generate a local evidence manifest after the required artifacts exist:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\private_beta_evidence_pack.ps1 `
+  -ReleaseCheckLog ".\artifacts\release-check.log" `
+  -BrowserSmokeJson ".\artifacts\browser-smoke.json" `
+  -ProductReadinessJson ".\artifacts\product-readiness.json" `
+  -AdminHealthJson ".\artifacts\admin-health.json" `
+  -RestoreDrillSummary ".\artifacts\restore-drill-summary.json" `
+  -PerformanceBaselineJson ".\artifacts\performance-baseline.json" `
+  -AcceptanceChecklist ".\artifacts\acceptance-checklist-draft.md" `
+  -ReleaseNotes ".\artifacts\release-notes.md"
+```
+
+For a draft manifest before artifacts are available, add `-AllowMissingArtifacts`. The script is only an evidence collector; it does not authorize production deployment, pricing, broker execution, or private-beta launch.
+
+Validate the manifest before treating it as candidate evidence:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\validate_private_beta_evidence.ps1 `
+  -ManifestPath ".\artifacts\evidence-pack\private-beta-evidence-manifest.json"
+```
+
+For an intentionally incomplete draft, add `-AllowDraft`. Draft validation still enforces the signals-only and no-launch/no-pricing/no-order-routing flags, and it blocks any draft release notes that claim `Private-beta candidate accepted: yes`. Full validation also requires a known candidate git revision, release notes candidate revision matches the evidence manifest, analytics mode matches the evidence manifest, Telegram mode recorded as `disabled`, `preview`, `dry-run`, or `configured`, candidate-local acceptance checklist prefill, completed release notes with market-data mode recorded as `live`, `hidden`, `degraded`, or `fixture for browser smoke only`, accepted warnings recorded as `None` or concrete `warning, owner, expiry/follow-up` entries, no unresolved placeholders, all operator walkthrough checks marked `pass`, support-boundary confirmations answered `yes`, a concrete decision owner, a `yes/no/deferred` decision status, an ISO-8601 UTC decision timestamp, concrete rollback owner/revision/artifact/stop-owner fields, rollback verification coverage, and checks browser-smoke coverage, restore-drill status, performance-baseline labels, product-readiness status, admin-health status, and release-note safety phrases.
+
+To produce a local non-production candidate directory with release-check logs, product-readiness JSON, admin-health JSON, optional browser/performance/restore artifacts, draft release notes, `candidate-summary.md`, and an evidence manifest, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\private_beta_candidate_check.ps1 `
+  -Root Si `
+  -SkipDocker `
+  -RequireCleanGit
+```
+
+For a faster draft on a workstation, add `-SkipFullPytest -SkipBrowser -SkipPerformance -SkipRestore -AllowDraftEvidence` and omit `-RequireCleanGit` if the tree is intentionally dirty. Draft output is not a private-beta approval.
+
+If release notes were completed separately, pass them into the wrapper with `-PreparedReleaseNotes <completed-release-notes.md>`. Without that parameter the wrapper copies the template as `release-notes-draft.md`, validates in draft mode, and records a next action to replace placeholders before final acceptance. A full candidate run without skipped release/browser/performance/restore gates now requires `-PreparedReleaseNotes`; use `-AllowDraftEvidence` when the intent is draft evidence only.
+
+Review `candidate-summary.md` first: it includes candidate git revision, working-tree state, evidence validation status, warning/failure rollups, and a `Next Actions` section for the remaining acceptance work. The same output directory also includes `acceptance-checklist-draft.md` with a generated `Candidate Output Prefill` for recording the final non-production walkthrough. Then open the evidence validation JSON for the full machine-readable record. The wrapper does not authorize release, production deployment, pricing, broker execution, order routing, or autotrading.
+
+When `scripts/private_beta_candidate_check.ps1` generates the evidence pack, it passes the candidate-local `acceptance-checklist-draft.md` into the manifest so the archived `acceptance_checklist` artifact matches the candidate-specific decision record.
 
 For production-like deployments, define external alert routing from `docs/alerting_expectations.md` before accepting the release.
 
@@ -43,6 +87,9 @@ The release gate must cover:
 - tracked local artifact check
 - performance baseline capture
 - backup restore drill
+- private-beta candidate evidence wrapper
+- private-beta evidence manifest generation
+- private-beta evidence validation
 - browser smoke for the private-beta golden path
 - Docker smoke unless explicitly skipped for local preflight
 
@@ -213,7 +260,7 @@ The `restore_drill_evidence` check requires a fresh JSON summary with `release_g
 - [ ] Scheduler health and recent failures are reviewed.
 - [ ] External alerting expectations are mapped for feed loss, stale references, scheduler drift, backup failures, and product-readiness failures.
 - [ ] Telegram preview or dry-run is successful.
-- [ ] Release notes include known warnings.
+- [ ] Release notes follow `docs/private_beta_release_notes_template.md`, release notes candidate revision matches the evidence manifest, analytics mode matches the evidence manifest, Telegram mode recorded as `disabled`, `preview`, `dry-run`, or `configured`, record market-data mode as `live`, `hidden`, `degraded`, or `fixture for browser smoke only`, record accepted warnings as `None` or concrete `warning, owner, expiry/follow-up` entries, include non-goals, all operator walkthrough checks marked `pass`, support boundaries, concrete rollback owner/revision/artifact/stop-owner fields, rollback verification coverage, concrete decision owner, `yes/no/deferred` decision status, ISO-8601 UTC decision timestamp, contain no unresolved `<...>` placeholders, and answer every support-boundary confirmation as `yes`.
 - [ ] Rollback steps are known before deployment starts.
 
 ## Rollback Checklist
@@ -242,7 +289,7 @@ These are not yet complete enough for production launch:
 
 - performance budget enforcement in release mode
 - external alert destination configuration and test evidence
-- deployment packaging, pricing, and support commitments
+- deployment packaging, pricing, and paid support commitments
 
 ## Release Decision
 
