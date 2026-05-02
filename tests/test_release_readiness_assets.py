@@ -35,6 +35,9 @@ def test_private_beta_evidence_pack_script_collects_required_artifacts() -> None
     assert "BrowserSmokeJson" in script
     assert "ProductReadinessJson" in script
     assert "AdminHealthJson" in script
+    assert "WorkspaceSnapshotJson" in script
+    assert "TelegramPreviewJson" in script
+    assert "TelegramOpsPreviewJson" in script
     assert "RestoreDrillSummary" in script
     assert "PerformanceBaselineJson" in script
     assert "AcceptanceChecklist" in script
@@ -70,7 +73,12 @@ def test_private_beta_candidate_check_script_collects_local_candidate_evidence()
     assert "Candidate summary JSON" in script
     assert "product-readiness.json" in script
     assert "admin-health.json" in script
+    assert "workspace-snapshot.json" in script
     assert "telegram-preview.json" in script
+    assert "telegram-ops-preview.json" in script
+    assert "TelegramPreviewJson" in script
+    assert "TelegramOpsPreviewJson" in script
+    assert "WorkspaceSnapshotJson" in script
     assert "private-beta-evidence-validation.json" in script
     assert "git-status.txt" in script
     assert "CandidateRevision" in script
@@ -101,6 +109,7 @@ def test_private_beta_candidate_check_script_collects_local_candidate_evidence()
     assert "Order routing authorized by this wrapper: false" in script
     assert "/api/v1/health/product-readiness" in script
     assert "/api/v1/admin/health" in script
+    assert "/api/v1/workspace" in script
     assert "/api/v1/notifications/telegram/preview" in script
     assert "AllowDraftEvidence" in script
     assert "signals_only_decision_support" in script
@@ -128,6 +137,9 @@ def test_validate_private_beta_evidence_script_enforces_candidate_guardrails() -
     assert "draft_release_notes_analytics_mode_mismatch" in script
     assert "release_notes_telegram_mode_invalid" in script
     assert "draft_release_notes_telegram_mode_invalid" in script
+    assert "release_notes_telegram_evidence_link_missing" in script
+    assert "release_notes_workspace_evidence_link_missing" in script
+    assert "draft_release_notes_workspace_evidence_link_missing" in script
     assert "release_notes_placeholders_present" in script
     assert "draft_release_notes_placeholders_present" in script
     assert "release_notes_accepted_warnings_missing" in script
@@ -168,6 +180,15 @@ def test_validate_private_beta_evidence_script_enforces_candidate_guardrails() -
     assert "order_routing_authorized" in script
     assert "product_readiness" in script
     assert "admin_health" in script
+    assert "workspace_snapshot" in script
+    assert "workspace_snapshot_morning_brief_not_signals_only" in script
+    assert "workspace_snapshot_morning_brief_market_status_invalid" in script
+    assert "workspace_snapshot_forbidden_execution_flag" in script
+    assert "telegram_preview" in script
+    assert "telegram_ops_preview" in script
+    assert "telegram_preview_root_missing" in script
+    assert "telegram_preview_event_kind_invalid" in script
+    assert "telegram_ops_preview_alert_items_missing" in script
     assert "release_notes" in script
     assert "release_gate=pass" in script
     assert "browser_smoke_missing_check" in script
@@ -290,6 +311,11 @@ def test_release_checklist_documents_release_and_rollback_policy() -> None:
     assert "Private-beta evidence manifest path" in acceptance
     assert "Private-beta evidence validation path" in acceptance
     assert "Product-readiness JSON" in acceptance
+    assert "Telegram preview JSON" in acceptance
+    assert "Telegram ops preview JSON" in acceptance
+    assert "Workspace snapshot JSON" in acceptance
+    assert "release notes link Workspace snapshot JSON, Telegram preview JSON, and Telegram ops preview JSON evidence artifacts" in acceptance
+    assert "Morning Command Brief" in acceptance
     assert "Browser smoke JSON" in acceptance
     assert "Release Blockers" in acceptance
     assert "signals-only decision support" in acceptance
@@ -342,6 +368,9 @@ def test_release_checklist_documents_release_and_rollback_policy() -> None:
     assert "Production deployment, uptime SLA" in sales
     assert "guaranteed outcomes" in sales
     assert "Private-Beta Release Notes Template" in release_notes
+    assert "Telegram preview JSON" in release_notes
+    assert "Telegram ops preview JSON" in release_notes
+    assert "Workspace snapshot JSON" in release_notes
     assert "Accepted Warnings" in release_notes
     assert "Explicit Non-Goals" in release_notes
     assert "Operator Walkthrough Result" in release_notes
@@ -385,6 +414,10 @@ def test_browser_smoke_covers_workspace_and_runtime_prompt_governance() -> None:
 
     assert "sync_playwright" in script
     assert "/workspace?root=" in script
+    assert "workspace_morning_brief_visible" in script
+    assert "[data-morning-brief]" in script
+    assert "[data-morning-brief-dont-chase]" in script
+    assert "signals-only" in script
     assert "--secondary-root" in script
     assert "workspace_root_switch" in script
     assert '[data-surface-state-strip="workspace"]' in script

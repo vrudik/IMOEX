@@ -4,7 +4,7 @@ from fastapi import HTTPException
 
 from apps.api.routes.dashboard_delivery_data import build_delivery_activity_snapshot, build_delivery_windows
 from libs.bootstrap.container import get_app_container
-from libs.dashboard.contracts import WorkspaceSignalSnapshot, WorkspaceSnapshot
+from libs.dashboard.contracts import MorningBriefItem, MorningBriefSnapshot, WorkspaceSignalSnapshot, WorkspaceSnapshot
 from libs.preferences.contracts import NotificationEventKind, NotificationPreferenceWorkspaceSnapshot
 
 
@@ -22,6 +22,7 @@ def build_workspace_snapshot(
         resolved_root = container.preference_service.resolve_default_root()
     snapshot = container.dashboard_service.build_workspace_snapshot(root=resolved_root, signal_id=signal_id)
     preview = container.telegram_notification_service.preview(root=snapshot.selected_root, limit=3)
+    telegram_delivery_ready = bool(preview.enabled and preview.configured)
     (
         delivery_activity,
         delivery_activity_filters,
@@ -39,7 +40,8 @@ def build_workspace_snapshot(
     return snapshot.model_copy(
         update={
             "telegram_preview_message": preview.message,
-            "telegram_delivery_ready": bool(preview.enabled and preview.configured),
+            "telegram_delivery_ready": telegram_delivery_ready,
+            "morning_brief": build_morning_brief(snapshot, telegram_delivery_ready=telegram_delivery_ready),
             "delivery_windows": build_delivery_windows(selected_root=snapshot.selected_root),
             "delivery_activity": delivery_activity,
             "delivery_activity_filters": delivery_activity_filters,
@@ -49,6 +51,52 @@ def build_workspace_snapshot(
             "delivery_activity_pagination": delivery_activity_pagination,
         },
         deep=True,
+    )
+
+
+def build_morning_brief(snapshot: WorkspaceSnapshot, *, telegram_delivery_ready: bool) -> MorningBriefSnapshot:
+    market_snapshot = snapshot.market_snapshot
+    market_status = market_snapshot.status if market_snapshot is not None else "hidden"
+    market_detail = None
+    last_price = None
+    price_unit = None
+    if market_snapshot is not None:
+        market_detail = market_snapshot.status_detail
+        last_price = market_snapshot.current_price
+        price_unit = market_snapshot.unit
+
+    top_attention = [
+        MorningBriefItem(title=item.title, detail=item.reason, href=item.href, tone=item.tone)
+        for item in snapshot.attention_inbox[:3]
+    ]
+    dont_chase = [
+        MorningBriefItem(
+            title=item.title,
+            detail=(
+                f"{item.market_status}: {item.market_status_detail}"
+                if item.market_status_detail
+                else item.market_status
+            ),
+            href=item.href,
+            tone="warning",
+        )
+        for item in snapshot.attention_inbox
+        if item.market_status.lower() not in {"fresh", "live"}
+    ][:3]
+    review_highlights = list(snapshot.review_bundle.highlights or snapshot.review_bundle.outcome_summary)
+    return MorningBriefSnapshot(
+        market_status=market_status,
+        market_detail=market_detail,
+        last_price=last_price,
+        price_unit=price_unit,
+        top_attention=top_attention,
+        review_highlights=review_highlights[:3],
+        dont_chase=dont_chase,
+        review_due_items=snapshot.review_bundle.review_due_items,
+        watched_roots=snapshot.review_bundle.watched_root_codes[:4],
+        telegram_status="ready" if telegram_delivery_ready else "preview",
+        data_mode=snapshot.control_panel.data_mode,
+        signals_only=True,
     )
 
 

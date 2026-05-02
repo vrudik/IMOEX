@@ -10,6 +10,7 @@ VALIDATOR = REPO_ROOT / "scripts" / "validate_private_beta_evidence.ps1"
 CANDIDATE_WRAPPER = REPO_ROOT / "scripts" / "private_beta_candidate_check.ps1"
 REQUIRED_BROWSER_CHECKS = [
     "workspace_opened",
+    "workspace_morning_brief_visible",
     "runtime_admin_key_save_clear",
     "runtime_prompt_diff",
     "runtime_prompt_draft_saved",
@@ -83,6 +84,10 @@ def _manifest(
             "- Analytics mode: disabled",
             "- Telegram mode: disabled",
             "- Market-data mode: degraded",
+            "## Evidence Links",
+            "- Workspace snapshot JSON: C:/tmp/workspace-snapshot.json",
+            "- Telegram preview JSON: C:/tmp/telegram-preview.json",
+            "- Telegram ops preview JSON: C:/tmp/telegram-ops-preview.json",
             "## Accepted Warnings",
             "- None",
             "## Explicit Non-Goals",
@@ -93,6 +98,7 @@ def _manifest(
             "- Candidate understands secrets must not be pasted into screenshots, logs, or issue comments: yes",
             "## Operator Walkthrough Result",
             "- Workspace trust ribbon checked: pass",
+            "- Morning Command Brief checked: pass",
             "- Current price and day/week/month charts checked: pass",
             "- Root switch checked: pass",
             "- Signal detail checked: pass",
@@ -131,6 +137,53 @@ def _manifest(
         {
             **_artifact(tmp_path, "admin_health"),
             "path": _write_json(tmp_path / "admin_health.json", {"status": "ok"}),
+        },
+        {
+            **_artifact(tmp_path, "workspace_snapshot"),
+            "path": _write_json(
+                tmp_path / "workspace_snapshot.json",
+                {
+                    "morning_brief": {
+                        "signals_only": True,
+                        "market_status": "degraded",
+                        "top_attention": [{"title": "Review Si", "href": "/workspace"}],
+                        "dont_chase": [],
+                        "telegram_status": "preview",
+                    }
+                },
+            ),
+        },
+        {
+            **_artifact(tmp_path, "telegram_preview"),
+            "path": _write_json(
+                tmp_path / "telegram_preview.json",
+                {
+                    "root": "Si",
+                    "configured": False,
+                    "event_kind": "digest",
+                    "delivery_allowed": True,
+                    "message": "IMOEX Signal Brief",
+                },
+            ),
+        },
+        {
+            **_artifact(tmp_path, "telegram_ops_preview"),
+            "path": _write_json(
+                tmp_path / "telegram_ops_preview.json",
+                {
+                    "enabled": False,
+                    "configured": False,
+                    "alert_items": [
+                        {
+                            "kind": "scheduler_failed_runs",
+                            "severity": "warning",
+                            "title": "Scheduler failed runs",
+                            "detail": "No failed runs in fixture.",
+                        }
+                    ],
+                    "message": "IMOEX Ops Alerts",
+                },
+            ),
         },
         {
             **_artifact(tmp_path, "restore_drill"),
@@ -351,6 +404,114 @@ def test_private_beta_evidence_validator_warns_on_draft_release_notes_analytics_
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["status"] == "pass"
     assert any(item["code"] == "draft_release_notes_analytics_mode_mismatch" for item in payload["warnings"])
+
+
+def test_private_beta_evidence_validator_blocks_incomplete_telegram_preview(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "telegram_preview":
+            Path(artifact["path"]).write_text(
+                json.dumps({"root": "", "event_kind": "auto-send", "message": ""}),
+                encoding="utf-8",
+            )
+            break
+    output = tmp_path / "validation-telegram-preview-failed.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    failure_codes = {item["code"] for item in payload["failures"]}
+    assert "telegram_preview_root_missing" in failure_codes
+    assert "telegram_preview_event_kind_invalid" in failure_codes
+    assert "telegram_preview_delivery_allowed_missing" in failure_codes
+    assert "telegram_preview_configured_missing" in failure_codes
+    assert "telegram_preview_message_missing" in failure_codes
+
+
+def test_private_beta_evidence_validator_blocks_incomplete_workspace_morning_brief(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "workspace_snapshot":
+            Path(artifact["path"]).write_text(
+                json.dumps(
+                    {
+                        "morning_brief": {
+                            "signals_only": False,
+                            "market_status": "synthetic",
+                            "telegram_status": "auto-send",
+                        },
+                        "broker_execution_enabled": True,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            break
+    output = tmp_path / "validation-workspace-morning-brief-failed.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    failure_codes = {item["code"] for item in payload["failures"]}
+    assert "workspace_snapshot_morning_brief_not_signals_only" in failure_codes
+    assert "workspace_snapshot_morning_brief_market_status_invalid" in failure_codes
+    assert "workspace_snapshot_morning_brief_attention_missing" in failure_codes
+    assert "workspace_snapshot_morning_brief_dont_chase_missing" in failure_codes
+    assert "workspace_snapshot_morning_brief_telegram_status_invalid" in failure_codes
+    assert "workspace_snapshot_forbidden_execution_flag" in failure_codes
+
+
+def test_private_beta_evidence_validator_blocks_incomplete_telegram_ops_preview(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "telegram_ops_preview":
+            Path(artifact["path"]).write_text(json.dumps({"message": ""}), encoding="utf-8")
+            break
+    output = tmp_path / "validation-telegram-ops-preview-failed.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    failure_codes = {item["code"] for item in payload["failures"]}
+    assert "telegram_ops_preview_enabled_missing" in failure_codes
+    assert "telegram_ops_preview_configured_missing" in failure_codes
+    assert "telegram_ops_preview_alert_items_missing" in failure_codes
+    assert "telegram_ops_preview_message_missing" in failure_codes
+
+
+def test_private_beta_evidence_validator_blocks_incomplete_telegram_ops_preview_alert_item(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "telegram_ops_preview":
+            Path(artifact["path"]).write_text(
+                json.dumps(
+                    {
+                        "enabled": False,
+                        "configured": False,
+                        "alert_items": [{"kind": "scheduler_failed_runs"}],
+                        "message": "IMOEX Ops Alerts",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            break
+    output = tmp_path / "validation-telegram-ops-preview-item-failed.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    assert any(item["code"] == "telegram_ops_preview_alert_item_incomplete" for item in payload["failures"])
 
 
 def test_private_beta_evidence_validator_blocks_missing_acceptance_prefill(tmp_path: Path) -> None:
@@ -1065,6 +1226,104 @@ def test_private_beta_evidence_validator_warns_on_draft_invalid_telegram_mode(tm
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["status"] == "pass"
     assert any(item["code"] == "draft_release_notes_telegram_mode_invalid" for item in payload["warnings"])
+
+
+def test_private_beta_evidence_validator_blocks_missing_telegram_evidence_links(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "release_notes":
+            release_notes_path = Path(artifact["path"])
+            release_notes = release_notes_path.read_text(encoding="utf-8")
+            release_notes_path.write_text(
+                release_notes.replace("- Telegram preview JSON: C:/tmp/telegram-preview.json\n", "").replace(
+                    "- Telegram ops preview JSON: C:/tmp/telegram-ops-preview.json\n",
+                    "",
+                ),
+                encoding="utf-8",
+            )
+            break
+    output = tmp_path / "validation-telegram-evidence-links-failed.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    failures = [item for item in payload["failures"] if item["code"] == "release_notes_telegram_evidence_link_missing"]
+    assert len(failures) == 2
+
+
+def test_private_beta_evidence_validator_warns_on_draft_missing_telegram_evidence_links(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "release_notes":
+            release_notes_path = Path(artifact["path"])
+            release_notes = release_notes_path.read_text(encoding="utf-8")
+            release_notes_path.write_text(
+                release_notes.replace("- Telegram preview JSON: C:/tmp/telegram-preview.json\n", "").replace(
+                    "- Telegram ops preview JSON: C:/tmp/telegram-ops-preview.json\n",
+                    "",
+                ),
+                encoding="utf-8",
+            )
+            break
+    output = tmp_path / "validation-draft-telegram-evidence-links-warning.json"
+
+    result = _run_validator(manifest, output, allow_draft=True)
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "pass"
+    warnings = [
+        item for item in payload["warnings"] if item["code"] == "draft_release_notes_telegram_evidence_link_missing"
+    ]
+    assert len(warnings) == 2
+
+
+def test_private_beta_evidence_validator_blocks_missing_workspace_evidence_link(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "release_notes":
+            release_notes_path = Path(artifact["path"])
+            release_notes = release_notes_path.read_text(encoding="utf-8")
+            release_notes_path.write_text(
+                release_notes.replace("- Workspace snapshot JSON: C:/tmp/workspace-snapshot.json\n", ""),
+                encoding="utf-8",
+            )
+            break
+    output = tmp_path / "validation-workspace-evidence-link-failed.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    assert any(item["code"] == "release_notes_workspace_evidence_link_missing" for item in payload["failures"])
+
+
+def test_private_beta_evidence_validator_warns_on_draft_missing_workspace_evidence_link(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "release_notes":
+            release_notes_path = Path(artifact["path"])
+            release_notes = release_notes_path.read_text(encoding="utf-8")
+            release_notes_path.write_text(
+                release_notes.replace("- Workspace snapshot JSON: C:/tmp/workspace-snapshot.json\n", ""),
+                encoding="utf-8",
+            )
+            break
+    output = tmp_path / "validation-draft-workspace-evidence-link-warning.json"
+
+    result = _run_validator(manifest, output, allow_draft=True)
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "pass"
+    assert any(item["code"] == "draft_release_notes_workspace_evidence_link_missing" for item in payload["warnings"])
 
 
 def test_private_beta_evidence_validator_blocks_incomplete_rollback_record(tmp_path: Path) -> None:

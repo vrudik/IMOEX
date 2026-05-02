@@ -109,6 +109,9 @@ $requiredArtifactKeys = @(
   "browser_smoke",
   "product_readiness",
   "admin_health",
+  "workspace_snapshot",
+  "telegram_preview",
+  "telegram_ops_preview",
   "restore_drill",
   "performance_baseline",
   "alerting_expectations",
@@ -188,12 +191,94 @@ if (-not [string]::IsNullOrWhiteSpace($adminHealthPath)) {
   }
 }
 
+$workspaceSnapshotPath = Get-ArtifactPath "workspace_snapshot"
+if (-not [string]::IsNullOrWhiteSpace($workspaceSnapshotPath)) {
+  $workspaceSnapshot = Get-Content -Path $workspaceSnapshotPath -Raw | ConvertFrom-Json
+  if (-not ($workspaceSnapshot.PSObject.Properties.Name -contains "morning_brief")) {
+    Add-Failure "workspace_snapshot_morning_brief_missing" "Workspace snapshot JSON must include morning_brief."
+  } else {
+    $morningBrief = $workspaceSnapshot.morning_brief
+    if (-not ($morningBrief.PSObject.Properties.Name -contains "signals_only") -or [bool]$morningBrief.signals_only -ne $true) {
+      Add-Failure "workspace_snapshot_morning_brief_not_signals_only" "Morning Command Brief must remain signals-only."
+    }
+    if (@("fresh", "aging", "stale", "degraded", "hidden", "unknown") -notcontains [string]$morningBrief.market_status) {
+      Add-Failure "workspace_snapshot_morning_brief_market_status_invalid" "Morning Command Brief must report a truthful market_status."
+    }
+    if (-not ($morningBrief.PSObject.Properties.Name -contains "top_attention")) {
+      Add-Failure "workspace_snapshot_morning_brief_attention_missing" "Morning Command Brief must include top_attention."
+    }
+    if (-not ($morningBrief.PSObject.Properties.Name -contains "dont_chase")) {
+      Add-Failure "workspace_snapshot_morning_brief_dont_chase_missing" "Morning Command Brief must include dont_chase safeguards."
+    }
+    if (@("ready", "preview") -notcontains [string]$morningBrief.telegram_status) {
+      Add-Failure "workspace_snapshot_morning_brief_telegram_status_invalid" "Morning Command Brief Telegram status must be ready or preview."
+    }
+  }
+  foreach ($forbiddenField in @("order_routing_authorized", "autotrading_enabled", "broker_execution_enabled")) {
+    if ($workspaceSnapshot.PSObject.Properties.Name -contains $forbiddenField) {
+      Add-Failure "workspace_snapshot_forbidden_execution_flag" "Workspace snapshot JSON must not include '$forbiddenField'."
+    }
+  }
+}
+
+$telegramPreviewPath = Get-ArtifactPath "telegram_preview"
+if (-not [string]::IsNullOrWhiteSpace($telegramPreviewPath)) {
+  $telegramPreview = Get-Content -Path $telegramPreviewPath -Raw | ConvertFrom-Json
+  if ([string]::IsNullOrWhiteSpace([string]$telegramPreview.root)) {
+    Add-Failure "telegram_preview_root_missing" "Telegram preview JSON must include a root."
+  }
+  if (@("digest", "signal_open", "resolution", "post_mortem") -notcontains [string]$telegramPreview.event_kind) {
+    Add-Failure "telegram_preview_event_kind_invalid" "Telegram preview JSON must include a supported event_kind."
+  }
+  if (-not ($telegramPreview.PSObject.Properties.Name -contains "delivery_allowed")) {
+    Add-Failure "telegram_preview_delivery_allowed_missing" "Telegram preview JSON must include delivery_allowed."
+  }
+  if (-not ($telegramPreview.PSObject.Properties.Name -contains "configured")) {
+    Add-Failure "telegram_preview_configured_missing" "Telegram preview JSON must include configured."
+  }
+  if ([string]::IsNullOrWhiteSpace([string]$telegramPreview.message)) {
+    Add-Failure "telegram_preview_message_missing" "Telegram preview JSON must include an operator-readable message."
+  }
+}
+
+$telegramOpsPreviewPath = Get-ArtifactPath "telegram_ops_preview"
+if (-not [string]::IsNullOrWhiteSpace($telegramOpsPreviewPath)) {
+  $telegramOpsPreview = Get-Content -Path $telegramOpsPreviewPath -Raw | ConvertFrom-Json
+  if (-not ($telegramOpsPreview.PSObject.Properties.Name -contains "enabled")) {
+    Add-Failure "telegram_ops_preview_enabled_missing" "Telegram ops preview JSON must include enabled."
+  }
+  if (-not ($telegramOpsPreview.PSObject.Properties.Name -contains "configured")) {
+    Add-Failure "telegram_ops_preview_configured_missing" "Telegram ops preview JSON must include configured."
+  }
+  if (-not ($telegramOpsPreview.PSObject.Properties.Name -contains "alert_items")) {
+    Add-Failure "telegram_ops_preview_alert_items_missing" "Telegram ops preview JSON must include alert_items."
+  } elseif ($null -ne $telegramOpsPreview.alert_items) {
+    $opsAlertItems = @($telegramOpsPreview.alert_items)
+    foreach ($alertItem in $opsAlertItems) {
+      $missingAlertFields = @()
+      foreach ($fieldName in @("kind", "severity", "title", "detail")) {
+        if (-not ($alertItem.PSObject.Properties.Name -contains $fieldName) -or [string]::IsNullOrWhiteSpace([string]$alertItem.$fieldName)) {
+          $missingAlertFields += $fieldName
+        }
+      }
+      if ($missingAlertFields.Count -gt 0) {
+        Add-Failure "telegram_ops_preview_alert_item_incomplete" "Telegram ops preview alert_items entries must include kind, severity, title, and detail."
+        break
+      }
+    }
+  }
+  if ([string]::IsNullOrWhiteSpace([string]$telegramOpsPreview.message)) {
+    Add-Failure "telegram_ops_preview_message_missing" "Telegram ops preview JSON must include an operator-readable message."
+  }
+}
+
 $browserSmokePath = Get-ArtifactPath "browser_smoke"
 if (-not [string]::IsNullOrWhiteSpace($browserSmokePath)) {
   $browserSmoke = Get-Content -Path $browserSmokePath -Raw | ConvertFrom-Json
   $browserChecks = @($browserSmoke.checks | ForEach-Object { [string]$_ })
   $requiredBrowserChecks = @(
     "workspace_opened",
+    "workspace_morning_brief_visible",
     "runtime_admin_key_save_clear",
     "runtime_prompt_diff",
     "runtime_prompt_draft_saved",
@@ -333,6 +418,21 @@ if (-not [string]::IsNullOrWhiteSpace($releaseNotesPath)) {
       Add-Failure "release_notes_telegram_mode_invalid" "Full private-beta release notes must record Telegram mode as disabled, preview, dry-run, or configured."
     }
   }
+  foreach ($workspaceEvidenceLabel in @("Workspace snapshot JSON", "Telegram preview JSON", "Telegram ops preview JSON")) {
+    $workspaceEvidencePattern = "(?m)^\s*-\s*$([regex]::Escape($workspaceEvidenceLabel)):\s*(?<path>.+?)\s*$"
+    $workspaceEvidenceMatch = [regex]::Match($releaseNotes, $workspaceEvidencePattern)
+    $workspaceEvidencePath = if ($workspaceEvidenceMatch.Success) { $workspaceEvidenceMatch.Groups["path"].Value.Trim() } else { "" }
+    $invalidWorkspaceEvidencePath = [string]::IsNullOrWhiteSpace($workspaceEvidencePath) -or $workspaceEvidencePath -match "<[^>`r`n]+>" -or $workspaceEvidencePath -match "^(?i:tbd|todo|unknown|none|n/a|na)$"
+    if ($invalidWorkspaceEvidencePath) {
+      $evidenceFailureCode = if ($workspaceEvidenceLabel -like "Telegram*") { "release_notes_telegram_evidence_link_missing" } else { "release_notes_workspace_evidence_link_missing" }
+      $evidenceDraftCode = if ($workspaceEvidenceLabel -like "Telegram*") { "draft_release_notes_telegram_evidence_link_missing" } else { "draft_release_notes_workspace_evidence_link_missing" }
+      if ($AllowDraft) {
+        Add-Warning $evidenceDraftCode "Draft release notes do not record a concrete $workspaceEvidenceLabel evidence link."
+      } else {
+        Add-Failure $evidenceFailureCode "Full private-beta release notes must record a concrete $workspaceEvidenceLabel evidence link."
+      }
+    }
+  }
   $acceptedWarningsMatch = [regex]::Match($releaseNotes, "(?ms)^## Accepted Warnings\s*(?<body>.*?)(?:\r?\n## |\z)")
   $acceptedWarningsBody = if ($acceptedWarningsMatch.Success) { $acceptedWarningsMatch.Groups["body"].Value } else { "" }
   $acceptedWarningBullets = @(
@@ -400,6 +500,7 @@ if (-not [string]::IsNullOrWhiteSpace($releaseNotesPath)) {
   }
   $requiredWalkthroughChecks = @(
     "Workspace trust ribbon checked",
+    "Morning Command Brief checked",
     "Current price and day/week/month charts checked",
     "Root switch checked",
     "Signal detail checked",

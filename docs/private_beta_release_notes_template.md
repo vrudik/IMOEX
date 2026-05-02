@@ -23,6 +23,9 @@ This release-note record does not authorize production deployment, pricing, brok
 - Browser-smoke JSON: `<path>`
 - Product-readiness JSON: `<path>`
 - Admin-health JSON: `<path>`
+- Workspace snapshot JSON: `<path>`
+- Telegram preview JSON: `<path>`
+- Telegram ops preview JSON: `<path>`
 - Restore-drill summary: `<path>`
 - Performance baseline JSON: `<path>`
 - External alerting map: `docs/alerting_expectations.md` or `<target-specific path>`
@@ -47,6 +50,7 @@ These are not part of this candidate unless a separate explicit decision exists:
 ## Operator Walkthrough Result
 
 - Workspace trust ribbon checked: `<pass/fail/not run>`
+- Morning Command Brief checked: `<pass/fail/not run>`
 - Current price and day/week/month charts checked: `<pass/fail/not run>`
 - Root switch checked: `<pass/fail/not run>`
 - Signal detail checked: `<pass/fail/not run>`

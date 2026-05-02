@@ -81,11 +81,12 @@ from apps.api.routes.dashboard_visuals import render_horizon_pulse, render_metri
 from apps.api.routes.dashboard_watchlist import render_watchlist
 from apps.api.routes.dashboard_workspace import (
     render_attention_inbox,
+    render_morning_brief,
     render_root_pulse_card,
     render_workspace_signal_tile,
 )
 import apps.api.routes.dashboard_workspace_data as dashboard_workspace_data
-from apps.api.routes.dashboard_workspace_data import build_signal_workspace_snapshot
+from apps.api.routes.dashboard_workspace_data import build_morning_brief, build_signal_workspace_snapshot
 from apps.api.routes.dashboard_workflow import (
     render_workflow_chip,
     render_workflow_panel,
@@ -597,13 +598,102 @@ def test_dashboard_workspace_lane_renderers_preserve_preview_contracts() -> None
     assert '/workspace?root=Si&amp;signal_id=SIG&lt;attention&gt;' in attention_html
 
 
+def test_dashboard_morning_brief_renders_operator_ritual_without_execution_language() -> None:
+    attention = SimpleNamespace(
+        title="Signal <one>",
+        reason="Confidence changed <fast>.",
+        href="/workspace?root=Si&signal_id=SIG<one>",
+        market_status="degraded",
+        market_status_detail="Feed stale <detail>.",
+    )
+    snapshot = SimpleNamespace(
+        market_snapshot=SimpleNamespace(
+            status="fresh",
+            status_detail="MOEX feed <traceable>.",
+            current_price=96325.5,
+            unit="R<UB>",
+        ),
+        attention_inbox=[attention],
+        review_bundle=SimpleNamespace(
+            highlights=["Reviewed <overnight> delta."],
+            outcome_summary=[],
+            review_due_items=2,
+            watched_root_codes=["Si", "BR"],
+        ),
+        telegram_delivery_ready=False,
+        control_panel=SimpleNamespace(data_mode="degraded"),
+    )
+
+    html = render_morning_brief(snapshot, language="en")
+
+    assert 'data-morning-brief' in html
+    assert 'data-morning-brief-market' in html
+    assert 'data-morning-brief-attention' in html
+    assert 'data-morning-brief-delta' in html
+    assert 'data-morning-brief-dont-chase' in html
+    assert "Morning Command Brief" in html
+    assert "signals-only" in html
+    assert "MOEX feed &lt;traceable&gt;." in html
+    assert "96 325.50 R&lt;UB&gt;" in html
+    assert "/workspace?root=Si&amp;signal_id=SIG&lt;one&gt;" in html
+    assert "Signal &lt;one&gt;" in html
+    assert "Feed stale &lt;detail&gt;." in html
+    assert "Reviewed &lt;overnight&gt; delta." in html
+    assert "preview" in html
+    assert "order" not in html.lower()
+    assert "trade now" not in html.lower()
+
+
+def test_dashboard_morning_brief_builder_returns_api_contract() -> None:
+    attention = SimpleNamespace(
+        title="Signal one",
+        reason="Priority changed.",
+        href="/workspace?root=Si",
+        tone="warning",
+        market_status="degraded",
+        market_status_detail="Feed stale.",
+    )
+    snapshot = SimpleNamespace(
+        market_snapshot=SimpleNamespace(
+            status="fresh",
+            status_detail="Traceable live feed.",
+            current_price=96325.5,
+            unit="RUB",
+        ),
+        attention_inbox=[attention],
+        review_bundle=SimpleNamespace(
+            highlights=["Overnight confidence changed."],
+            outcome_summary=[],
+            review_due_items=1,
+            watched_root_codes=["Si", "BR", "MXI", "GD", "CNY"],
+        ),
+        control_panel=SimpleNamespace(data_mode="live"),
+    )
+
+    brief = build_morning_brief(snapshot, telegram_delivery_ready=False)
+
+    assert brief.signals_only is True
+    assert brief.market_status == "fresh"
+    assert brief.last_price == 96325.5
+    assert brief.price_unit == "RUB"
+    assert brief.top_attention[0].title == "Signal one"
+    assert brief.dont_chase[0].detail == "degraded: Feed stale."
+    assert brief.review_highlights == ["Overnight confidence changed."]
+    assert brief.review_due_items == 1
+    assert brief.watched_roots == ["Si", "BR", "MXI", "GD"]
+    assert brief.telegram_status == "preview"
+    assert brief.data_mode == "live"
+
+
 def test_dashboard_route_keeps_workspace_lane_rendering_outside_route_module() -> None:
     source = Path("apps/api/routes/dashboard.py").read_text(encoding="utf-8")
 
     assert "render_attention_inbox as _render_attention_inbox" in source
+    assert "render_morning_brief as _render_morning_brief" in source
     assert "render_root_pulse_card as _render_root_pulse_card" in source
     assert "render_workspace_signal_tile as _render_workspace_signal_tile" in source
     assert "def _render_attention_inbox" not in source
+    assert "def _render_morning_brief" not in source
     assert "def _render_root_pulse_card" not in source
     assert "def _render_workspace_signal_tile" not in source
 

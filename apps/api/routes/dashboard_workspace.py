@@ -5,6 +5,116 @@ from html import escape
 from apps.api.routes.dashboard_formatting import format_price_value, format_signed_pct
 
 
+def render_morning_brief(snapshot, *, language: str) -> str:
+    copy = _morning_brief_copy(language)
+    brief = getattr(snapshot, "morning_brief", None)
+    if brief is not None:
+        market_status = brief.market_status or copy["market_hidden"]
+        market_detail = brief.market_detail or (
+            copy["market_ready_detail"] if market_status == "fresh" else copy["market_hidden_detail"]
+        )
+        price_line = copy["price_hidden"]
+        if brief.last_price is not None:
+            unit = f" {escape(brief.price_unit or '')}".rstrip()
+            price_line = f"{format_price_value(brief.last_price)}{unit}"
+        top_attention = list(brief.top_attention or [])
+        stale_or_degraded = list(brief.dont_chase or [])
+        highlights = list(brief.review_highlights or [])
+        review_due = brief.review_due_items
+        watched_roots = list(brief.watched_roots or [])
+        delivery_ready = brief.telegram_status == "ready"
+        data_mode = brief.data_mode
+    else:
+        market_snapshot = getattr(snapshot, "market_snapshot", None)
+        market_status = getattr(market_snapshot, "status", None) or copy["market_hidden"]
+        market_detail = (
+            getattr(market_snapshot, "status_detail", None)
+            or (
+                copy["market_ready_detail"]
+                if market_snapshot is not None and market_status == "fresh"
+                else copy["market_hidden_detail"]
+            )
+        )
+        price_line = copy["price_hidden"]
+        if market_snapshot is not None:
+            unit = f" {escape(getattr(market_snapshot, 'unit', '') or '')}".rstrip()
+            price_line = f"{format_price_value(market_snapshot.current_price)}{unit}"
+        attention_items = list(getattr(snapshot, "attention_inbox", []) or [])
+        top_attention = attention_items[:3]
+        stale_or_degraded = [
+            item
+            for item in attention_items
+            if str(getattr(item, "market_status", "")).lower() not in {"fresh", "live"}
+        ][:3]
+        review_bundle = getattr(snapshot, "review_bundle", None)
+        highlights = list(getattr(review_bundle, "highlights", []) or [])
+        if not highlights:
+            highlights = list(getattr(review_bundle, "outcome_summary", []) or [])
+        review_due = getattr(review_bundle, "review_due_items", 0) if review_bundle is not None else 0
+        watched_roots = getattr(review_bundle, "watched_root_codes", []) if review_bundle is not None else []
+        delivery_ready = bool(getattr(snapshot, "telegram_delivery_ready", False))
+        data_mode = snapshot.control_panel.data_mode
+
+    attention_count = len(getattr(snapshot, "attention_inbox", []) or top_attention)
+    review_bundle = getattr(snapshot, "review_bundle", None)
+    attention_lines = (
+        "".join(
+            f'<li><a href="{escape(getattr(item, "href", None) or "#")}">{escape(item.title)}</a>'
+            f'<span>{escape(_morning_brief_attention_detail(item))}</span></li>'
+            for item in top_attention
+        )
+        or f'<li><span>{escape(copy["attention_empty"])}</span></li>'
+    )
+    dont_chase_lines = (
+        "".join(
+            f'<li><strong>{escape(item.title)}</strong><span>{escape(_morning_brief_caution_detail(item))}</span></li>'
+            for item in stale_or_degraded
+        )
+        or f'<li><span>{escape(copy["dont_chase_empty"])}</span></li>'
+    )
+
+    if not highlights:
+        highlights = [copy["delta_empty"]]
+    delta_lines = "".join(f"<li>{escape(item)}</li>" for item in highlights[:3])
+    watched_label = ", ".join(watched_roots[:4]) if watched_roots else copy["none"]
+
+    return (
+        '<section class="panel morning-brief" data-morning-brief>'
+        '<div class="panel-head">'
+        "<div>"
+        f'<h2>{escape(copy["title"])}</h2>'
+        f'<p>{escape(copy["subtitle"])}</p>'
+        "</div>"
+        f'<span class="filter-chip is-active">{escape(copy["signals_only"])}</span>'
+        "</div>"
+        '<div class="summary-grid">'
+        '<article class="decision-card tone-neutral" data-morning-brief-market>'
+        f'<span>{escape(copy["market_truth"])}</span><strong>{escape(market_status)}</strong>'
+        f'<p>{escape(market_detail)}</p><small>{escape(copy["last_price"])} {price_line}</small>'
+        "</article>"
+        '<article class="decision-card tone-positive" data-morning-brief-attention>'
+        f'<span>{escape(copy["attention"])}</span><strong>{attention_count}</strong>'
+        f"<ul>{attention_lines}</ul>"
+        "</article>"
+        '<article class="decision-card tone-neutral" data-morning-brief-delta>'
+        f'<span>{escape(copy["overnight_delta"])}</span><strong>{escape(copy["review_ready"])}</strong>'
+        f"<ul>{delta_lines}</ul>"
+        "</article>"
+        '<article class="decision-card tone-warning" data-morning-brief-dont-chase>'
+        f'<span>{escape(copy["dont_chase"])}</span><strong>{len(stale_or_degraded)}</strong>'
+        f"<ul>{dont_chase_lines}</ul>"
+        "</article>"
+        "</div>"
+        '<div class="metric-row">'
+        f'<small>{escape(copy["review_due"])} {review_due}</small>'
+        f'<small>{escape(copy["watched_roots"])} {escape(watched_label)}</small>'
+        f'<small>{escape(copy["delivery"])} {escape(copy["ready"] if delivery_ready else copy["preview_only"])}</small>'
+        f'<small>{escape(copy["data_mode"])} {escape(data_mode)}</small>'
+        "</div>"
+        "</section>"
+    )
+
+
 def render_attention_inbox(items, *, language: str) -> str:
     copy = _attention_inbox_copy(language)
     if not items:
@@ -229,6 +339,73 @@ def _attention_inbox_copy(language: str) -> dict[str, str]:
         "root_item": "root",
         "empty": "No active attention candidates yet.",
     }
+
+
+def _morning_brief_copy(language: str) -> dict[str, str]:
+    if language == "ru":
+        return {
+            "title": "\u0423\u0442\u0440\u0435\u043d\u043d\u0438\u0439 \u0431\u0440\u0438\u0444",
+            "subtitle": "\u0427\u0442\u043e \u0438\u0437\u043c\u0435\u043d\u0438\u043b\u043e\u0441\u044c, \u0447\u0442\u043e \u0441\u043c\u043e\u0442\u0440\u0435\u0442\u044c \u043f\u0435\u0440\u0432\u044b\u043c \u0438 \u0447\u0442\u043e \u043d\u0435 \u0433\u043d\u0430\u0442\u044c \u0431\u0435\u0437 \u0434\u043e\u0432\u0435\u0440\u0438\u044f \u043a \u0434\u0430\u043d\u043d\u044b\u043c.",
+            "signals_only": "signals-only",
+            "market_truth": "\u0414\u0430\u043d\u043d\u044b\u0435",
+            "market_hidden": "\u0441\u043a\u0440\u044b\u0442\u044b",
+            "market_ready_detail": "\u0426\u0435\u043d\u0430 \u0438 \u0441\u0432\u0435\u0447\u0438 \u0434\u043e\u0441\u0442\u0443\u043f\u043d\u044b.",
+            "market_hidden_detail": "\u0426\u0435\u043d\u0430 \u0438\u043b\u0438 \u0433\u0440\u0430\u0444\u0438\u043a\u0438 \u0447\u0435\u0441\u0442\u043d\u043e \u0441\u043a\u0440\u044b\u0442\u044b.",
+            "price_hidden": "\u0441\u043a\u0440\u044b\u0442\u0430",
+            "last_price": "\u0426\u0435\u043d\u0430:",
+            "attention": "\u0422\u043e\u043f \u0432\u043d\u0438\u043c\u0430\u043d\u0438\u044f",
+            "attention_empty": "\u041d\u0435\u0442 \u0441\u0440\u043e\u0447\u043d\u044b\u0445 \u043a\u0430\u043d\u0434\u0438\u0434\u0430\u0442\u043e\u0432.",
+            "overnight_delta": "\u0414\u0435\u043b\u044c\u0442\u0430",
+            "review_ready": "\u0433\u043e\u0442\u043e\u0432\u043e",
+            "delta_empty": "\u041d\u043e\u0432\u044b\u0445 \u0438\u0442\u043e\u0433\u043e\u0432 \u0440\u0435\u0432\u044c\u044e \u043f\u043e\u043a\u0430 \u043d\u0435\u0442.",
+            "dont_chase": "\u041d\u0435 \u0433\u043d\u0430\u0442\u044c",
+            "dont_chase_empty": "\u041d\u0435\u0442 stale/degraded \u043a\u0430\u043d\u0434\u0438\u0434\u0430\u0442\u043e\u0432 \u0432 \u0442\u043e\u043f\u0435.",
+            "review_due": "\u041a \u0440\u0435\u0432\u044c\u044e:",
+            "watched_roots": "\u041a\u043e\u0440\u043d\u0438:",
+            "delivery": "Telegram:",
+            "ready": "\u0433\u043e\u0442\u043e\u0432",
+            "preview_only": "preview",
+            "data_mode": "\u0420\u0435\u0436\u0438\u043c:",
+            "none": "\u043d\u0435\u0442",
+        }
+    return {
+        "title": "Morning Command Brief",
+        "subtitle": "What changed, what to review first, and what not to chase without trustworthy data.",
+        "signals_only": "signals-only",
+        "market_truth": "Market truth",
+        "market_hidden": "hidden",
+        "market_ready_detail": "Price and candles are available for the selected instrument.",
+        "market_hidden_detail": "Price or chart data is honestly hidden until the feed is usable.",
+        "price_hidden": "hidden",
+        "last_price": "Last:",
+        "attention": "Top attention",
+        "attention_empty": "No urgent candidates are queued.",
+        "overnight_delta": "Overnight delta",
+        "review_ready": "ready",
+        "delta_empty": "No new review highlights yet.",
+        "dont_chase": "Don't chase",
+        "dont_chase_empty": "No stale or degraded top candidates.",
+        "review_due": "Review due:",
+        "watched_roots": "Watched roots:",
+        "delivery": "Telegram:",
+        "ready": "ready",
+        "preview_only": "preview",
+        "data_mode": "Data mode:",
+        "none": "none",
+    }
+
+
+def _morning_brief_attention_detail(item) -> str:
+    return str(getattr(item, "detail", None) or getattr(item, "reason", ""))
+
+
+def _morning_brief_caution_detail(item) -> str:
+    detail = getattr(item, "detail", None)
+    if detail:
+        return str(detail)
+    status = str(getattr(item, "market_status", "unknown"))
+    status_detail = getattr(item, "market_status_detail", None)
+    return f"{status}: {status_detail}" if status_detail else status
 
 
 def _workflow_state_label(state) -> str:

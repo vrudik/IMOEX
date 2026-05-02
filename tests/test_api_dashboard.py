@@ -52,6 +52,11 @@ def test_workspace_snapshot_returns_user_facing_payload(client: TestClient) -> N
     assert payload["market_snapshot"]["daily"]["overlays"]
     assert {item["key"] for item in payload["market_snapshot"]["daily"]["overlays"]} >= {"entry", "invalidation", "target"}
     assert payload["attention_inbox"]
+    assert payload["morning_brief"]["signals_only"] is True
+    assert payload["morning_brief"]["market_status"] in {"fresh", "aging", "stale", "degraded", "hidden", "unknown"}
+    assert payload["morning_brief"]["top_attention"]
+    assert payload["morning_brief"]["top_attention"][0]["href"].startswith("/workspace")
+    assert payload["morning_brief"]["telegram_status"] in {"ready", "preview"}
     top_attention = payload["attention_inbox"][0]
     assert top_attention["root_code"]
     assert top_attention["href"].startswith("/workspace")
@@ -153,6 +158,8 @@ def test_workspace_page_renders_user_journey_html(client: TestClient) -> None:
     assert "workflow-button" in response.text
     assert "Trust ribbon" in response.text
     assert 'data-operator-onboarding' in response.text
+    assert 'data-morning-brief' in response.text
+    assert "\u0423\u0442\u0440\u0435\u043d\u043d\u0438\u0439 \u0431\u0440\u0438\u0444" in response.text
     assert 'data-operator-onboarding-collapse' in response.text
     assert 'data-operator-onboarding-dismiss' in response.text
     assert 'data-attention-inbox' in response.text

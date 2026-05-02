@@ -225,6 +225,28 @@ class AttentionInboxItem(BaseModel):
     href: str
 
 
+class MorningBriefItem(BaseModel):
+    title: str
+    detail: str
+    href: str | None = None
+    tone: str = "neutral"
+
+
+class MorningBriefSnapshot(BaseModel):
+    market_status: str = "hidden"
+    market_detail: str | None = None
+    last_price: float | None = None
+    price_unit: str | None = None
+    top_attention: list[MorningBriefItem] = Field(default_factory=list)
+    review_highlights: list[str] = Field(default_factory=list)
+    dont_chase: list[MorningBriefItem] = Field(default_factory=list)
+    review_due_items: int = 0
+    watched_roots: list[str] = Field(default_factory=list)
+    telegram_status: str = "preview"
+    data_mode: str = "unknown"
+    signals_only: bool = True
+
+
 class RuntimeFreshnessPolicySnapshot(BaseModel):
     fresh_max_seconds: int = 30
     aging_max_seconds: int = 180
@@ -488,6 +510,7 @@ class WorkspaceSnapshot(BaseModel):
     workspace_mode: str = "scan"
     watchlist: list[WatchlistEntry] = Field(default_factory=list)
     attention_inbox: list[AttentionInboxItem] = Field(default_factory=list)
+    morning_brief: MorningBriefSnapshot = Field(default_factory=MorningBriefSnapshot)
     comparison: HorizonComparisonSnapshot | None = None
     action_items: list[WorkspaceActionItem] = Field(default_factory=list)
     delivery_windows: list[NotificationDeliveryWindow] = Field(default_factory=list)

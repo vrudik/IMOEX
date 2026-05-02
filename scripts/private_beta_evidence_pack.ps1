@@ -5,6 +5,9 @@ param(
   [string]$BrowserSmokeJson = "",
   [string]$ProductReadinessJson = "",
   [string]$AdminHealthJson = "",
+  [string]$WorkspaceSnapshotJson = "",
+  [string]$TelegramPreviewJson = "",
+  [string]$TelegramOpsPreviewJson = "",
   [string]$RestoreDrillSummary = "",
   [string]$PerformanceBaselineJson = "",
   [string]$AcceptanceChecklist = "",
@@ -80,6 +83,9 @@ $artifacts = @(
   New-EvidenceItem "browser_smoke" "Browser smoke JSON" $BrowserSmokeJson "JSON covers workspace, runtime prompt governance, root switch, charts, mobile, and no horizontal overflow."
   New-EvidenceItem "product_readiness" "Product-readiness JSON" $ProductReadinessJson "JSON includes backup, restore, scheduler, delivery, migration, market-data policy, and admin/runtime security checks."
   New-EvidenceItem "admin_health" "Admin health JSON" $AdminHealthJson "JSON confirms admin health is ok or intentionally degraded with roots visible."
+  New-EvidenceItem "workspace_snapshot" "Workspace snapshot JSON" $WorkspaceSnapshotJson "JSON includes the Morning Command Brief API contract with signals-only and truthful market-data state."
+  New-EvidenceItem "telegram_preview" "Telegram preview JSON" $TelegramPreviewJson "JSON confirms preview/dry-run readiness without authorizing unintended sends."
+  New-EvidenceItem "telegram_ops_preview" "Telegram ops preview JSON" $TelegramOpsPreviewJson "JSON confirms ops alert preview readiness without authorizing alert sends."
   New-EvidenceItem "restore_drill" "Restore-drill summary" $RestoreDrillSummary "Summary matches the target database class and reports release_gate=pass."
   New-EvidenceItem "performance_baseline" "Performance baseline JSON" $PerformanceBaselineJson "JSON covers dashboard, workspace, signal detail, runtime, council, journal, and product-readiness surfaces."
   New-EvidenceItem "alerting_expectations" "External alerting map" "docs\alerting_expectations.md" "Destinations are mapped or explicitly deferred for non-production only."

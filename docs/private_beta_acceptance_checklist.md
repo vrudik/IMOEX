@@ -12,11 +12,14 @@ Attach or archive these artifacts for the candidate build:
 - Operator-readable candidate summary from `candidate-summary.md` when `scripts/private_beta_candidate_check.ps1` is used, including candidate git revision, working-tree state, evidence validation status, warnings, failures, and next actions.
 - Candidate-local acceptance checklist draft from `acceptance-checklist-draft.md` when `scripts/private_beta_candidate_check.ps1` is used, including the generated `Candidate Output Prefill`.
 - Private-beta evidence manifest from `scripts/private_beta_evidence_pack.ps1`.
-- Evidence validation JSON from `scripts/validate_private_beta_evidence.ps1`, including manifest flags, browser-smoke checks, restore-drill status, performance labels, and release-note safety phrases.
+- Evidence validation JSON from `scripts/validate_private_beta_evidence.ps1`, including manifest flags, browser-smoke checks, Morning Command Brief workspace snapshot readiness, Telegram preview readiness, Telegram ops preview readiness, restore-drill status, performance labels, and release-note safety phrases.
 - `release_check.ps1` output showing `product readiness OK` and `OK`.
-- Browser smoke JSON from `scripts/browser_smoke.ps1`, including workspace, runtime prompt governance, multi-root switch, current price, day/week/month charts, drag measurement, mobile charts, and no horizontal overflow.
+- Browser smoke JSON from `scripts/browser_smoke.ps1`, including workspace, Morning Command Brief visibility, runtime prompt governance, multi-root switch, current price, day/week/month charts, drag measurement, mobile charts, and no horizontal overflow.
 - Product-readiness JSON for the target environment, including backup freshness, restore-drill evidence, scheduler, delivery, migration, market-data policy, and admin/runtime security checks.
 - Admin health JSON for the target environment.
+- Workspace snapshot JSON from `/api/v1/workspace`, proving the Morning Command Brief API contract is present, signals-only, and truthful about market-data state.
+- Telegram preview JSON from `/api/v1/notifications/telegram/preview`, proving preview readiness without authorizing unintended sends.
+- Telegram ops preview JSON from `/api/v1/notifications/telegram/ops-preview`, proving ops alert preview readiness without authorizing alert sends.
 - Restore-drill summary for the target database class: SQLite restore drill for SQLite, Postgres restore drill for Postgres.
 - Performance baseline output for dashboard, workspace, signal detail, runtime, council, journal, and product-readiness surfaces.
 - External alerting map from `docs/alerting_expectations.md`, including destinations or explicit non-production deferral.
@@ -31,15 +34,16 @@ Attach or archive these artifacts for the candidate build:
 Run the acceptance flow in a non-production environment that matches the intended beta setup as closely as possible:
 
 1. Open `/workspace` and confirm the trust ribbon and market-data state are truthful.
-2. Confirm current price and day/week/month charts are either real and traceable or clearly unavailable.
-3. Switch at least one secondary root from the workspace and confirm the selected root, charts, and decision pack stay in sync.
-4. Open a signal detail page and confirm confidence, skeptic, invalidation, journal, and related-signal surfaces render.
-5. Open `/workspace/council` and confirm role prompts are visible and remain signals-only.
-6. Open `/workspace/runtime`, edit a draft prompt, preview the diff, then dismiss or restore it without changing the approved prompt.
-7. Add a journal note with tags, then verify `/workspace/journal` can filter by that tag and shows the tag drill-down.
-8. Review delivery windows and delivery history; every send, skip, suppress, or dry-run must show a reason trail.
-9. Run Telegram preview or dry-run without sending unintended messages.
-10. Confirm backup and restore evidence is fresh enough for the target environment.
+2. Confirm the Morning Command Brief shows market truth, top attention, review delta, and do-not-chase safeguards without order-routing or autotrading language.
+3. Confirm current price and day/week/month charts are either real and traceable or clearly unavailable.
+4. Switch at least one secondary root from the workspace and confirm the selected root, charts, and decision pack stay in sync.
+5. Open a signal detail page and confirm confidence, skeptic, invalidation, journal, and related-signal surfaces render.
+6. Open `/workspace/council` and confirm role prompts are visible and remain signals-only.
+7. Open `/workspace/runtime`, edit a draft prompt, preview the diff, then dismiss or restore it without changing the approved prompt.
+8. Add a journal note with tags, then verify `/workspace/journal` can filter by that tag and shows the tag drill-down.
+9. Review delivery windows and delivery history; every send, skip, suppress, or dry-run must show a reason trail.
+10. Run Telegram preview or dry-run without sending unintended messages.
+11. Confirm backup and restore evidence is fresh enough for the target environment.
 
 ## Release Blockers
 
@@ -80,11 +84,15 @@ Before allowing the build into private beta, record:
 - Database class and restore-drill artifact path.
 - Browser smoke artifact path.
 - Product-readiness artifact path.
+- Workspace snapshot JSON artifact path, with Morning Command Brief `signals_only=true`.
+- Telegram preview JSON artifact path.
+- Telegram ops preview JSON artifact path.
 - Accepted warnings.
 - Release notes path and decision owner.
 - Confirmation that release notes candidate revision matches the evidence manifest.
 - Confirmation that release notes analytics mode matches the evidence manifest.
 - Confirmation that release notes record Telegram mode as `disabled`, `preview`, `dry-run`, or `configured`.
+- Confirmation that release notes link Workspace snapshot JSON, Telegram preview JSON, and Telegram ops preview JSON evidence artifacts.
 - Confirmation that release notes record market-data mode as `live`, `hidden`, `degraded`, or `fixture for browser smoke only`.
 - Confirmation that release notes record accepted warnings as `None` or concrete `warning, owner, expiry/follow-up` entries.
 - Confirmation that release notes mark every operator walkthrough check as `pass`.

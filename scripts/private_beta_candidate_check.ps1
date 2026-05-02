@@ -34,7 +34,9 @@ $releaseCheckLog = Join-Path $OutputDir "release-check.log"
 $browserSmokeJson = Join-Path $OutputDir "browser-smoke.json"
 $productReadinessJson = Join-Path $OutputDir "product-readiness.json"
 $adminHealthJson = Join-Path $OutputDir "admin-health.json"
+$workspaceSnapshotJson = Join-Path $OutputDir "workspace-snapshot.json"
 $telegramPreviewJson = Join-Path $OutputDir "telegram-preview.json"
+$telegramOpsPreviewJson = Join-Path $OutputDir "telegram-ops-preview.json"
 $restoreDrillSummary = Join-Path $OutputDir "restore-drill-summary.json"
 $performanceBaselineJson = Join-Path $OutputDir "performance-baseline.json"
 $releaseNotesDraft = Join-Path $OutputDir "release-notes-draft.md"
@@ -171,7 +173,9 @@ $env:IMOEX_CANDIDATE_ROOT = $Root
 $env:IMOEX_CANDIDATE_OUTPUT_DIR = $OutputDir
 $env:IMOEX_CANDIDATE_PRODUCT_READINESS = $productReadinessJson
 $env:IMOEX_CANDIDATE_ADMIN_HEALTH = $adminHealthJson
+$env:IMOEX_CANDIDATE_WORKSPACE_SNAPSHOT = $workspaceSnapshotJson
 $env:IMOEX_CANDIDATE_TELEGRAM_PREVIEW = $telegramPreviewJson
+$env:IMOEX_CANDIDATE_TELEGRAM_OPS_PREVIEW = $telegramOpsPreviewJson
 
 & $python -m apps.worker.runner recalculate --root $Root | Out-Host
 Assert-NativeSuccess "candidate snapshot recalculate"
@@ -198,9 +202,17 @@ with TestClient(app) as client:
     admin_health.raise_for_status()
     admin_payload = admin_health.json()
 
+    workspace = client.get("/api/v1/workspace", params={"root": root})
+    workspace.raise_for_status()
+    workspace_payload = workspace.json()
+
     preview = client.get("/api/v1/notifications/telegram/preview", params={"root": root})
     preview.raise_for_status()
     preview_payload = preview.json()
+
+    ops_preview = client.get("/api/v1/notifications/telegram/ops-preview")
+    ops_preview.raise_for_status()
+    ops_preview_payload = ops_preview.json()
 
 Path(os.environ["IMOEX_CANDIDATE_PRODUCT_READINESS"]).write_text(
     json.dumps(readiness_payload, indent=2),
@@ -210,14 +222,24 @@ Path(os.environ["IMOEX_CANDIDATE_ADMIN_HEALTH"]).write_text(
     json.dumps(admin_payload, indent=2),
     encoding="utf-8",
 )
+Path(os.environ["IMOEX_CANDIDATE_WORKSPACE_SNAPSHOT"]).write_text(
+    json.dumps(workspace_payload, indent=2),
+    encoding="utf-8",
+)
 Path(os.environ["IMOEX_CANDIDATE_TELEGRAM_PREVIEW"]).write_text(
     json.dumps(preview_payload, indent=2),
+    encoding="utf-8",
+)
+Path(os.environ["IMOEX_CANDIDATE_TELEGRAM_OPS_PREVIEW"]).write_text(
+    json.dumps(ops_preview_payload, indent=2),
     encoding="utf-8",
 )
 
 assert readiness_payload["release_gate"] == "pass", readiness_payload
 assert admin_payload["status"] in {"ok", "degraded"}, admin_payload
+assert workspace_payload["morning_brief"]["signals_only"] is True, workspace_payload
 assert preview_payload["root"] == root, preview_payload
+assert isinstance(ops_preview_payload["alert_items"], list), ops_preview_payload
 print("[private-beta-candidate] API snapshots OK")
 '@ | & $python -
 Assert-NativeSuccess "candidate API snapshots"
@@ -282,7 +304,9 @@ $initialAcceptancePrefillLines = @(
   "- Evidence validation JSON: $evidenceValidationJson",
   "- Product-readiness JSON: $productReadinessJson",
   "- Admin-health JSON: $adminHealthJson",
+  "- Workspace snapshot JSON: $workspaceSnapshotJson",
   "- Telegram preview JSON: $telegramPreviewJson",
+  "- Telegram ops preview JSON: $telegramOpsPreviewJson",
   "- Release-check log: $releaseCheckLog",
   "- Browser-smoke JSON: $(if ($SkipBrowser) { 'skipped' } else { $browserSmokeJson })",
   "- Restore-drill summary: $(if ($SkipRestore) { 'skipped' } else { $restoreDrillSummary })",
@@ -301,6 +325,9 @@ $evidenceArgs = @(
   "-ReleaseCheckLog", $releaseCheckLog,
   "-ProductReadinessJson", $productReadinessJson,
   "-AdminHealthJson", $adminHealthJson,
+  "-WorkspaceSnapshotJson", $workspaceSnapshotJson,
+  "-TelegramPreviewJson", $telegramPreviewJson,
+  "-TelegramOpsPreviewJson", $telegramOpsPreviewJson,
   "-AcceptanceChecklist", $acceptanceChecklistDraft,
   "-ReleaseNotes", $releaseNotesDraft,
   "-AnalyticsMode", $AnalyticsMode
@@ -404,7 +431,9 @@ $summary = [ordered]@{
   browser_smoke_json = if ($SkipBrowser) { "" } else { $browserSmokeJson }
   product_readiness_json = $productReadinessJson
   admin_health_json = $adminHealthJson
+  workspace_snapshot_json = $workspaceSnapshotJson
   telegram_preview_json = $telegramPreviewJson
+  telegram_ops_preview_json = $telegramOpsPreviewJson
   restore_drill_summary = if ($SkipRestore) { "" } else { $restoreDrillSummary }
   performance_baseline_json = if ($SkipPerformance) { "" } else { $performanceBaselineJson }
   release_notes_draft = $releaseNotesDraft
@@ -445,7 +474,9 @@ $acceptanceFinalStatusLines = @(
   "- Evidence validation JSON: $evidenceValidationJson",
   "- Product-readiness JSON: $productReadinessJson",
   "- Admin-health JSON: $adminHealthJson",
+  "- Workspace snapshot JSON: $workspaceSnapshotJson",
   "- Telegram preview JSON: $telegramPreviewJson",
+  "- Telegram ops preview JSON: $telegramOpsPreviewJson",
   "- Release-check log: $releaseCheckLog",
   "- Browser-smoke JSON: $(if ($SkipBrowser) { 'skipped' } else { $browserSmokeJson })",
   "- Restore-drill summary: $(if ($SkipRestore) { 'skipped' } else { $restoreDrillSummary })",
@@ -507,7 +538,9 @@ $summaryMarkdown = @(
   "- Browser-smoke JSON: $(if ($SkipBrowser) { 'skipped' } else { $browserSmokeJson })",
   "- Product-readiness JSON: $productReadinessJson",
   "- Admin-health JSON: $adminHealthJson",
+  "- Workspace snapshot JSON: $workspaceSnapshotJson",
   "- Telegram preview JSON: $telegramPreviewJson",
+  "- Telegram ops preview JSON: $telegramOpsPreviewJson",
   "- Restore-drill summary: $(if ($SkipRestore) { 'skipped' } else { $restoreDrillSummary })",
   "- Performance baseline JSON: $(if ($SkipPerformance) { 'skipped' } else { $performanceBaselineJson })",
   "- Release notes draft: $releaseNotesDraft",

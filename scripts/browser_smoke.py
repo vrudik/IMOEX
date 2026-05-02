@@ -68,6 +68,7 @@ def main(argv: list[str] | None = None) -> int:
         page_errors: list[str] = []
         checks = [
             "workspace_opened",
+            "workspace_morning_brief_visible",
             "market_unavailable_state_visible",
             "signal_detail_opened",
             "runtime_admin_key_save_clear",
@@ -186,6 +187,20 @@ def main(argv: list[str] | None = None) -> int:
 def _workspace_smoke(page, *, base_url: str, root: str, secondary_root: str | None, timeout_ms: int) -> None:
     page.goto(f"{base_url}/workspace?root={root}", wait_until="domcontentloaded", timeout=timeout_ms)
     page.wait_for_selector('[data-surface-state-strip="workspace"]', timeout=timeout_ms)
+    page.wait_for_selector("[data-morning-brief]", timeout=timeout_ms)
+    page.wait_for_selector("[data-morning-brief-market]", timeout=timeout_ms)
+    page.wait_for_selector("[data-morning-brief-attention]", timeout=timeout_ms)
+    page.wait_for_selector("[data-morning-brief-delta]", timeout=timeout_ms)
+    page.wait_for_selector("[data-morning-brief-dont-chase]", timeout=timeout_ms)
+    page.wait_for_function(
+        """() => {
+          const brief = document.querySelector("[data-morning-brief]");
+          return brief
+            && brief.textContent.includes("signals-only")
+            && !/order routing|autotrading|broker execution/i.test(brief.textContent);
+        }""",
+        timeout=timeout_ms,
+    )
     page.wait_for_selector("[data-compare-board]", timeout=timeout_ms)
     page.wait_for_selector("[data-market-unavailable]", timeout=timeout_ms)
     if secondary_root:

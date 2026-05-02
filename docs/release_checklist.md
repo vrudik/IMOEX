@@ -24,6 +24,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\private_beta_evidence_pack.ps
   -BrowserSmokeJson ".\artifacts\browser-smoke.json" `
   -ProductReadinessJson ".\artifacts\product-readiness.json" `
   -AdminHealthJson ".\artifacts\admin-health.json" `
+  -WorkspaceSnapshotJson ".\artifacts\workspace-snapshot.json" `
+  -TelegramPreviewJson ".\artifacts\telegram-preview.json" `
+  -TelegramOpsPreviewJson ".\artifacts\telegram-ops-preview.json" `
   -RestoreDrillSummary ".\artifacts\restore-drill-summary.json" `
   -PerformanceBaselineJson ".\artifacts\performance-baseline.json" `
   -AcceptanceChecklist ".\artifacts\acceptance-checklist-draft.md" `
@@ -39,9 +42,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\validate_private_beta_evidenc
   -ManifestPath ".\artifacts\evidence-pack\private-beta-evidence-manifest.json"
 ```
 
-For an intentionally incomplete draft, add `-AllowDraft`. Draft validation still enforces the signals-only and no-launch/no-pricing/no-order-routing flags, and it blocks any draft release notes that claim `Private-beta candidate accepted: yes`. Full validation also requires a known candidate git revision, release notes candidate revision matches the evidence manifest, analytics mode matches the evidence manifest, Telegram mode recorded as `disabled`, `preview`, `dry-run`, or `configured`, candidate-local acceptance checklist prefill, completed release notes with market-data mode recorded as `live`, `hidden`, `degraded`, or `fixture for browser smoke only`, accepted warnings recorded as `None` or concrete `warning, owner, expiry/follow-up` entries, no unresolved placeholders, all operator walkthrough checks marked `pass`, support-boundary confirmations answered `yes`, a concrete decision owner, a `yes/no/deferred` decision status, an ISO-8601 UTC decision timestamp, concrete rollback owner/revision/artifact/stop-owner fields, rollback verification coverage, and checks browser-smoke coverage, restore-drill status, performance-baseline labels, product-readiness status, admin-health status, and release-note safety phrases.
+For an intentionally incomplete draft, add `-AllowDraft`. Draft validation still enforces the signals-only and no-launch/no-pricing/no-order-routing flags, and it blocks any draft release notes that claim `Private-beta candidate accepted: yes`. Full validation also requires a known candidate git revision, release notes candidate revision matches the evidence manifest, analytics mode matches the evidence manifest, Telegram mode recorded as `disabled`, `preview`, `dry-run`, or `configured`, concrete release-note links to Telegram preview JSON and Telegram ops preview JSON, candidate-local acceptance checklist prefill, completed release notes with market-data mode recorded as `live`, `hidden`, `degraded`, or `fixture for browser smoke only`, accepted warnings recorded as `None` or concrete `warning, owner, expiry/follow-up` entries, no unresolved placeholders, all operator walkthrough checks marked `pass`, support-boundary confirmations answered `yes`, a concrete decision owner, a `yes/no/deferred` decision status, an ISO-8601 UTC decision timestamp, concrete rollback owner/revision/artifact/stop-owner fields, rollback verification coverage, and checks browser-smoke coverage, restore-drill status, performance-baseline labels, product-readiness status, admin-health status, Morning Command Brief workspace snapshot status, Telegram preview JSON, Telegram ops preview JSON, and release-note safety phrases.
 
-To produce a local non-production candidate directory with release-check logs, product-readiness JSON, admin-health JSON, optional browser/performance/restore artifacts, draft release notes, `candidate-summary.md`, and an evidence manifest, run:
+To produce a local non-production candidate directory with release-check logs, product-readiness JSON, admin-health JSON, workspace snapshot JSON, Telegram preview JSON, Telegram ops preview JSON, optional browser/performance/restore artifacts, draft release notes, `candidate-summary.md`, and an evidence manifest, run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\private_beta_candidate_check.ps1 `
@@ -138,6 +141,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\browser_smoke.ps1 -Root Si -C
 The browser smoke checks:
 
 - workspace opens in a real browser
+- Morning Command Brief is visible and remains signals-only
 - workspace root switch works through the real sidebar selector
 - hidden market-data state is visible when live data is disabled
 - signal detail opens from the workspace

@@ -106,6 +106,7 @@ from apps.api.routes.dashboard_workspace_data import (
 )
 from apps.api.routes.dashboard_workspace import (
     render_attention_inbox as _render_attention_inbox,
+    render_morning_brief as _render_morning_brief,
     render_root_pulse_card as _render_root_pulse_card,
     render_workspace_signal_tile as _render_workspace_signal_tile,
 )
@@ -2821,6 +2822,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         primary_label = "Browser workspace + Telegram brief"
     trust_ribbon = _render_trust_ribbon(snapshot.trust_ribbon)
     operator_onboarding = _render_operator_onboarding(language)
+    morning_brief = _render_morning_brief(snapshot, language=language)
     watchlist = _render_watchlist(snapshot.watchlist)
     attention_inbox = _render_attention_inbox(snapshot.attention_inbox, language=language)
     comparison = _render_horizon_comparison(snapshot.comparison)
@@ -4275,6 +4277,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
     </section>
     {trust_ribbon}
     {workspace_state_strip}
+    {morning_brief}
     {operator_onboarding}
     {attention_inbox}
     <section class="panel">

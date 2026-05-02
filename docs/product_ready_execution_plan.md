@@ -80,6 +80,7 @@ Exit criteria:
 
 ### P1
 
+- Morning Command Brief for the daily operator ritual.
 - Watchlist upgrade for daily use.
 - Review loop: end-of-day, post-resolution, tagging, drill-downs.
 - Notification explainability.
@@ -203,6 +204,15 @@ This tranche is `Operator-Ready Beta`. It turns the stabilized control plane int
 - [x] Validate that full private-beta release notes candidate revision matches the evidence manifest.
 - [x] Validate that full private-beta release notes analytics mode matches the evidence manifest.
 - [x] Validate that full private-beta release notes record an explicit Telegram mode.
+- [x] Include Telegram preview JSON in private-beta evidence manifests and validate preview readiness without authorizing sends.
+- [x] Include Telegram ops preview JSON in private-beta evidence manifests and validate alert preview readiness without authorizing sends.
+- [x] Add Telegram delivery and ops preview evidence links to the private-beta release notes template.
+- [x] Validate that full private-beta release notes include concrete Telegram delivery and ops preview evidence links.
+- [x] Start Morning Command Brief with a read-only workspace panel for market truth, top attention, review delta, and do-not-chase warnings.
+- [x] Add a typed Morning Command Brief API contract so `/api/v1/workspace` exposes the daily brief without scraping HTML.
+- [x] Archive and validate the Morning Command Brief workspace snapshot in private-beta evidence so the daily ritual is acceptance-checkable.
+- [x] Add Morning Command Brief visibility to the browser-smoke evidence contract.
+- [x] Align acceptance checklist wording with release-note validation for Workspace snapshot evidence links.
 
 ## Immediate Next Steps
 
