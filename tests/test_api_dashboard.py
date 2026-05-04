@@ -57,6 +57,12 @@ def test_workspace_snapshot_returns_user_facing_payload(client: TestClient) -> N
     assert payload["morning_brief"]["top_attention"]
     assert payload["morning_brief"]["top_attention"][0]["href"].startswith("/workspace")
     assert payload["morning_brief"]["telegram_status"] in {"ready", "preview"}
+    assert payload["watchlist_workbench"]["signals_only"] is True
+    assert payload["watchlist_workbench"]["total_items"] == len(payload["watchlist"])
+    assert payload["watchlist_workbench"]["review_due_items"] >= 0
+    assert payload["watchlist_workbench"]["reviewed_today_items"] >= 0
+    assert isinstance(payload["watchlist_workbench"]["watched_roots"], list)
+    assert payload["watchlist_workbench"]["next_step"]
     top_attention = payload["attention_inbox"][0]
     assert top_attention["root_code"]
     assert top_attention["href"].startswith("/workspace")

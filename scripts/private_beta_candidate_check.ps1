@@ -126,13 +126,77 @@ function Invoke-LoggedNative {
   )
 
   Write-Host "[private-beta-candidate] $Name"
-  $output = & $Command 2>&1
-  $exitCode = $LASTEXITCODE
+  $previousErrorActionPreference = $ErrorActionPreference
+  $rawOutput = @()
+  $exitCode = 0
+  try {
+    $ErrorActionPreference = "Continue"
+    $rawOutput = & $Command 2>&1
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+  $output = @(
+    $rawOutput | ForEach-Object {
+      if ($_ -is [System.Management.Automation.ErrorRecord]) {
+        $_.ToString()
+      } else {
+        [string]$_
+      }
+    }
+  )
   $output | Set-Content -Path $LogPath -Encoding UTF8
   $output | Out-Host
   if ($exitCode -ne 0) {
     throw "$Name failed with exit code $exitCode"
   }
+}
+
+function Get-ObjectPropertyValue {
+  param(
+    [object]$Object,
+    [string]$Name,
+    [object]$Default = $null
+  )
+
+  if ($null -eq $Object) {
+    return $Default
+  }
+  $property = $Object.PSObject.Properties[$Name]
+  if ($null -eq $property) {
+    return $Default
+  }
+  if ($null -eq $property.Value) {
+    return $Default
+  }
+  return $property.Value
+}
+
+function ConvertTo-SummaryInteger {
+  param([object]$Value)
+
+  if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value)) {
+    return 0
+  }
+  return [int]$Value
+}
+
+function Get-SummaryArrayCount {
+  param([object]$Value)
+
+  if ($null -eq $Value) {
+    return 0
+  }
+  return @($Value).Count
+}
+
+function ConvertTo-SummaryText {
+  param([object]$Value)
+
+  if ($null -eq $Value) {
+    return ""
+  }
+  return (([string]$Value) -replace "\s+", " ").Trim()
 }
 
 Write-Host "[private-beta-candidate] output: $OutputDir"
@@ -238,6 +302,9 @@ Path(os.environ["IMOEX_CANDIDATE_TELEGRAM_OPS_PREVIEW"]).write_text(
 assert readiness_payload["release_gate"] == "pass", readiness_payload
 assert admin_payload["status"] in {"ok", "degraded"}, admin_payload
 assert workspace_payload["morning_brief"]["signals_only"] is True, workspace_payload
+assert workspace_payload["watchlist_workbench"]["signals_only"] is True, workspace_payload
+assert workspace_payload["watchlist_workbench"]["total_items"] == len(workspace_payload["watchlist"]), workspace_payload
+assert workspace_payload["watchlist_workbench"]["next_step"], workspace_payload
 assert preview_payload["root"] == root, preview_payload
 assert isinstance(ops_preview_payload["alert_items"], list), ops_preview_payload
 print("[private-beta-candidate] API snapshots OK")
@@ -256,12 +323,24 @@ if (-not $SkipRestore) {
   }
 }
 
+$browserSmokeCommandStatus = if ($SkipBrowser) { "skipped" } else { "pending" }
+$browserSmokeCommandFailure = ""
 if (-not $SkipBrowser) {
   $browserArgs = @((Join-Path $repoRoot "scripts\browser_smoke.py"), "--root", $Root, "--secondary-root", $SecondaryRoot, "--output", $browserSmokeJson)
   if (-not [string]::IsNullOrWhiteSpace($BrowserChannel)) {
     $browserArgs += @("--channel", $BrowserChannel)
   }
-  Invoke-LoggedNative "running browser smoke" (Join-Path $OutputDir "browser-smoke.log") { & $python @browserArgs }
+  try {
+    Invoke-LoggedNative "running browser smoke" (Join-Path $OutputDir "browser-smoke.log") { & $python @browserArgs }
+    $browserSmokeCommandStatus = "passed"
+  } catch {
+    $browserSmokeCommandStatus = "failed"
+    $browserSmokeCommandFailure = ConvertTo-SummaryText $_
+    if (-not $AllowDraftEvidence) {
+      throw
+    }
+    Write-Host "[private-beta-candidate] browser smoke failed; continuing as draft evidence only: $browserSmokeCommandFailure"
+  }
 }
 
 $skippedGates = @()
@@ -282,6 +361,62 @@ $usesDraftReleaseNotes = $releaseNotesMode -ne "prepared"
 $summaryPath = Join-Path $OutputDir "candidate-summary.json"
 $summaryMarkdownPath = Join-Path $OutputDir "candidate-summary.md"
 
+$workspaceSummaryPayload = Get-Content -Path $workspaceSnapshotJson -Raw | ConvertFrom-Json
+$morningBriefPayload = Get-ObjectPropertyValue $workspaceSummaryPayload "morning_brief"
+$watchlistWorkbenchPayload = Get-ObjectPropertyValue $workspaceSummaryPayload "watchlist_workbench"
+$watchedRootsValue = Get-ObjectPropertyValue $watchlistWorkbenchPayload "watched_roots" @()
+$watchedRoots = @($watchedRootsValue | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+$firstDueWatchKey = [string](Get-ObjectPropertyValue $watchlistWorkbenchPayload "first_due_watch_key" "")
+$firstDueRootCode = [string](Get-ObjectPropertyValue $watchlistWorkbenchPayload "first_due_root_code" "")
+$firstDueSignalId = [string](Get-ObjectPropertyValue $watchlistWorkbenchPayload "first_due_signal_id" "")
+$firstDueLabel = if (-not [string]::IsNullOrWhiteSpace($firstDueSignalId)) {
+  "$firstDueSignalId ($firstDueRootCode)"
+} elseif (-not [string]::IsNullOrWhiteSpace($firstDueWatchKey)) {
+  "$firstDueWatchKey ($firstDueRootCode)"
+} else {
+  "none"
+}
+$dailyWorkflowSummary = [ordered]@{
+  morning_brief = [ordered]@{
+    signals_only = [bool](Get-ObjectPropertyValue $morningBriefPayload "signals_only" $false)
+    market_status = [string](Get-ObjectPropertyValue $morningBriefPayload "market_status" "unknown")
+    telegram_status = [string](Get-ObjectPropertyValue $morningBriefPayload "telegram_status" "unknown")
+    top_attention_count = Get-SummaryArrayCount (Get-ObjectPropertyValue $morningBriefPayload "top_attention" @())
+    dont_chase_count = Get-SummaryArrayCount (Get-ObjectPropertyValue $morningBriefPayload "dont_chase" @())
+  }
+  todays_operating_queue = [ordered]@{
+    signals_only = [bool](Get-ObjectPropertyValue $watchlistWorkbenchPayload "signals_only" $false)
+    total_items = ConvertTo-SummaryInteger (Get-ObjectPropertyValue $watchlistWorkbenchPayload "total_items" 0)
+    review_due_items = ConvertTo-SummaryInteger (Get-ObjectPropertyValue $watchlistWorkbenchPayload "review_due_items" 0)
+    reviewed_today_items = ConvertTo-SummaryInteger (Get-ObjectPropertyValue $watchlistWorkbenchPayload "reviewed_today_items" 0)
+    signal_linked_items = ConvertTo-SummaryInteger (Get-ObjectPropertyValue $watchlistWorkbenchPayload "signal_linked_items" 0)
+    root_level_items = ConvertTo-SummaryInteger (Get-ObjectPropertyValue $watchlistWorkbenchPayload "root_level_items" 0)
+    watched_roots = $watchedRoots
+    first_due_watch_key = $firstDueWatchKey
+    first_due_root_code = $firstDueRootCode
+    first_due_signal_id = $firstDueSignalId
+    first_due_label = $firstDueLabel
+    next_step = [string](Get-ObjectPropertyValue $watchlistWorkbenchPayload "next_step" "")
+  }
+}
+
+$dailyWorkflowLines = @(
+  "## Daily Workflow Evidence",
+  "",
+  "- Morning Brief signals-only: $($dailyWorkflowSummary.morning_brief.signals_only)",
+  "- Morning Brief market status: $($dailyWorkflowSummary.morning_brief.market_status)",
+  "- Morning Brief Telegram status: $($dailyWorkflowSummary.morning_brief.telegram_status)",
+  "- Morning Brief top attention count: $($dailyWorkflowSummary.morning_brief.top_attention_count)",
+  "- Morning Brief do-not-chase count: $($dailyWorkflowSummary.morning_brief.dont_chase_count)",
+  "- Today's Operating Queue signals-only: $($dailyWorkflowSummary.todays_operating_queue.signals_only)",
+  "- Today's Operating Queue total items: $($dailyWorkflowSummary.todays_operating_queue.total_items)",
+  "- Today's Operating Queue review due: $($dailyWorkflowSummary.todays_operating_queue.review_due_items)",
+  "- Today's Operating Queue reviewed today: $($dailyWorkflowSummary.todays_operating_queue.reviewed_today_items)",
+  "- Today's Operating Queue watched roots: $(if ($watchedRoots.Count -gt 0) { $watchedRoots -join ', ' } else { 'none' })",
+  "- Today's Operating Queue first due: $firstDueLabel",
+  "- Today's Operating Queue next step: $($dailyWorkflowSummary.todays_operating_queue.next_step)"
+)
+
 $initialAcceptancePrefillLines = @(
   "",
   "## Candidate Output Prefill",
@@ -294,9 +429,13 @@ $initialAcceptancePrefillLines = @(
   "- Release notes mode: $releaseNotesMode",
   "- Release notes source: $releaseNotesSource",
   "- Skipped gates: $(if ($skippedGates.Count -gt 0) { $skippedGates -join ', ' } else { 'none' })",
+  "- Browser-smoke command status: $browserSmokeCommandStatus",
+  "- Browser-smoke command failure: $(if ([string]::IsNullOrWhiteSpace($browserSmokeCommandFailure)) { 'none' } else { $browserSmokeCommandFailure })",
   "- Validation status: pending",
   "- Validation warnings: pending",
   "- Validation failures: pending",
+  "- Morning Brief evidence: signals_only=$($dailyWorkflowSummary.morning_brief.signals_only); market_status=$($dailyWorkflowSummary.morning_brief.market_status); telegram_status=$($dailyWorkflowSummary.morning_brief.telegram_status); top_attention=$($dailyWorkflowSummary.morning_brief.top_attention_count); dont_chase=$($dailyWorkflowSummary.morning_brief.dont_chase_count)",
+  "- Today's Operating Queue evidence: signals_only=$($dailyWorkflowSummary.todays_operating_queue.signals_only); total=$($dailyWorkflowSummary.todays_operating_queue.total_items); review_due=$($dailyWorkflowSummary.todays_operating_queue.review_due_items); reviewed_today=$($dailyWorkflowSummary.todays_operating_queue.reviewed_today_items); watched_roots=$(if ($watchedRoots.Count -gt 0) { $watchedRoots -join ', ' } else { 'none' }); first_due=$firstDueLabel; next_step=$($dailyWorkflowSummary.todays_operating_queue.next_step)",
   "- Candidate summary Markdown: $summaryMarkdownPath",
   "- Candidate summary JSON: $summaryPath",
   "- Git status snapshot: $gitStatusPath",
@@ -363,7 +502,14 @@ if ($draftValidation) {
 
 Write-Host "[private-beta-candidate] validating evidence manifest"
 powershell @validationArgs
-Assert-NativeSuccess "private-beta evidence validation"
+$validationExitCode = $LASTEXITCODE
+if ($validationExitCode -ne 0) {
+  $validationFailureForSummary = "private-beta evidence validation failed with exit code $validationExitCode"
+  if (-not $AllowDraftEvidence -or -not (Test-Path -LiteralPath $evidenceValidationJson)) {
+    throw $validationFailureForSummary
+  }
+  Write-Host "[private-beta-candidate] evidence validation failed; continuing to blocked draft summary: $validationFailureForSummary"
+}
 
 $validationPayload = Get-Content -Path $evidenceValidationJson -Raw | ConvertFrom-Json
 $validationStatus = [string]$validationPayload.status
@@ -379,6 +525,45 @@ if ($null -ne $validationPayload.failures) {
     $validationFailures += $failure
   }
 }
+
+$dailyWorkflowValidationPayload = Get-ObjectPropertyValue $validationPayload "daily_workflow_evidence"
+$morningBriefValidationPayload = Get-ObjectPropertyValue $dailyWorkflowValidationPayload "morning_brief"
+$watchlistValidationPayload = Get-ObjectPropertyValue $dailyWorkflowValidationPayload "todays_operating_queue"
+$dailyWorkflowValidation = [ordered]@{
+  morning_brief = [ordered]@{
+    present = [bool](Get-ObjectPropertyValue $morningBriefValidationPayload "present" $false)
+    signals_only = [bool](Get-ObjectPropertyValue $morningBriefValidationPayload "signals_only" $false)
+    execution_language_clear = [bool](Get-ObjectPropertyValue $morningBriefValidationPayload "execution_language_clear" $false)
+  }
+  todays_operating_queue = [ordered]@{
+    present = [bool](Get-ObjectPropertyValue $watchlistValidationPayload "present" $false)
+    signals_only = [bool](Get-ObjectPropertyValue $watchlistValidationPayload "signals_only" $false)
+    watchlist_present = [bool](Get-ObjectPropertyValue $watchlistValidationPayload "watchlist_present" $false)
+    total_matches_watchlist = [bool](Get-ObjectPropertyValue $watchlistValidationPayload "total_matches_watchlist" $false)
+    state_counts_match_watchlist = [bool](Get-ObjectPropertyValue $watchlistValidationPayload "state_counts_match_watchlist" $false)
+    counts_reconcile = [bool](Get-ObjectPropertyValue $watchlistValidationPayload "counts_reconcile" $false)
+    first_due_matches_watchlist = [bool](Get-ObjectPropertyValue $watchlistValidationPayload "first_due_matches_watchlist" $false)
+    next_step_matches_state = [bool](Get-ObjectPropertyValue $watchlistValidationPayload "next_step_matches_state" $false)
+    execution_language_clear = [bool](Get-ObjectPropertyValue $watchlistValidationPayload "execution_language_clear" $false)
+  }
+}
+
+$dailyWorkflowValidationLines = @(
+  "## Daily Workflow Validation",
+  "",
+  "- Morning Brief present: $($dailyWorkflowValidation.morning_brief.present)",
+  "- Morning Brief signals-only validated: $($dailyWorkflowValidation.morning_brief.signals_only)",
+  "- Morning Brief execution language clear: $($dailyWorkflowValidation.morning_brief.execution_language_clear)",
+  "- Today's Operating Queue present: $($dailyWorkflowValidation.todays_operating_queue.present)",
+  "- Today's Operating Queue signals-only validated: $($dailyWorkflowValidation.todays_operating_queue.signals_only)",
+  "- Today's Operating Queue archived watchlist present: $($dailyWorkflowValidation.todays_operating_queue.watchlist_present)",
+  "- Today's Operating Queue total matches watchlist: $($dailyWorkflowValidation.todays_operating_queue.total_matches_watchlist)",
+  "- Today's Operating Queue state counts match watchlist: $($dailyWorkflowValidation.todays_operating_queue.state_counts_match_watchlist)",
+  "- Today's Operating Queue counts reconcile: $($dailyWorkflowValidation.todays_operating_queue.counts_reconcile)",
+  "- Today's Operating Queue first due matches watchlist: $($dailyWorkflowValidation.todays_operating_queue.first_due_matches_watchlist)",
+  "- Today's Operating Queue next step matches state: $($dailyWorkflowValidation.todays_operating_queue.next_step_matches_state)",
+  "- Today's Operating Queue execution language clear: $($dailyWorkflowValidation.todays_operating_queue.execution_language_clear)"
+)
 
 $candidateReviewStatus = if ($validationFailures.Count -gt 0) {
   "blocked"
@@ -400,6 +585,9 @@ if ($candidateWorktreeState -ne "clean") {
 }
 if ($skippedGates.Count -gt 0) {
   $nextActions += "Run the full candidate wrapper without skipped gates before final acceptance: powershell -ExecutionPolicy Bypass -File .\scripts\private_beta_candidate_check.ps1 -Root $Root -SkipDocker -RequireCleanGit"
+}
+if ($browserSmokeCommandStatus -eq "failed") {
+  $nextActions += "Resolve the browser-smoke failure recorded in browser-smoke.log and browser-smoke.json, then rerun without -AllowDraftEvidence before final acceptance."
 }
 if ($usesDraftReleaseNotes) {
   $nextActions += "Replace release-notes-draft.md placeholders or rerun with -PreparedReleaseNotes <completed-release-notes.md> before final acceptance."
@@ -426,6 +614,10 @@ $summary = [ordered]@{
   release_notes_source = $releaseNotesSource
   skipped_gates = $skippedGates
   next_actions = $nextActions
+  browser_smoke_command_status = $browserSmokeCommandStatus
+  browser_smoke_command_failure = $browserSmokeCommandFailure
+  daily_workflow_summary = $dailyWorkflowSummary
+  daily_workflow_validation = $dailyWorkflowValidation
   git_status_path = $gitStatusPath
   release_check_log = $releaseCheckLog
   browser_smoke_json = if ($SkipBrowser) { "" } else { $browserSmokeJson }
@@ -464,9 +656,13 @@ $acceptanceFinalStatusLines = @(
   "- Release notes mode: $releaseNotesMode",
   "- Release notes source: $releaseNotesSource",
   "- Skipped gates: $(if ($skippedGates.Count -gt 0) { $skippedGates -join ', ' } else { 'none' })",
+  "- Browser-smoke command status: $browserSmokeCommandStatus",
+  "- Browser-smoke command failure: $(if ([string]::IsNullOrWhiteSpace($browserSmokeCommandFailure)) { 'none' } else { $browserSmokeCommandFailure })",
   "- Validation status: $validationStatus",
   "- Validation warnings: $($validationWarnings.Count)",
   "- Validation failures: $($validationFailures.Count)",
+  "- Morning Brief evidence: signals_only=$($dailyWorkflowSummary.morning_brief.signals_only); market_status=$($dailyWorkflowSummary.morning_brief.market_status); telegram_status=$($dailyWorkflowSummary.morning_brief.telegram_status); top_attention=$($dailyWorkflowSummary.morning_brief.top_attention_count); dont_chase=$($dailyWorkflowSummary.morning_brief.dont_chase_count)",
+  "- Today's Operating Queue evidence: signals_only=$($dailyWorkflowSummary.todays_operating_queue.signals_only); total=$($dailyWorkflowSummary.todays_operating_queue.total_items); review_due=$($dailyWorkflowSummary.todays_operating_queue.review_due_items); reviewed_today=$($dailyWorkflowSummary.todays_operating_queue.reviewed_today_items); watched_roots=$(if ($watchedRoots.Count -gt 0) { $watchedRoots -join ', ' } else { 'none' }); first_due=$firstDueLabel; next_step=$($dailyWorkflowSummary.todays_operating_queue.next_step)",
   "- Candidate summary Markdown: $summaryMarkdownPath",
   "- Candidate summary JSON: $summaryPath",
   "- Git status snapshot: $gitStatusPath",
@@ -535,6 +731,8 @@ $summaryMarkdown = @(
   "- Release notes source: $releaseNotesSource",
   "- Git status snapshot: $gitStatusPath",
   "- Release-check log: $releaseCheckLog",
+  "- Browser-smoke command status: $browserSmokeCommandStatus",
+  "- Browser-smoke command failure: $(if ([string]::IsNullOrWhiteSpace($browserSmokeCommandFailure)) { 'none' } else { $browserSmokeCommandFailure })",
   "- Browser-smoke JSON: $(if ($SkipBrowser) { 'skipped' } else { $browserSmokeJson })",
   "- Product-readiness JSON: $productReadinessJson",
   "- Admin-health JSON: $adminHealthJson",
@@ -547,6 +745,10 @@ $summaryMarkdown = @(
   "- Acceptance checklist draft: $acceptanceChecklistDraft",
   "- Evidence manifest: $(Join-Path $evidenceDir 'private-beta-evidence-manifest.json')",
   "- Evidence validation JSON: $evidenceValidationJson",
+  ""
+) + $dailyWorkflowLines + @(
+  ""
+) + $dailyWorkflowValidationLines + @(
   ""
 ) + $validationLines + @(
   ""

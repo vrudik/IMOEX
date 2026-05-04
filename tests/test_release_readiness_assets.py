@@ -71,6 +71,15 @@ def test_private_beta_candidate_check_script_collects_local_candidate_evidence()
     assert "Candidate Output Prefill" in script
     assert "Candidate summary Markdown" in script
     assert "Candidate summary JSON" in script
+    assert "Daily Workflow Evidence" in script
+    assert "Daily Workflow Validation" in script
+    assert "daily_workflow_summary" in script
+    assert "daily_workflow_validation" in script
+    assert "Morning Brief evidence" in script
+    assert "Today's Operating Queue evidence" in script
+    assert "Today's Operating Queue total matches watchlist" in script
+    assert "Today's Operating Queue next step matches state" in script
+    assert "first_due_label" in script
     assert "product-readiness.json" in script
     assert "admin-health.json" in script
     assert "workspace-snapshot.json" in script
@@ -79,6 +88,7 @@ def test_private_beta_candidate_check_script_collects_local_candidate_evidence()
     assert "TelegramPreviewJson" in script
     assert "TelegramOpsPreviewJson" in script
     assert "WorkspaceSnapshotJson" in script
+    assert "watchlist_workbench" in script
     assert "private-beta-evidence-validation.json" in script
     assert "git-status.txt" in script
     assert "CandidateRevision" in script
@@ -87,6 +97,14 @@ def test_private_beta_candidate_check_script_collects_local_candidate_evidence()
     assert "release_notes_mode" in script
     assert "Full private-beta candidate generation requires completed release notes" in script
     assert "Private-beta candidate requires a clean git working tree" in script
+    assert "previousErrorActionPreference" in script
+    assert "System.Management.Automation.ErrorRecord" in script
+    assert "$exitCode -ne 0" in script
+    assert "browser smoke failed; continuing as draft evidence only" in script
+    assert "evidence validation failed; continuing to blocked draft summary" in script
+    assert "browser_smoke_command_status" in script
+    assert "browser_smoke_command_failure" in script
+    assert "Browser-smoke command status" in script
     assert "candidate-summary.md" in script
     assert "Private-Beta Candidate Summary" in script
     assert "Candidate revision" in script
@@ -106,6 +124,8 @@ def test_private_beta_candidate_check_script_collects_local_candidate_evidence()
     assert "evidence_validation_status" in script
     assert "evidence_validation_warnings" in script
     assert "evidence_validation_failures" in script
+    assert "Morning Brief signals-only" in script
+    assert "Today's Operating Queue next step" in script
     assert "Order routing authorized by this wrapper: false" in script
     assert "/api/v1/health/product-readiness" in script
     assert "/api/v1/admin/health" in script
@@ -183,6 +203,18 @@ def test_validate_private_beta_evidence_script_enforces_candidate_guardrails() -
     assert "workspace_snapshot" in script
     assert "workspace_snapshot_morning_brief_not_signals_only" in script
     assert "workspace_snapshot_morning_brief_market_status_invalid" in script
+    assert "workspace_snapshot_watchlist_workbench_not_signals_only" in script
+    assert "workspace_snapshot_watchlist_workbench_counts_inconsistent" in script
+    assert "workspace_snapshot_watchlist_workbench_total_mismatch" in script
+    assert "workspace_snapshot_watchlist_workbench_watchlist_counts_mismatch" in script
+    assert "workspace_snapshot_watchlist_workbench_first_due_missing" in script
+    assert "workspace_snapshot_watchlist_workbench_first_due_mismatch" in script
+    assert "workspace_snapshot_watchlist_workbench_next_step_mismatch" in script
+    assert "workspace_snapshot_morning_brief_execution_language" in script
+    assert "workspace_snapshot_watchlist_workbench_execution_language" in script
+    assert "daily_workflow_evidence" in script
+    assert "total_matches_watchlist" in script
+    assert "next_step_matches_state" in script
     assert "workspace_snapshot_forbidden_execution_flag" in script
     assert "telegram_preview" in script
     assert "telegram_ops_preview" in script
@@ -191,7 +223,9 @@ def test_validate_private_beta_evidence_script_enforces_candidate_guardrails() -
     assert "telegram_ops_preview_alert_items_missing" in script
     assert "release_notes" in script
     assert "release_gate=pass" in script
+    assert "browser_smoke_failed" in script
     assert "browser_smoke_missing_check" in script
+    assert "workspace_watchlist_workbench_visible" in script
     assert "restore_drill_not_pass" in script
     assert "performance_baseline_missing_label" in script
     assert "Explicit Non-Goals" in script
@@ -298,11 +332,13 @@ def test_release_checklist_documents_release_and_rollback_policy() -> None:
     assert "acceptance-checklist-draft.md" in acceptance
     assert "Candidate Output Prefill" in acceptance
     assert "Operator-readable candidate summary path" in acceptance
+    assert "daily workflow evidence rollup" in acceptance
     assert "Candidate git revision" in acceptance
     assert "must not be `unknown`" in acceptance
     assert "clean git working tree for final candidate approval" in acceptance
     assert "Candidate summary next actions" in acceptance
     assert "Candidate summary validation status and accepted warnings/failures" in acceptance
+    assert "Candidate summary daily workflow evidence rollup reviewed" in acceptance
     assert "private_beta_evidence_pack.ps1" in acceptance
     assert "validate_private_beta_evidence.ps1" in acceptance
     assert "browser-smoke checks" in acceptance
@@ -316,6 +352,7 @@ def test_release_checklist_documents_release_and_rollback_policy() -> None:
     assert "Workspace snapshot JSON" in acceptance
     assert "release notes link Workspace snapshot JSON, Telegram preview JSON, and Telegram ops preview JSON evidence artifacts" in acceptance
     assert "Morning Command Brief" in acceptance
+    assert "Today's Operating Queue" in acceptance
     assert "Browser smoke JSON" in acceptance
     assert "Release Blockers" in acceptance
     assert "signals-only decision support" in acceptance
@@ -333,6 +370,7 @@ def test_release_checklist_documents_release_and_rollback_policy() -> None:
     assert "ISO-8601 UTC decision timestamp" in acceptance
     assert "concrete rollback owner" in acceptance
     assert "rollback verification coverage" in acceptance
+    assert "Today's Operating Queue visibility" in checklist
     assert "-PreparedReleaseNotes" in acceptance
     assert "Required Monitors" in alerting
     assert "Feed Loss And Market Freshness" in alerting
@@ -371,6 +409,7 @@ def test_release_checklist_documents_release_and_rollback_policy() -> None:
     assert "Telegram preview JSON" in release_notes
     assert "Telegram ops preview JSON" in release_notes
     assert "Workspace snapshot JSON" in release_notes
+    assert "Today's Operating Queue checked" in release_notes
     assert "Accepted Warnings" in release_notes
     assert "Explicit Non-Goals" in release_notes
     assert "Operator Walkthrough Result" in release_notes
@@ -415,8 +454,16 @@ def test_browser_smoke_covers_workspace_and_runtime_prompt_governance() -> None:
     assert "sync_playwright" in script
     assert "/workspace?root=" in script
     assert "workspace_morning_brief_visible" in script
+    assert "workspace_watchlist_workbench_visible" in script
     assert "[data-morning-brief]" in script
     assert "[data-morning-brief-dont-chase]" in script
+    assert "[data-watchlist-workbench]" in script
+    assert "[data-watchlist-workbench-summary]" in script
+    assert "Operating Queue" in script
+    assert "browser_startup_blocked" in script
+    assert "browser startup is blocked by local OS permissions" in script
+    assert "This is a release blocker" in script
+    assert "status\": \"fail\"" in script
     assert "signals-only" in script
     assert "--secondary-root" in script
     assert "workspace_root_switch" in script

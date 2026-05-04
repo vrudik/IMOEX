@@ -6,7 +6,19 @@ from apps.api.routes.dashboard_formatting import format_timestamp
 
 
 def render_watchlist(items) -> str:
+    items = list(items)
     roots = sorted({str(getattr(item, "root_code", "")) for item in items if getattr(item, "root_code", "")})
+    due_count = sum(1 for item in items if str(getattr(item, "review_state", "review_due")) == "review_due")
+    reviewed_count = sum(1 for item in items if str(getattr(item, "review_state", "")) == "reviewed_today")
+    signal_count = sum(1 for item in items if getattr(item, "signal_id", None))
+    summary = (
+        '<div class="metric-list" data-watchlist-workbench-summary>'
+        f'<article><span>Review due</span><strong>{due_count}</strong><p class="muted">Start here after the Morning Brief.</p></article>'
+        f'<article><span>Reviewed today</span><strong>{reviewed_count}</strong><p class="muted">Already touched in this operating cycle.</p></article>'
+        f'<article><span>Watched roots</span><strong>{len(roots)}</strong><p class="muted">{escape(", ".join(roots) if roots else "none")}</p></article>'
+        f'<article><span>Signal-linked</span><strong>{signal_count}</strong><p class="muted">Pinned setups with a detail page.</p></article>'
+        "</div>"
+    )
     root_options = "".join(
         f'<option value="{escape(root)}">{escape(root)}</option>'
         for root in roots
@@ -16,11 +28,12 @@ def render_watchlist(items) -> str:
         for item in items
     ) or '<p class="empty">No watchlist entries yet.</p>'
     return (
-        '<section class="panel">'
+        '<section class="panel" data-watchlist-workbench>'
         '<div class="panel-head">'
-        '<h2>Daily Watchlist Queue</h2>'
-        '<p>Promoted roots and signals stay visible between cycles, ranked by the latest review touch.</p>'
+        '<h2>Today&rsquo;s Operating Queue</h2>'
+        '<p>The watchlist turns the Morning Brief into a short, reviewable workbench for roots and signals.</p>'
         "</div>"
+        f"{summary}"
         '<div class="watchlist-filters" data-watchlist-filters>'
         '<label><span>Review</span><select data-watchlist-filter-review>'
         '<option value="all">All</option>'
@@ -56,6 +69,10 @@ def _render_watchlist_item(item) -> str:
     watch_key = str(getattr(item, "watch_key", ""))
     signal_meta = f'<small>Signal {escape(signal_id)}</small>' if signal_id else '<small>Root-level</small>'
     reviewed_at = getattr(item, "last_reviewed_at", None) or getattr(item, "updated_at", None)
+    lane_label = "Start-of-day review" if review_state == "review_due" else "Reviewed lane"
+    next_step = "Open the linked context, compare against the brief, then mark reviewed."
+    if not signal_id:
+        next_step = "Open the root lane, compare the latest candidates, then mark reviewed."
     review_button = (
         f'<button class="button" type="button" data-watchlist-review data-watch-key="{escape(watch_key)}">'
         "Mark reviewed"
@@ -82,9 +99,11 @@ def _render_watchlist_item(item) -> str:
         f'<span class="badge">{escape(_watchlist_review_state_label(review_state))}</span>'
         '</div>'
         '<div class="signal-meta">'
+        f'<small data-watchlist-lane>{escape(lane_label)}</small>'
         f'{signal_meta}'
         f'<small>Last reviewed {escape(format_timestamp(reviewed_at))}</small>'
         '</div>'
+        f'<p class="muted" data-watchlist-next-step>{escape(next_step)}</p>'
         f'<div class="action-row">{review_button}{remove_button}</div>'
         '</article>'
     )

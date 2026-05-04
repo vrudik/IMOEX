@@ -247,6 +247,21 @@ class MorningBriefSnapshot(BaseModel):
     signals_only: bool = True
 
 
+class WatchlistWorkbenchSnapshot(BaseModel):
+    total_items: int = Field(default=0, ge=0)
+    review_due_items: int = Field(default=0, ge=0)
+    reviewed_today_items: int = Field(default=0, ge=0)
+    watched_roots: list[str] = Field(default_factory=list)
+    signal_linked_items: int = Field(default=0, ge=0)
+    root_level_items: int = Field(default=0, ge=0)
+    first_due_watch_key: str | None = None
+    first_due_root_code: str | None = None
+    first_due_signal_id: str | None = None
+    first_due_focus_reason: str | None = None
+    next_step: str = "No watchlist items are queued yet."
+    signals_only: bool = True
+
+
 class RuntimeFreshnessPolicySnapshot(BaseModel):
     fresh_max_seconds: int = 30
     aging_max_seconds: int = 180
@@ -511,6 +526,7 @@ class WorkspaceSnapshot(BaseModel):
     watchlist: list[WatchlistEntry] = Field(default_factory=list)
     attention_inbox: list[AttentionInboxItem] = Field(default_factory=list)
     morning_brief: MorningBriefSnapshot = Field(default_factory=MorningBriefSnapshot)
+    watchlist_workbench: WatchlistWorkbenchSnapshot = Field(default_factory=WatchlistWorkbenchSnapshot)
     comparison: HorizonComparisonSnapshot | None = None
     action_items: list[WorkspaceActionItem] = Field(default_factory=list)
     delivery_windows: list[NotificationDeliveryWindow] = Field(default_factory=list)

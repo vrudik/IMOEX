@@ -11,6 +11,7 @@ CANDIDATE_WRAPPER = REPO_ROOT / "scripts" / "private_beta_candidate_check.ps1"
 REQUIRED_BROWSER_CHECKS = [
     "workspace_opened",
     "workspace_morning_brief_visible",
+    "workspace_watchlist_workbench_visible",
     "runtime_admin_key_save_clear",
     "runtime_prompt_diff",
     "runtime_prompt_draft_saved",
@@ -69,6 +70,7 @@ def _manifest(
     missing: list[str] | None = None,
     candidate_revision: str = "test",
     release_authorized: bool = False,
+    release_check_content: str = "[release-check] product readiness OK\n[release-check] OK\n",
     browser_checks: list[str] | None = None,
     release_notes_content: str | None = None,
 ) -> Path:
@@ -99,6 +101,7 @@ def _manifest(
             "## Operator Walkthrough Result",
             "- Workspace trust ribbon checked: pass",
             "- Morning Command Brief checked: pass",
+            "- Today's Operating Queue checked: pass",
             "- Current price and day/week/month charts checked: pass",
             "- Root switch checked: pass",
             "- Signal detail checked: pass",
@@ -124,7 +127,7 @@ def _manifest(
         _artifact(
             tmp_path,
             "release_check",
-            content="[release-check] product readiness OK\n[release-check] OK\n",
+            content=release_check_content,
         ),
         {
             **_artifact(tmp_path, "browser_smoke"),
@@ -149,7 +152,29 @@ def _manifest(
                         "top_attention": [{"title": "Review Si", "href": "/workspace"}],
                         "dont_chase": [],
                         "telegram_status": "preview",
-                    }
+                    },
+                    "watchlist": [
+                        {
+                            "watch_key": "default:Si:root",
+                            "root_code": "Si",
+                            "signal_id": None,
+                            "review_state": "review_due",
+                        }
+                    ],
+                    "watchlist_workbench": {
+                        "signals_only": True,
+                        "total_items": 1,
+                        "review_due_items": 1,
+                        "reviewed_today_items": 0,
+                        "watched_roots": ["Si"],
+                        "signal_linked_items": 0,
+                        "root_level_items": 1,
+                        "first_due_watch_key": "default:Si:root",
+                        "first_due_root_code": "Si",
+                        "first_due_signal_id": None,
+                        "first_due_focus_reason": "Root follow-up",
+                        "next_step": "Open the root lane after the Morning Brief, compare current candidates, then mark reviewed.",
+                    },
                 },
             ),
         },
@@ -287,6 +312,35 @@ def test_private_beta_evidence_validator_passes_complete_manifest(tmp_path: Path
     assert payload["status"] == "pass"
     assert payload["failures"] == []
     assert payload["warnings"] == []
+    daily_workflow = payload["daily_workflow_evidence"]
+    assert daily_workflow["morning_brief"] == {
+        "present": True,
+        "signals_only": True,
+        "market_status": "degraded",
+        "telegram_status": "preview",
+        "top_attention_count": 1,
+        "dont_chase_count": 0,
+        "execution_language_clear": True,
+    }
+    assert daily_workflow["todays_operating_queue"]["present"] is True
+    assert daily_workflow["todays_operating_queue"]["signals_only"] is True
+    assert daily_workflow["todays_operating_queue"]["total_items"] == 1
+    assert daily_workflow["todays_operating_queue"]["review_due_items"] == 1
+    assert daily_workflow["todays_operating_queue"]["reviewed_today_items"] == 0
+    assert daily_workflow["todays_operating_queue"]["signal_linked_items"] == 0
+    assert daily_workflow["todays_operating_queue"]["root_level_items"] == 1
+    assert daily_workflow["todays_operating_queue"]["watched_roots"] == ["Si"]
+    assert daily_workflow["todays_operating_queue"]["first_due_watch_key"] == "default:Si:root"
+    assert daily_workflow["todays_operating_queue"]["first_due_root_code"] == "Si"
+    assert daily_workflow["todays_operating_queue"]["first_due_signal_id"] == ""
+    assert daily_workflow["todays_operating_queue"]["next_step"].startswith("Open the root lane")
+    assert daily_workflow["todays_operating_queue"]["watchlist_present"] is True
+    assert daily_workflow["todays_operating_queue"]["total_matches_watchlist"] is True
+    assert daily_workflow["todays_operating_queue"]["state_counts_match_watchlist"] is True
+    assert daily_workflow["todays_operating_queue"]["counts_reconcile"] is True
+    assert daily_workflow["todays_operating_queue"]["first_due_matches_watchlist"] is True
+    assert daily_workflow["todays_operating_queue"]["next_step_matches_state"] is True
+    assert daily_workflow["todays_operating_queue"]["execution_language_clear"] is True
 
 
 def test_private_beta_candidate_wrapper_blocks_full_run_without_prepared_release_notes(tmp_path: Path) -> None:
@@ -296,6 +350,17 @@ def test_private_beta_candidate_wrapper_blocks_full_run_without_prepared_release
     assert result.returncode != 0
     assert "Full private-beta candidate generation requires completed release notes" in combined_output
     assert "[private-beta-candidate] running release check" not in combined_output
+
+
+def test_private_beta_candidate_wrapper_keeps_draft_browser_failures_reviewable() -> None:
+    script = CANDIDATE_WRAPPER.read_text(encoding="utf-8")
+
+    assert "browser smoke failed; continuing as draft evidence only" in script
+    assert "evidence validation failed; continuing to blocked draft summary" in script
+    assert "browser_smoke_command_status" in script
+    assert "browser_smoke_command_failure" in script
+    assert "Resolve the browser-smoke failure recorded in browser-smoke.log and browser-smoke.json" in script
+    assert "if (-not $AllowDraftEvidence)" in script
 
 
 def test_private_beta_evidence_validator_allows_draft_missing_artifacts(tmp_path: Path) -> None:
@@ -308,6 +373,36 @@ def test_private_beta_evidence_validator_allows_draft_missing_artifacts(tmp_path
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["status"] == "pass"
     assert [item["code"] for item in payload["warnings"]] == ["draft_missing_artifacts"]
+
+
+def test_private_beta_evidence_validator_blocks_non_green_release_check(tmp_path: Path) -> None:
+    manifest = _manifest(
+        tmp_path,
+        release_check_content="Skipped by -SkipReleaseCheck. This output directory is draft evidence only.\n",
+    )
+    output = tmp_path / "validation-release-check-failed.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    assert any(item["code"] == "release_check_not_green" for item in payload["failures"])
+
+
+def test_private_beta_evidence_validator_warns_on_draft_non_green_release_check(tmp_path: Path) -> None:
+    manifest = _manifest(
+        tmp_path,
+        release_check_content="Skipped by -SkipReleaseCheck. This output directory is draft evidence only.\n",
+    )
+    output = tmp_path / "validation-draft-release-check-warning.json"
+
+    result = _run_validator(manifest, output, allow_draft=True)
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "pass"
+    assert any(item["code"] == "draft_release_check_not_green" for item in payload["warnings"])
 
 
 def test_private_beta_evidence_validator_blocks_unknown_candidate_revision(tmp_path: Path) -> None:
@@ -464,6 +559,193 @@ def test_private_beta_evidence_validator_blocks_incomplete_workspace_morning_bri
     assert "workspace_snapshot_morning_brief_dont_chase_missing" in failure_codes
     assert "workspace_snapshot_morning_brief_telegram_status_invalid" in failure_codes
     assert "workspace_snapshot_forbidden_execution_flag" in failure_codes
+
+
+def test_private_beta_evidence_validator_blocks_incomplete_watchlist_workbench(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "workspace_snapshot":
+            Path(artifact["path"]).write_text(
+                json.dumps(
+                    {
+                        "morning_brief": {
+                            "signals_only": True,
+                            "market_status": "degraded",
+                            "top_attention": [{"title": "Review Si", "href": "/workspace"}],
+                            "dont_chase": [],
+                            "telegram_status": "preview",
+                        },
+                        "watchlist_workbench": {
+                            "signals_only": False,
+                            "total_items": 1,
+                            "review_due_items": 2,
+                            "reviewed_today_items": 0,
+                            "watched_roots": "Si",
+                            "signal_linked_items": 0,
+                            "root_level_items": 0,
+                            "next_step": "",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            break
+    output = tmp_path / "validation-watchlist-workbench-failed.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    failure_codes = {item["code"] for item in payload["failures"]}
+    assert "workspace_snapshot_watchlist_workbench_not_signals_only" in failure_codes
+    assert "workspace_snapshot_watchlist_workbench_counts_inconsistent" in failure_codes
+    assert "workspace_snapshot_watchlist_missing" in failure_codes
+    assert "workspace_snapshot_watchlist_workbench_first_due_missing" in failure_codes
+    assert "workspace_snapshot_watchlist_workbench_roots_invalid" in failure_codes
+    assert "workspace_snapshot_watchlist_workbench_next_step_missing" in failure_codes
+
+
+def test_private_beta_evidence_validator_requires_watchlist_workbench_total_to_match_watchlist(
+    tmp_path: Path,
+) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "workspace_snapshot":
+            workspace_snapshot = json.loads(Path(artifact["path"]).read_text(encoding="utf-8"))
+            workspace_snapshot["watchlist_workbench"]["total_items"] = 2
+            workspace_snapshot["watchlist_workbench"]["root_level_items"] = 2
+            Path(artifact["path"]).write_text(json.dumps(workspace_snapshot), encoding="utf-8")
+            break
+    output = tmp_path / "validation-watchlist-total-mismatch.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    failure_codes = {item["code"] for item in payload["failures"]}
+    assert "workspace_snapshot_watchlist_workbench_total_mismatch" in failure_codes
+
+
+def test_private_beta_evidence_validator_requires_watchlist_counts_to_match_item_states(
+    tmp_path: Path,
+) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "workspace_snapshot":
+            workspace_snapshot = json.loads(Path(artifact["path"]).read_text(encoding="utf-8"))
+            workspace_snapshot["watchlist_workbench"]["review_due_items"] = 0
+            workspace_snapshot["watchlist_workbench"]["reviewed_today_items"] = 1
+            workspace_snapshot["watchlist_workbench"][
+                "next_step"
+            ] = "All queued watchlist items are reviewed today; keep the queue open for changed evidence."
+            Path(artifact["path"]).write_text(json.dumps(workspace_snapshot), encoding="utf-8")
+            break
+    output = tmp_path / "validation-watchlist-state-count-mismatch.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    failure_codes = {item["code"] for item in payload["failures"]}
+    assert "workspace_snapshot_watchlist_workbench_watchlist_counts_mismatch" in failure_codes
+
+
+def test_private_beta_evidence_validator_requires_first_due_to_match_watchlist_order(
+    tmp_path: Path,
+) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "workspace_snapshot":
+            workspace_snapshot = json.loads(Path(artifact["path"]).read_text(encoding="utf-8"))
+            workspace_snapshot["watchlist_workbench"]["first_due_watch_key"] = "default:Br:root"
+            workspace_snapshot["watchlist_workbench"]["first_due_root_code"] = "Br"
+            Path(artifact["path"]).write_text(json.dumps(workspace_snapshot), encoding="utf-8")
+            break
+    output = tmp_path / "validation-watchlist-first-due-mismatch.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    failure_codes = {item["code"] for item in payload["failures"]}
+    assert "workspace_snapshot_watchlist_workbench_first_due_mismatch" in failure_codes
+
+
+def test_private_beta_evidence_validator_requires_next_step_to_match_first_due_shape(
+    tmp_path: Path,
+) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "workspace_snapshot":
+            workspace_snapshot = json.loads(Path(artifact["path"]).read_text(encoding="utf-8"))
+            workspace_snapshot["watchlist_workbench"][
+                "next_step"
+            ] = "All queued watchlist items are reviewed today; keep the queue open for changed evidence."
+            Path(artifact["path"]).write_text(json.dumps(workspace_snapshot), encoding="utf-8")
+            break
+    output = tmp_path / "validation-watchlist-next-step-mismatch.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    failure_codes = {item["code"] for item in payload["failures"]}
+    assert "workspace_snapshot_watchlist_workbench_next_step_mismatch" in failure_codes
+
+
+def test_private_beta_evidence_validator_requires_watchlist_roots_array(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "workspace_snapshot":
+            workspace_snapshot = json.loads(Path(artifact["path"]).read_text(encoding="utf-8"))
+            workspace_snapshot["watchlist_workbench"]["watched_roots"] = {"root": "Si"}
+            Path(artifact["path"]).write_text(json.dumps(workspace_snapshot), encoding="utf-8")
+            break
+    output = tmp_path / "validation-watchlist-roots-failed.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    failure_codes = {item["code"] for item in payload["failures"]}
+    assert "workspace_snapshot_watchlist_workbench_roots_invalid" in failure_codes
+
+
+def test_private_beta_evidence_validator_blocks_execution_language_in_workspace_snapshot(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "workspace_snapshot":
+            workspace_snapshot = json.loads(Path(artifact["path"]).read_text(encoding="utf-8"))
+            workspace_snapshot["morning_brief"]["top_attention"] = [
+                {"title": "Enable order routing", "href": "/workspace"}
+            ]
+            workspace_snapshot["morning_brief"]["dont_chase"] = ["No broker execution shortcut is available."]
+            workspace_snapshot["watchlist_workbench"]["next_step"] = "Start autotrading after review."
+            Path(artifact["path"]).write_text(json.dumps(workspace_snapshot), encoding="utf-8")
+            break
+    output = tmp_path / "validation-workspace-execution-language-failed.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    failure_codes = {item["code"] for item in payload["failures"]}
+    assert "workspace_snapshot_morning_brief_execution_language" in failure_codes
+    assert "workspace_snapshot_watchlist_workbench_execution_language" in failure_codes
 
 
 def test_private_beta_evidence_validator_blocks_incomplete_telegram_ops_preview(tmp_path: Path) -> None:
@@ -1432,3 +1714,33 @@ def test_private_beta_evidence_validator_blocks_incomplete_browser_smoke(tmp_pat
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["status"] == "fail"
     assert any(item["code"] == "browser_smoke_missing_check" for item in payload["failures"])
+
+
+def test_private_beta_evidence_validator_blocks_failed_browser_smoke_payload(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "browser_smoke":
+            Path(artifact["path"]).write_text(
+                json.dumps(
+                    {
+                        "status": "fail",
+                        "failure_code": "browser_startup_blocked",
+                        "failure": "browser startup is blocked by local OS permissions",
+                        "checks": [],
+                        "planned_checks": REQUIRED_BROWSER_CHECKS,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            break
+    output = tmp_path / "validation-browser-failure-payload.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    failure_codes = {item["code"] for item in payload["failures"]}
+    assert "browser_smoke_failed" in failure_codes
+    assert "browser_smoke_missing_check" in failure_codes

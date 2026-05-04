@@ -9,15 +9,15 @@ This checklist is the final non-production acceptance gate before any private-be
 Attach or archive these artifacts for the candidate build:
 
 - Optional local candidate output from `scripts/private_beta_candidate_check.ps1` when the evidence pack is produced on the operator workstation.
-- Operator-readable candidate summary from `candidate-summary.md` when `scripts/private_beta_candidate_check.ps1` is used, including candidate git revision, working-tree state, evidence validation status, warnings, failures, and next actions.
+- Operator-readable candidate summary from `candidate-summary.md` when `scripts/private_beta_candidate_check.ps1` is used, including candidate git revision, working-tree state, daily workflow evidence rollup for Morning Command Brief and Today's Operating Queue, validation reconciliation flags, evidence validation status, warnings, failures, and next actions.
 - Candidate-local acceptance checklist draft from `acceptance-checklist-draft.md` when `scripts/private_beta_candidate_check.ps1` is used, including the generated `Candidate Output Prefill`.
 - Private-beta evidence manifest from `scripts/private_beta_evidence_pack.ps1`.
-- Evidence validation JSON from `scripts/validate_private_beta_evidence.ps1`, including manifest flags, browser-smoke checks, Morning Command Brief workspace snapshot readiness, Telegram preview readiness, Telegram ops preview readiness, restore-drill status, performance labels, and release-note safety phrases.
+- Evidence validation JSON from `scripts/validate_private_beta_evidence.ps1`, including manifest flags, release-check green status or draft warning status, browser-smoke checks and failure status for Morning Command Brief and Today's Operating Queue visibility, workspace snapshot readiness, `daily_workflow_evidence` for Morning Command Brief and Today's Operating Queue counts/reconciliation, Today's Operating Queue count reconciliation, first due identity, and next-step shape against the archived watchlist, execution-language guards for both daily workflow contracts, Telegram preview readiness, Telegram ops preview readiness, restore-drill status, performance labels, and release-note safety phrases.
 - `release_check.ps1` output showing `product readiness OK` and `OK`.
-- Browser smoke JSON from `scripts/browser_smoke.ps1`, including workspace, Morning Command Brief visibility, runtime prompt governance, multi-root switch, current price, day/week/month charts, drag measurement, mobile charts, and no horizontal overflow.
+- Browser smoke JSON from `scripts/browser_smoke.ps1`, including workspace, Morning Command Brief visibility, Today's Operating Queue visibility, runtime prompt governance, multi-root switch, current price, day/week/month charts, drag measurement, mobile charts, and no horizontal overflow.
 - Product-readiness JSON for the target environment, including backup freshness, restore-drill evidence, scheduler, delivery, migration, market-data policy, and admin/runtime security checks.
 - Admin health JSON for the target environment.
-- Workspace snapshot JSON from `/api/v1/workspace`, proving the Morning Command Brief API contract is present, signals-only, and truthful about market-data state.
+- Workspace snapshot JSON from `/api/v1/workspace`, proving the Morning Command Brief and Today's Operating Queue API contracts are present, signals-only, and truthful about market-data state.
 - Telegram preview JSON from `/api/v1/notifications/telegram/preview`, proving preview readiness without authorizing unintended sends.
 - Telegram ops preview JSON from `/api/v1/notifications/telegram/ops-preview`, proving ops alert preview readiness without authorizing alert sends.
 - Restore-drill summary for the target database class: SQLite restore drill for SQLite, Postgres restore drill for Postgres.
@@ -27,6 +27,7 @@ Attach or archive these artifacts for the candidate build:
 - Private-beta sales-readiness pack from `docs/private_beta_sales_readiness.md`, including positioning, demo path, support boundaries, and onboarding checklist.
 - Release notes based on `docs/private_beta_release_notes_template.md`, where the release notes candidate revision and analytics mode both match the evidence manifest, Telegram mode as `disabled`, `preview`, `dry-run`, or `configured`, recording market-data mode as `live`, `hidden`, `degraded`, or `fixture for browser smoke only`, accepted warnings as `None` or concrete `warning, owner, expiry/follow-up` entries, explicit non-goals, operator walkthrough results with every check marked `pass`, support-boundary confirmation, concrete rollback owner/revision/artifact/stop-owner fields, rollback verification coverage, concrete decision owner, `yes/no/deferred` decision status, and ISO-8601 UTC decision timestamp, with no unresolved `<...>` placeholders and every support-boundary confirmation answered `yes`.
 - Full local candidate generation must pass completed release notes through `scripts/private_beta_candidate_check.ps1 -PreparedReleaseNotes`; otherwise the output remains draft evidence only.
+- Draft evidence must warn when `release_check.ps1` output does not include both `product readiness OK` and `[release-check] OK`.
 - Draft evidence must never record `Private-beta candidate accepted: yes`; accepted candidates require final evidence without `-AllowDraft`.
 
 ## Operator Acceptance Flow
@@ -35,15 +36,16 @@ Run the acceptance flow in a non-production environment that matches the intende
 
 1. Open `/workspace` and confirm the trust ribbon and market-data state are truthful.
 2. Confirm the Morning Command Brief shows market truth, top attention, review delta, and do-not-chase safeguards without order-routing or autotrading language.
-3. Confirm current price and day/week/month charts are either real and traceable or clearly unavailable.
-4. Switch at least one secondary root from the workspace and confirm the selected root, charts, and decision pack stay in sync.
-5. Open a signal detail page and confirm confidence, skeptic, invalidation, journal, and related-signal surfaces render.
-6. Open `/workspace/council` and confirm role prompts are visible and remain signals-only.
-7. Open `/workspace/runtime`, edit a draft prompt, preview the diff, then dismiss or restore it without changing the approved prompt.
-8. Add a journal note with tags, then verify `/workspace/journal` can filter by that tag and shows the tag drill-down.
-9. Review delivery windows and delivery history; every send, skip, suppress, or dry-run must show a reason trail.
-10. Run Telegram preview or dry-run without sending unintended messages.
-11. Confirm backup and restore evidence is fresh enough for the target environment.
+3. Confirm Today's Operating Queue shows review due, reviewed today, watched roots, signal-linked counts, and an operator-readable next step without execution language.
+4. Confirm current price and day/week/month charts are either real and traceable or clearly unavailable.
+5. Switch at least one secondary root from the workspace and confirm the selected root, charts, and decision pack stay in sync.
+6. Open a signal detail page and confirm confidence, skeptic, invalidation, journal, and related-signal surfaces render.
+7. Open `/workspace/council` and confirm role prompts are visible and remain signals-only.
+8. Open `/workspace/runtime`, edit a draft prompt, preview the diff, then dismiss or restore it without changing the approved prompt.
+9. Add a journal note with tags, then verify `/workspace/journal` can filter by that tag and shows the tag drill-down.
+10. Review delivery windows and delivery history; every send, skip, suppress, or dry-run must show a reason trail.
+11. Run Telegram preview or dry-run without sending unintended messages.
+12. Confirm backup and restore evidence is fresh enough for the target environment.
 
 ## Release Blockers
 
@@ -79,12 +81,13 @@ Before allowing the build into private beta, record:
 - Generated `Candidate Output Prefill` values reviewed for this candidate.
 - Candidate summary next actions.
 - Candidate summary validation status and accepted warnings/failures.
+- Candidate summary daily workflow evidence rollup reviewed, including Morning Command Brief market/Telegram status and Today's Operating Queue counts, first due item, next step, and validator reconciliation against the archived workspace watchlist.
 - Private-beta evidence manifest path.
 - Private-beta evidence validation path.
 - Database class and restore-drill artifact path.
 - Browser smoke artifact path.
 - Product-readiness artifact path.
-- Workspace snapshot JSON artifact path, with Morning Command Brief `signals_only=true`.
+- Workspace snapshot JSON artifact path, with Morning Command Brief and Today's Operating Queue `signals_only=true`.
 - Telegram preview JSON artifact path.
 - Telegram ops preview JSON artifact path.
 - Accepted warnings.

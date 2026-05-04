@@ -168,6 +168,8 @@ This tranche is `Operator-Ready Beta`. It turns the stabilized control plane int
 - [x] Confirm browser smoke already covers multi-root and mobile current-price plus day/week/month chart confidence.
 - [x] Add watchlist bulk review and remove-from-queue actions for the currently filtered daily queue.
 - [x] Add browser-local onboarding collapse and dismiss controls so experienced operators can keep the cockpit compact.
+- [x] Polish the watchlist into Today's Operating Queue with start-of-day summary counts and per-item next steps after the Morning Brief.
+- [x] Add a typed Today's Operating Queue workbench snapshot to `/api/v1/workspace` so the daily queue is evidenceable without scraping HTML.
 - [x] Extend delivery activity CSV/JSONL exports with computed reason labels for offline notification review.
 - [x] Add journal tag filters and tag quality drill-downs for the review loop.
 - [x] Run the full Playwright browser smoke against workspace, runtime prompt governance, multi-root switching, and day/week/month chart confidence.
@@ -178,6 +180,7 @@ This tranche is `Operator-Ready Beta`. It turns the stabilized control plane int
 - [x] Add a local private-beta evidence manifest generator so candidate artifacts can be checked without authorizing deployment, pricing, or execution.
 - [x] Add a private-beta release-notes template for accepted warnings, explicit non-goals, support boundaries, rollback, and decision owner.
 - [x] Add a local private-beta candidate evidence wrapper that collects release-check logs, product-readiness/admin snapshots, draft release notes, and an evidence manifest without authorizing launch.
+- [x] Harden draft private-beta candidate generation so non-fatal release-check stderr is logged without aborting zero-exit evidence runs.
 - [x] Add a private-beta evidence validator so draft/full candidate packs can be checked for required artifacts and no-launch/no-pricing/no-order-routing guardrails.
 - [x] Add behavioral release-gate tests for the private-beta evidence validator, including complete, draft-missing, and forbidden-launch-flag manifests.
 - [x] Tighten private-beta evidence validation so browser smoke, restore drill, and performance baseline artifacts are checked for required content, not just file presence.
@@ -213,6 +216,18 @@ This tranche is `Operator-Ready Beta`. It turns the stabilized control plane int
 - [x] Archive and validate the Morning Command Brief workspace snapshot in private-beta evidence so the daily ritual is acceptance-checkable.
 - [x] Add Morning Command Brief visibility to the browser-smoke evidence contract.
 - [x] Align acceptance checklist wording with release-note validation for Workspace snapshot evidence links.
+- [x] Validate Today's Operating Queue workspace snapshot evidence so the daily review workbench is acceptance-checkable.
+- [x] Add Today's Operating Queue visibility to the browser-smoke evidence contract.
+- [x] Block execution-language drift in Morning Command Brief and Today's Operating Queue workspace snapshot evidence.
+- [x] Warn on draft private-beta evidence when release-check evidence is skipped or not green.
+- [x] Add a daily workflow evidence rollup to private-beta candidate summaries so Morning Command Brief and Today's Operating Queue can be reviewed without opening raw JSON.
+- [x] Validate Today's Operating Queue evidence totals against the archived workspace watchlist.
+- [x] Validate Today's Operating Queue item-state counts, first due identity, and next-step shape against the archived workspace watchlist.
+- [x] Classify local browser-smoke permission-denied startup as an explicit release blocker with machine-readable failure output.
+- [x] Expose Morning Command Brief and Today's Operating Queue reconciliation details in private-beta evidence validation JSON.
+- [x] Add daily workflow validation reconciliation flags to private-beta candidate summaries so reviewers can confirm queue evidence without opening validation JSON.
+- [x] Wire browser-smoke headed mode correctly so local permission/startup blockers can be diagnosed without changing release-gate semantics.
+- [x] Keep draft private-beta candidate summaries reviewable when browser smoke fails locally, while preserving full browser smoke as a release blocker.
 
 ## Immediate Next Steps
 

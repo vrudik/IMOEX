@@ -34,6 +34,38 @@ if ([string]::IsNullOrWhiteSpace($OutputPath)) {
 $manifest = Get-Content -Path $manifestPathResolved -Raw | ConvertFrom-Json
 $failures = New-Object System.Collections.Generic.List[object]
 $warnings = New-Object System.Collections.Generic.List[object]
+$dailyWorkflowEvidence = [ordered]@{
+  morning_brief = [ordered]@{
+    present = $false
+    signals_only = $false
+    market_status = ""
+    telegram_status = ""
+    top_attention_count = 0
+    dont_chase_count = 0
+    execution_language_clear = $false
+  }
+  todays_operating_queue = [ordered]@{
+    present = $false
+    signals_only = $false
+    total_items = 0
+    review_due_items = 0
+    reviewed_today_items = 0
+    signal_linked_items = 0
+    root_level_items = 0
+    watched_roots = @()
+    first_due_watch_key = ""
+    first_due_root_code = ""
+    first_due_signal_id = ""
+    next_step = ""
+    watchlist_present = $false
+    total_matches_watchlist = $false
+    state_counts_match_watchlist = $false
+    counts_reconcile = $false
+    first_due_matches_watchlist = $false
+    next_step_matches_state = $false
+    execution_language_clear = $false
+  }
+}
 
 function Add-Failure {
   param(
@@ -51,6 +83,75 @@ function Add-Warning {
   )
 
   $warnings.Add([ordered]@{ code = $Code; message = $Message }) | Out-Null
+}
+
+function Test-NonNegativeInteger {
+  param([object]$Value)
+
+  if ($null -eq $Value) {
+    return $false
+  }
+  $text = ([string]$Value).Trim()
+  if ($text -notmatch "^\d+$") {
+    return $false
+  }
+  return [int64]$text -ge 0
+}
+
+function Get-JsonPropertyValue {
+  param(
+    [object]$Object,
+    [string]$Name,
+    [object]$Default = $null
+  )
+
+  if ($null -eq $Object) {
+    return $Default
+  }
+  $property = $Object.PSObject.Properties[$Name]
+  if ($null -eq $property) {
+    return $Default
+  }
+  return $property.Value
+}
+
+$forbiddenExecutionLanguagePattern = "(?i)\b(order\s*-?\s*routing|autotrading|broker\s+execution)\b"
+
+function Test-ForbiddenExecutionLanguage {
+  param([object]$Value)
+
+  if ($null -eq $Value) {
+    return $false
+  }
+  if ($Value -is [string]) {
+    return $Value -match $forbiddenExecutionLanguagePattern
+  }
+  if ($Value -is [ValueType]) {
+    return $false
+  }
+  if ($Value -is [System.Collections.IDictionary]) {
+    foreach ($entry in $Value.GetEnumerator()) {
+      if (Test-ForbiddenExecutionLanguage -Value $entry.Value) {
+        return $true
+      }
+    }
+    return $false
+  }
+  if ($Value -is [System.Collections.IEnumerable]) {
+    foreach ($item in $Value) {
+      if (Test-ForbiddenExecutionLanguage -Value $item) {
+        return $true
+      }
+    }
+    return $false
+  }
+
+  foreach ($property in $Value.PSObject.Properties) {
+    if (Test-ForbiddenExecutionLanguage -Value $property.Value) {
+      return $true
+    }
+  }
+  return $false
 }
 
 function Test-ManifestFlag {
@@ -170,8 +271,13 @@ foreach ($artifact in $artifacts) {
 $releaseCheckPath = Get-ArtifactPath "release_check"
 if (-not [string]::IsNullOrWhiteSpace($releaseCheckPath)) {
   $releaseCheckText = Get-Content -Path $releaseCheckPath -Raw
-  if (-not $AllowDraft -and ($releaseCheckText -notmatch "product readiness OK" -or $releaseCheckText -notmatch "\[release-check\] OK")) {
-    Add-Failure "release_check_not_green" "Release-check log must include product readiness OK and [release-check] OK."
+  $releaseCheckGreen = $releaseCheckText -match "product readiness OK" -and $releaseCheckText -match "\[release-check\] OK"
+  if (-not $releaseCheckGreen) {
+    if ($AllowDraft) {
+      Add-Warning "draft_release_check_not_green" "Draft release-check log does not include product readiness OK and [release-check] OK."
+    } else {
+      Add-Failure "release_check_not_green" "Release-check log must include product readiness OK and [release-check] OK."
+    }
   }
 }
 
@@ -198,6 +304,17 @@ if (-not [string]::IsNullOrWhiteSpace($workspaceSnapshotPath)) {
     Add-Failure "workspace_snapshot_morning_brief_missing" "Workspace snapshot JSON must include morning_brief."
   } else {
     $morningBrief = $workspaceSnapshot.morning_brief
+    $morningBriefSignalsOnly = ($morningBrief.PSObject.Properties.Name -contains "signals_only") -and [bool]$morningBrief.signals_only -eq $true
+    $morningBriefExecutionLanguageClear = -not (Test-ForbiddenExecutionLanguage -Value $morningBrief)
+    $dailyWorkflowEvidence.morning_brief = [ordered]@{
+      present = $true
+      signals_only = $morningBriefSignalsOnly
+      market_status = [string](Get-JsonPropertyValue $morningBrief "market_status" "")
+      telegram_status = [string](Get-JsonPropertyValue $morningBrief "telegram_status" "")
+      top_attention_count = @((Get-JsonPropertyValue $morningBrief "top_attention" @())).Count
+      dont_chase_count = @((Get-JsonPropertyValue $morningBrief "dont_chase" @())).Count
+      execution_language_clear = $morningBriefExecutionLanguageClear
+    }
     if (-not ($morningBrief.PSObject.Properties.Name -contains "signals_only") -or [bool]$morningBrief.signals_only -ne $true) {
       Add-Failure "workspace_snapshot_morning_brief_not_signals_only" "Morning Command Brief must remain signals-only."
     }
@@ -212,6 +329,168 @@ if (-not [string]::IsNullOrWhiteSpace($workspaceSnapshotPath)) {
     }
     if (@("ready", "preview") -notcontains [string]$morningBrief.telegram_status) {
       Add-Failure "workspace_snapshot_morning_brief_telegram_status_invalid" "Morning Command Brief Telegram status must be ready or preview."
+    }
+    if (-not $morningBriefExecutionLanguageClear) {
+      Add-Failure "workspace_snapshot_morning_brief_execution_language" "Morning Command Brief evidence must not include order routing, autotrading, or broker execution language."
+    }
+  }
+  if (-not ($workspaceSnapshot.PSObject.Properties.Name -contains "watchlist_workbench")) {
+    Add-Failure "workspace_snapshot_watchlist_workbench_missing" "Workspace snapshot JSON must include watchlist_workbench."
+  } else {
+    $workbench = $workspaceSnapshot.watchlist_workbench
+    if ($null -eq $workbench) {
+      Add-Failure "workspace_snapshot_watchlist_workbench_missing" "Workspace snapshot JSON must include watchlist_workbench."
+    } else {
+      $workbenchProps = $workbench.PSObject.Properties.Name
+      $workbenchSignalsOnly = ($workbenchProps -contains "signals_only") -and [bool]$workbench.signals_only -eq $true
+      $workbenchExecutionLanguageClear = -not (Test-ForbiddenExecutionLanguage -Value $workbench)
+      $watchedRootsForEvidence = @()
+      $watchedRootsPropertyForEvidence = $workbench.PSObject.Properties["watched_roots"]
+      if ($null -ne $watchedRootsPropertyForEvidence -and $null -ne $watchedRootsPropertyForEvidence.Value -and $watchedRootsPropertyForEvidence.Value -is [System.Array]) {
+        $watchedRootsForEvidence = @($watchedRootsPropertyForEvidence.Value | ForEach-Object { [string]$_ })
+      }
+      $dailyWorkflowEvidence.todays_operating_queue.present = $true
+      $dailyWorkflowEvidence.todays_operating_queue.signals_only = $workbenchSignalsOnly
+      $dailyWorkflowEvidence.todays_operating_queue.watched_roots = $watchedRootsForEvidence
+      $dailyWorkflowEvidence.todays_operating_queue.first_due_watch_key = [string](Get-JsonPropertyValue $workbench "first_due_watch_key" "")
+      $dailyWorkflowEvidence.todays_operating_queue.first_due_root_code = [string](Get-JsonPropertyValue $workbench "first_due_root_code" "")
+      $dailyWorkflowEvidence.todays_operating_queue.first_due_signal_id = [string](Get-JsonPropertyValue $workbench "first_due_signal_id" "")
+      $dailyWorkflowEvidence.todays_operating_queue.next_step = [string](Get-JsonPropertyValue $workbench "next_step" "")
+      $dailyWorkflowEvidence.todays_operating_queue.execution_language_clear = $workbenchExecutionLanguageClear
+      if (-not ($workbenchProps -contains "signals_only") -or [bool]$workbench.signals_only -ne $true) {
+        Add-Failure "workspace_snapshot_watchlist_workbench_not_signals_only" "Today's Operating Queue must remain signals-only."
+      }
+
+      $numericFieldsValid = $true
+      $numericValues = @{}
+      foreach ($fieldName in @("total_items", "review_due_items", "reviewed_today_items", "signal_linked_items", "root_level_items")) {
+        $field = $workbench.PSObject.Properties[$fieldName]
+        if ($null -eq $field -or -not (Test-NonNegativeInteger $field.Value)) {
+          $numericFieldsValid = $false
+        } else {
+          $numericValues[$fieldName] = [int64]$field.Value
+        }
+      }
+      if (-not $numericFieldsValid) {
+        Add-Failure "workspace_snapshot_watchlist_workbench_counts_invalid" "Today's Operating Queue counts must be non-negative integers."
+      } else {
+        $dailyWorkflowEvidence.todays_operating_queue.total_items = $numericValues["total_items"]
+        $dailyWorkflowEvidence.todays_operating_queue.review_due_items = $numericValues["review_due_items"]
+        $dailyWorkflowEvidence.todays_operating_queue.reviewed_today_items = $numericValues["reviewed_today_items"]
+        $dailyWorkflowEvidence.todays_operating_queue.signal_linked_items = $numericValues["signal_linked_items"]
+        $dailyWorkflowEvidence.todays_operating_queue.root_level_items = $numericValues["root_level_items"]
+        $watchlistProperty = $workspaceSnapshot.PSObject.Properties["watchlist"]
+        $watchlistItems = @()
+        if ($null -eq $watchlistProperty -or $null -eq $watchlistProperty.Value -or -not ($watchlistProperty.Value -is [System.Array])) {
+          Add-Failure "workspace_snapshot_watchlist_missing" "Workspace snapshot JSON must include watchlist as a JSON array."
+        } else {
+          $dailyWorkflowEvidence.todays_operating_queue.watchlist_present = $true
+          $watchlistItems = @($watchlistProperty.Value)
+          $totalMatchesWatchlist = $watchlistItems.Count -eq $numericValues["total_items"]
+          $dailyWorkflowEvidence.todays_operating_queue.total_matches_watchlist = $totalMatchesWatchlist
+          if (-not $totalMatchesWatchlist) {
+            Add-Failure "workspace_snapshot_watchlist_workbench_total_mismatch" "Today's Operating Queue total_items must match the archived workspace watchlist length."
+          }
+          $reviewDueWatchlistItems = @($watchlistItems | Where-Object { [string](Get-JsonPropertyValue $_ "review_state" "") -eq "review_due" })
+          $reviewedTodayWatchlistItems = @($watchlistItems | Where-Object { [string](Get-JsonPropertyValue $_ "review_state" "") -eq "reviewed_today" })
+          $signalLinkedWatchlistItems = @($watchlistItems | Where-Object { -not [string]::IsNullOrWhiteSpace([string](Get-JsonPropertyValue $_ "signal_id" "")) })
+          $rootLevelWatchlistItems = @($watchlistItems | Where-Object { [string]::IsNullOrWhiteSpace([string](Get-JsonPropertyValue $_ "signal_id" "")) })
+          $stateCountsMatchWatchlist = -not (
+            $reviewDueWatchlistItems.Count -ne $numericValues["review_due_items"] -or
+            $reviewedTodayWatchlistItems.Count -ne $numericValues["reviewed_today_items"] -or
+            $signalLinkedWatchlistItems.Count -ne $numericValues["signal_linked_items"] -or
+            $rootLevelWatchlistItems.Count -ne $numericValues["root_level_items"]
+          )
+          $dailyWorkflowEvidence.todays_operating_queue.state_counts_match_watchlist = $stateCountsMatchWatchlist
+          if (-not $stateCountsMatchWatchlist) {
+            Add-Failure "workspace_snapshot_watchlist_workbench_watchlist_counts_mismatch" "Today's Operating Queue counts must match archived workspace watchlist item states."
+          }
+        }
+        $countsReconcile = -not (
+          $numericValues["review_due_items"] -gt $numericValues["total_items"] -or
+          $numericValues["reviewed_today_items"] -gt $numericValues["total_items"] -or
+          ($numericValues["signal_linked_items"] + $numericValues["root_level_items"]) -ne $numericValues["total_items"]
+        )
+        $dailyWorkflowEvidence.todays_operating_queue.counts_reconcile = $countsReconcile
+        if (-not $countsReconcile) {
+          Add-Failure "workspace_snapshot_watchlist_workbench_counts_inconsistent" "Today's Operating Queue counts must reconcile to total_items."
+        }
+        if ($numericValues["review_due_items"] -gt 0) {
+          $firstDueMatchesWatchlist = $false
+          $firstDueWatchKey = ""
+          $firstDueRootCode = ""
+          $firstDueSignalId = ""
+          if ($workbenchProps -contains "first_due_watch_key") {
+            $firstDueWatchKey = [string]$workbench.first_due_watch_key
+          }
+          if ($workbenchProps -contains "first_due_root_code") {
+            $firstDueRootCode = [string]$workbench.first_due_root_code
+          }
+          if ($workbenchProps -contains "first_due_signal_id") {
+            $firstDueSignalId = [string]$workbench.first_due_signal_id
+          }
+          if ([string]::IsNullOrWhiteSpace($firstDueWatchKey) -or [string]::IsNullOrWhiteSpace($firstDueRootCode)) {
+            Add-Failure "workspace_snapshot_watchlist_workbench_first_due_missing" "Today's Operating Queue must identify the first due item when reviews are due."
+          }
+          if ($watchlistItems.Count -gt 0) {
+            $firstDueWatchlistItem = @($watchlistItems | Where-Object { [string](Get-JsonPropertyValue $_ "review_state" "") -eq "review_due" } | Select-Object -First 1)
+            if ($firstDueWatchlistItem.Count -eq 0) {
+              Add-Failure "workspace_snapshot_watchlist_workbench_first_due_mismatch" "Today's Operating Queue first due item must match an archived review_due watchlist entry."
+            } else {
+              $expectedFirstDue = $firstDueWatchlistItem[0]
+              $expectedWatchKey = [string](Get-JsonPropertyValue $expectedFirstDue "watch_key" "")
+              $expectedRootCode = [string](Get-JsonPropertyValue $expectedFirstDue "root_code" "")
+              $expectedSignalId = [string](Get-JsonPropertyValue $expectedFirstDue "signal_id" "")
+              if (
+                $firstDueWatchKey -ne $expectedWatchKey -or
+                $firstDueRootCode -ne $expectedRootCode -or
+                $firstDueSignalId -ne $expectedSignalId
+              ) {
+                Add-Failure "workspace_snapshot_watchlist_workbench_first_due_mismatch" "Today's Operating Queue first due item must match the first archived review_due watchlist entry."
+              } else {
+                $firstDueMatchesWatchlist = $true
+              }
+            }
+          }
+          $dailyWorkflowEvidence.todays_operating_queue.first_due_matches_watchlist = $firstDueMatchesWatchlist
+        } else {
+          $dailyWorkflowEvidence.todays_operating_queue.first_due_matches_watchlist = $true
+        }
+      }
+
+      $watchedRoots = $workbench.PSObject.Properties["watched_roots"]
+      if ($null -eq $watchedRoots -or $null -eq $watchedRoots.Value -or -not ($watchedRoots.Value -is [System.Array])) {
+        Add-Failure "workspace_snapshot_watchlist_workbench_roots_invalid" "Today's Operating Queue must include watched_roots as a JSON array."
+      }
+      if (-not ($workbenchProps -contains "next_step") -or [string]::IsNullOrWhiteSpace([string]$workbench.next_step)) {
+        Add-Failure "workspace_snapshot_watchlist_workbench_next_step_missing" "Today's Operating Queue must include an operator-readable next_step."
+      } else {
+        $nextStep = [string]$workbench.next_step
+        $nextStepMatchesState = $true
+        if ($numericFieldsValid) {
+          if ($numericValues["review_due_items"] -gt 0) {
+            $firstDueSignalIdForNextStep = [string](Get-JsonPropertyValue $workbench "first_due_signal_id" "")
+            if (-not [string]::IsNullOrWhiteSpace($firstDueSignalIdForNextStep) -and $nextStep -notmatch "(?i)(linked signal|signal context)") {
+              $nextStepMatchesState = $false
+              Add-Failure "workspace_snapshot_watchlist_workbench_next_step_mismatch" "Today's Operating Queue next_step must direct signal-linked due items to signal context."
+            }
+            if ([string]::IsNullOrWhiteSpace($firstDueSignalIdForNextStep) -and $nextStep -notmatch "(?i)root lane") {
+              $nextStepMatchesState = $false
+              Add-Failure "workspace_snapshot_watchlist_workbench_next_step_mismatch" "Today's Operating Queue next_step must direct root-level due items to the root lane."
+            }
+          } elseif ($numericValues["total_items"] -gt 0 -and $nextStep -notmatch "(?i)(reviewed today|queued watchlist)") {
+            $nextStepMatchesState = $false
+            Add-Failure "workspace_snapshot_watchlist_workbench_next_step_mismatch" "Today's Operating Queue next_step must explain that queued items are already reviewed today."
+          } elseif ($numericValues["total_items"] -eq 0 -and $nextStep -notmatch "(?i)(no watchlist items|queued)") {
+            $nextStepMatchesState = $false
+            Add-Failure "workspace_snapshot_watchlist_workbench_next_step_mismatch" "Today's Operating Queue next_step must explain when no watchlist items are queued."
+          }
+        }
+        $dailyWorkflowEvidence.todays_operating_queue.next_step_matches_state = $nextStepMatchesState
+      }
+      if (-not $workbenchExecutionLanguageClear) {
+        Add-Failure "workspace_snapshot_watchlist_workbench_execution_language" "Today's Operating Queue evidence must not include order routing, autotrading, or broker execution language."
+      }
     }
   }
   foreach ($forbiddenField in @("order_routing_authorized", "autotrading_enabled", "broker_execution_enabled")) {
@@ -275,10 +554,16 @@ if (-not [string]::IsNullOrWhiteSpace($telegramOpsPreviewPath)) {
 $browserSmokePath = Get-ArtifactPath "browser_smoke"
 if (-not [string]::IsNullOrWhiteSpace($browserSmokePath)) {
   $browserSmoke = Get-Content -Path $browserSmokePath -Raw | ConvertFrom-Json
+  $browserStatus = [string](Get-JsonPropertyValue $browserSmoke "status" "")
+  $browserFailureCode = [string](Get-JsonPropertyValue $browserSmoke "failure_code" "")
+  if ($browserStatus -eq "fail" -or -not [string]::IsNullOrWhiteSpace($browserFailureCode)) {
+    Add-Failure "browser_smoke_failed" "Browser-smoke JSON must be from a passing browser run, not a recorded failure."
+  }
   $browserChecks = @($browserSmoke.checks | ForEach-Object { [string]$_ })
   $requiredBrowserChecks = @(
     "workspace_opened",
     "workspace_morning_brief_visible",
+    "workspace_watchlist_workbench_visible",
     "runtime_admin_key_save_clear",
     "runtime_prompt_diff",
     "runtime_prompt_draft_saved",
@@ -501,6 +786,7 @@ if (-not [string]::IsNullOrWhiteSpace($releaseNotesPath)) {
   $requiredWalkthroughChecks = @(
     "Workspace trust ribbon checked",
     "Morning Command Brief checked",
+    "Today's Operating Queue checked",
     "Current price and day/week/month charts checked",
     "Root switch checked",
     "Signal detail checked",
@@ -621,6 +907,7 @@ $payload = [ordered]@{
   manifest_path = $manifestPathResolved
   allow_draft = [bool]$AllowDraft
   status = $validationStatus
+  daily_workflow_evidence = $dailyWorkflowEvidence
   failures = $failureItems
   warnings = $warningItems
 }

@@ -4,7 +4,13 @@ from fastapi import HTTPException
 
 from apps.api.routes.dashboard_delivery_data import build_delivery_activity_snapshot, build_delivery_windows
 from libs.bootstrap.container import get_app_container
-from libs.dashboard.contracts import MorningBriefItem, MorningBriefSnapshot, WorkspaceSignalSnapshot, WorkspaceSnapshot
+from libs.dashboard.contracts import (
+    MorningBriefItem,
+    MorningBriefSnapshot,
+    WatchlistWorkbenchSnapshot,
+    WorkspaceSignalSnapshot,
+    WorkspaceSnapshot,
+)
 from libs.preferences.contracts import NotificationEventKind, NotificationPreferenceWorkspaceSnapshot
 
 
@@ -42,6 +48,7 @@ def build_workspace_snapshot(
             "telegram_preview_message": preview.message,
             "telegram_delivery_ready": telegram_delivery_ready,
             "morning_brief": build_morning_brief(snapshot, telegram_delivery_ready=telegram_delivery_ready),
+            "watchlist_workbench": build_watchlist_workbench(snapshot),
             "delivery_windows": build_delivery_windows(selected_root=snapshot.selected_root),
             "delivery_activity": delivery_activity,
             "delivery_activity_filters": delivery_activity_filters,
@@ -51,6 +58,38 @@ def build_workspace_snapshot(
             "delivery_activity_pagination": delivery_activity_pagination,
         },
         deep=True,
+    )
+
+
+def build_watchlist_workbench(snapshot: WorkspaceSnapshot) -> WatchlistWorkbenchSnapshot:
+    items = list(snapshot.watchlist)
+    review_due_items = [item for item in items if item.review_state == "review_due"]
+    reviewed_today_items = [item for item in items if item.review_state == "reviewed_today"]
+    signal_linked_items = [item for item in items if item.signal_id]
+    roots = sorted({item.root_code for item in items if item.root_code})
+    first_due = review_due_items[0] if review_due_items else None
+    next_step = "No watchlist items are queued yet."
+    if first_due is not None:
+        next_step = (
+            "Open the linked signal context after the Morning Brief, compare it with the current evidence, then mark reviewed."
+            if first_due.signal_id
+            else "Open the root lane after the Morning Brief, compare current candidates, then mark reviewed."
+        )
+    elif items:
+        next_step = "All queued watchlist items are reviewed today; keep the queue open for changed evidence."
+    return WatchlistWorkbenchSnapshot(
+        total_items=len(items),
+        review_due_items=len(review_due_items),
+        reviewed_today_items=len(reviewed_today_items),
+        watched_roots=roots,
+        signal_linked_items=len(signal_linked_items),
+        root_level_items=len(items) - len(signal_linked_items),
+        first_due_watch_key=first_due.watch_key if first_due is not None else None,
+        first_due_root_code=first_due.root_code if first_due is not None else None,
+        first_due_signal_id=first_due.signal_id if first_due is not None else None,
+        first_due_focus_reason=first_due.focus_reason if first_due is not None else None,
+        next_step=next_step,
+        signals_only=True,
     )
 
 

@@ -5,6 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi import HTTPException
+from pydantic import ValidationError
+import pytest
 
 import apps.api.routes.dashboard_gate as dashboard_gate
 from apps.api.routes.dashboard_formatting import (
@@ -86,7 +88,11 @@ from apps.api.routes.dashboard_workspace import (
     render_workspace_signal_tile,
 )
 import apps.api.routes.dashboard_workspace_data as dashboard_workspace_data
-from apps.api.routes.dashboard_workspace_data import build_morning_brief, build_signal_workspace_snapshot
+from apps.api.routes.dashboard_workspace_data import (
+    build_morning_brief,
+    build_signal_workspace_snapshot,
+    build_watchlist_workbench,
+)
 from apps.api.routes.dashboard_workflow import (
     render_workflow_chip,
     render_workflow_panel,
@@ -94,6 +100,7 @@ from apps.api.routes.dashboard_workflow import (
     workflow_state_label,
     workflow_state_tone,
 )
+from libs.dashboard.contracts import WatchlistWorkbenchSnapshot
 from libs.domain.contracts import JournalEntryKind, SignalStatus, SignalWorkflowState
 from libs.preferences.contracts import (
     NotificationDeliveryActivityAction,
@@ -315,7 +322,13 @@ def test_dashboard_watchlist_renderer_escapes_notes_and_uses_signal_fallback() -
     html = render_watchlist(items)
     empty_html = render_watchlist([])
 
-    assert "<h2>Daily Watchlist Queue</h2>" in html
+    assert "<h2>Today&rsquo;s Operating Queue</h2>" in html
+    assert 'data-watchlist-workbench' in html
+    assert 'data-watchlist-workbench-summary' in html
+    assert "<span>Review due</span><strong>1</strong>" in html
+    assert "<span>Reviewed today</span><strong>1</strong>" in html
+    assert "<span>Watched roots</span><strong>2</strong>" in html
+    assert "<span>Signal-linked</span><strong>1</strong>" in html
     assert 'data-watchlist-filters' in html
     assert 'data-watchlist-filter-review' in html
     assert 'data-watchlist-bulk-actions' in html
@@ -326,6 +339,11 @@ def test_dashboard_watchlist_renderer_escapes_notes_and_uses_signal_fallback() -
     assert "#1 · Si" in html
     assert "Review &lt;opening&gt;" in html
     assert "Reviewed today" in html
+    assert "Start-of-day review" in html
+    assert "Reviewed lane" in html
+    assert "Open the root lane, compare the latest candidates, then mark reviewed." in html
+    assert "Open the linked context, compare against the brief, then mark reviewed." in html
+    assert 'data-watchlist-next-step' in html
     assert "Last reviewed 2026-04-24 10:30:00 MSK" in html
     assert 'data-watchlist-item data-watchlist-review-state="reviewed_today" data-watchlist-root="Si" data-watchlist-linked="root"' in html
     assert 'data-watchlist-watch-key="default:Si:root"' in html
@@ -339,6 +357,71 @@ def test_dashboard_watchlist_renderer_escapes_notes_and_uses_signal_fallback() -
     assert "Signal &lt;fallback&gt;" in html
     assert "Review due" in html
     assert "No watchlist entries yet." in empty_html
+
+
+def test_dashboard_watchlist_workbench_snapshot_summarizes_operating_queue() -> None:
+    snapshot = SimpleNamespace(
+        watchlist=[
+            SimpleNamespace(
+                watch_key="default:Si:root",
+                root_code="Si",
+                signal_id=None,
+                focus_reason="Root follow-up",
+                review_state="reviewed_today",
+            ),
+            SimpleNamespace(
+                watch_key="default:BR:SIG-1",
+                root_code="BR",
+                signal_id="SIG-1",
+                focus_reason="Signal follow-up",
+                review_state="review_due",
+            ),
+        ]
+    )
+
+    workbench = build_watchlist_workbench(snapshot)
+
+    assert workbench.signals_only is True
+    assert workbench.total_items == 2
+    assert workbench.review_due_items == 1
+    assert workbench.reviewed_today_items == 1
+    assert workbench.watched_roots == ["BR", "Si"]
+    assert workbench.signal_linked_items == 1
+    assert workbench.root_level_items == 1
+    assert workbench.first_due_watch_key == "default:BR:SIG-1"
+    assert workbench.first_due_root_code == "BR"
+    assert workbench.first_due_signal_id == "SIG-1"
+    assert workbench.first_due_focus_reason == "Signal follow-up"
+    assert workbench.next_step.startswith("Open the linked signal context after the Morning Brief")
+
+
+def test_dashboard_watchlist_workbench_snapshot_handles_reviewed_queue() -> None:
+    snapshot = SimpleNamespace(
+        watchlist=[
+            SimpleNamespace(
+                watch_key="default:Si:root",
+                root_code="Si",
+                signal_id=None,
+                focus_reason="Root follow-up",
+                review_state="reviewed_today",
+            )
+        ]
+    )
+
+    workbench = build_watchlist_workbench(snapshot)
+
+    assert workbench.total_items == 1
+    assert workbench.review_due_items == 0
+    assert workbench.reviewed_today_items == 1
+    assert workbench.first_due_watch_key is None
+    assert workbench.first_due_root_code is None
+    assert workbench.first_due_signal_id is None
+    assert workbench.next_step == "All queued watchlist items are reviewed today; keep the queue open for changed evidence."
+
+
+def test_dashboard_watchlist_workbench_snapshot_rejects_negative_counts() -> None:
+    with pytest.raises(ValidationError):
+        WatchlistWorkbenchSnapshot(total_items=-1)
 
 
 def test_dashboard_route_keeps_watchlist_rendering_outside_route_module() -> None:

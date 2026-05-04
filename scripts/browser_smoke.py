@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 import socket
@@ -62,22 +63,11 @@ def main(argv: list[str] | None = None) -> int:
     port = args.port or _find_free_port()
     base_url = f"http://127.0.0.1:{port}"
     server = _start_server(repo_root=repo_root, env=env, port=port)
+    checks = _planned_checks(secondary_root=secondary_root, skip_chart_fixture=args.skip_chart_fixture)
     try:
         _wait_for_ready(base_url, timeout_seconds=args.timeout_seconds)
         console_errors: list[str] = []
         page_errors: list[str] = []
-        checks = [
-            "workspace_opened",
-            "workspace_morning_brief_visible",
-            "market_unavailable_state_visible",
-            "signal_detail_opened",
-            "runtime_admin_key_save_clear",
-            "runtime_prompt_diff",
-            "runtime_prompt_draft_saved",
-            "runtime_prompt_draft_dismissed",
-        ]
-        if secondary_root:
-            checks.append("workspace_root_switch")
         with sync_playwright() as playwright:
             browser, page = _new_browser_page(playwright, args=args, console_errors=console_errors, page_errors=page_errors)
 
@@ -141,16 +131,6 @@ def main(argv: list[str] | None = None) -> int:
                         timeout_ms=args.timeout_seconds * 1000,
                     )
                     browser.close()
-                checks.extend(
-                    [
-                        "market_fixture_current_price_visible",
-                        "market_fixture_day_week_month_charts_visible",
-                        "market_fixture_chart_measurement",
-                        "market_fixture_multi_root_switch",
-                        "market_fixture_mobile_charts_visible",
-                        "market_fixture_mobile_no_horizontal_overflow",
-                    ]
-                )
             except Exception:
                 _stop_server(chart_server)
                 _dump_server_output(chart_server)
@@ -170,13 +150,49 @@ def main(argv: list[str] | None = None) -> int:
             "secondary_root": secondary_root,
             "base_url": base_url,
             "database_path": str(database_path),
+            "status": "pass",
             "checks": checks,
+            "planned_checks": checks,
         }
         output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         print("[browser-smoke] OK")
         return 0
     except (PlaywrightError, PlaywrightTimeoutError, AssertionError, RuntimeError) as exc:
-        print(f"[browser-smoke] failed: {exc}", file=sys.stderr)
+        if _is_browser_startup_permission_error(exc):
+            failure_code = "browser_startup_blocked"
+            message = _browser_startup_blocker_message(exc, channel=args.channel)
+        else:
+            failure_code = "browser_smoke_failed"
+            message = str(exc)
+        print(f"[browser-smoke] failed: {message}", file=sys.stderr)
+        _write_failure_payload(
+            output_path=output_path,
+            args=args,
+            secondary_root=secondary_root,
+            base_url=base_url,
+            database_path=database_path,
+            checks=checks,
+            failure_code=failure_code,
+            message=message,
+        )
+        _stop_server(server)
+        _dump_server_output(server)
+        return 1
+    except OSError as exc:
+        if not _is_browser_startup_permission_error(exc):
+            raise
+        message = _browser_startup_blocker_message(exc, channel=args.channel)
+        print(f"[browser-smoke] failed: {message}", file=sys.stderr)
+        _write_failure_payload(
+            output_path=output_path,
+            args=args,
+            secondary_root=secondary_root,
+            base_url=base_url,
+            database_path=database_path,
+            checks=checks,
+            failure_code="browser_startup_blocked",
+            message=message,
+        )
         _stop_server(server)
         _dump_server_output(server)
         return 1
@@ -192,12 +208,27 @@ def _workspace_smoke(page, *, base_url: str, root: str, secondary_root: str | No
     page.wait_for_selector("[data-morning-brief-attention]", timeout=timeout_ms)
     page.wait_for_selector("[data-morning-brief-delta]", timeout=timeout_ms)
     page.wait_for_selector("[data-morning-brief-dont-chase]", timeout=timeout_ms)
+    page.wait_for_selector("[data-watchlist-workbench]", timeout=timeout_ms)
+    page.wait_for_selector("[data-watchlist-workbench-summary]", timeout=timeout_ms)
+    page.wait_for_selector("[data-watchlist-filters]", timeout=timeout_ms)
     page.wait_for_function(
         """() => {
           const brief = document.querySelector("[data-morning-brief]");
           return brief
             && brief.textContent.includes("signals-only")
             && !/order routing|autotrading|broker execution/i.test(brief.textContent);
+        }""",
+        timeout=timeout_ms,
+    )
+    page.wait_for_function(
+        """() => {
+          const workbench = document.querySelector("[data-watchlist-workbench]");
+          const summaryCards = document.querySelectorAll("[data-watchlist-workbench-summary] article");
+          return workbench
+            && summaryCards.length >= 4
+            && workbench.textContent.includes("Today")
+            && workbench.textContent.includes("Operating Queue")
+            && !/order routing|autotrading|broker execution/i.test(workbench.textContent);
         }""",
         timeout=timeout_ms,
     )
@@ -237,6 +268,34 @@ def _workspace_root_switch_smoke(page, *, secondary_root: str, timeout_ms: int) 
     )
     page.wait_for_selector('[data-surface-state-strip="workspace"]', timeout=timeout_ms)
     page.wait_for_selector("[data-compare-board]", timeout=timeout_ms)
+
+
+def _planned_checks(*, secondary_root: str | None, skip_chart_fixture: bool) -> list[str]:
+    checks = [
+        "workspace_opened",
+        "workspace_morning_brief_visible",
+        "workspace_watchlist_workbench_visible",
+        "market_unavailable_state_visible",
+        "signal_detail_opened",
+        "runtime_admin_key_save_clear",
+        "runtime_prompt_diff",
+        "runtime_prompt_draft_saved",
+        "runtime_prompt_draft_dismissed",
+    ]
+    if secondary_root:
+        checks.append("workspace_root_switch")
+    if not skip_chart_fixture:
+        checks.extend(
+            [
+                "market_fixture_current_price_visible",
+                "market_fixture_day_week_month_charts_visible",
+                "market_fixture_chart_measurement",
+                "market_fixture_multi_root_switch",
+                "market_fixture_mobile_charts_visible",
+                "market_fixture_mobile_no_horizontal_overflow",
+            ]
+        )
+    return checks
 
 
 def _market_chart_smoke(page, *, base_url: str, root: str, timeout_ms: int) -> None:
@@ -392,6 +451,52 @@ def _new_browser_page(
     )
     page.on("pageerror", lambda error: page_errors.append(str(error)))
     return browser, page
+
+
+def _is_browser_startup_permission_error(exc: BaseException) -> bool:
+    if isinstance(exc, PermissionError) or getattr(exc, "winerror", None) == 5 or getattr(exc, "errno", None) in {
+        errno.EACCES,
+        errno.EPERM,
+    }:
+        return True
+    message = str(exc).lower()
+    return "access is denied" in message or "permission denied" in message
+
+
+def _browser_startup_blocker_message(exc: BaseException, *, channel: str | None) -> str:
+    channel_hint = f" channel={channel}" if channel else ""
+    return (
+        "browser startup is blocked by local OS permissions"
+        f"{channel_hint}: {exc}. This is a release blocker; install or allow the Playwright browser runtime, "
+        "or run only an explicitly draft/local preflight with the browser gate skipped."
+    )
+
+
+def _write_failure_payload(
+    *,
+    output_path: Path,
+    args: argparse.Namespace,
+    secondary_root: str | None,
+    base_url: str,
+    database_path: Path,
+    checks: list[str],
+    failure_code: str,
+    message: str,
+) -> None:
+    payload = {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "root": args.root,
+        "secondary_root": secondary_root,
+        "base_url": base_url,
+        "database_path": str(database_path),
+        "status": "fail",
+        "failure_code": failure_code,
+        "failure": message,
+        "checks": [],
+        "planned_checks": checks,
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _secondary_root(*, primary: str, requested: str | None) -> str | None:
@@ -647,7 +752,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-seconds", type=int, default=45)
     parser.add_argument("--output")
     parser.add_argument("--channel", help="Optional Playwright browser channel, for example msedge.")
-    parser.add_argument("--headed", action="store_true")
+    parser.add_argument("--headed", action="store_false", dest="headless")
     parser.add_argument("--skip-chart-fixture", action="store_true")
     parser.add_argument("--allow-missing-dependency", action="store_true")
     parser.set_defaults(headless=True)
