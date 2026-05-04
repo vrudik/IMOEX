@@ -104,7 +104,13 @@ def test_private_beta_candidate_check_script_collects_local_candidate_evidence()
     assert "evidence validation failed; continuing to blocked draft summary" in script
     assert "browser_smoke_command_status" in script
     assert "browser_smoke_command_failure" in script
+    assert "browser_smoke_failure_code" in script
+    assert "browser_smoke_failure_detail" in script
+    assert "browser_smoke_completed_check_count" in script
+    assert "browser_smoke_planned_check_count" in script
     assert "Browser-smoke command status" in script
+    assert "Browser-smoke failure code" in script
+    assert "Browser-smoke completed/planned checks" in script
     assert "candidate-summary.md" in script
     assert "Private-Beta Candidate Summary" in script
     assert "Candidate revision" in script

@@ -228,6 +228,7 @@ This tranche is `Operator-Ready Beta`. It turns the stabilized control plane int
 - [x] Add daily workflow validation reconciliation flags to private-beta candidate summaries so reviewers can confirm queue evidence without opening validation JSON.
 - [x] Wire browser-smoke headed mode correctly so local permission/startup blockers can be diagnosed without changing release-gate semantics.
 - [x] Keep draft private-beta candidate summaries reviewable when browser smoke fails locally, while preserving full browser smoke as a release blocker.
+- [x] Expose browser-smoke failure code, detail, and completed/planned check counts in private-beta candidate summaries and checklist prefills.
 
 ## Immediate Next Steps
 

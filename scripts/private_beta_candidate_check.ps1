@@ -342,6 +342,24 @@ if (-not $SkipBrowser) {
     Write-Host "[private-beta-candidate] browser smoke failed; continuing as draft evidence only: $browserSmokeCommandFailure"
   }
 }
+$browserSmokeRecordedStatus = if ($SkipBrowser) { "skipped" } else { "" }
+$browserSmokeFailureCode = ""
+$browserSmokeFailureDetail = ""
+$browserSmokeCompletedCheckCount = 0
+$browserSmokePlannedCheckCount = 0
+if (-not $SkipBrowser -and (Test-Path -LiteralPath $browserSmokeJson)) {
+  try {
+    $browserSmokePayload = Get-Content -Path $browserSmokeJson -Raw | ConvertFrom-Json
+    $browserSmokeRecordedStatus = [string](Get-ObjectPropertyValue $browserSmokePayload "status" "")
+    $browserSmokeFailureCode = [string](Get-ObjectPropertyValue $browserSmokePayload "failure_code" "")
+    $browserSmokeFailureDetail = ConvertTo-SummaryText (Get-ObjectPropertyValue $browserSmokePayload "failure" "")
+    $browserSmokeCompletedCheckCount = Get-SummaryArrayCount (Get-ObjectPropertyValue $browserSmokePayload "checks" @())
+    $browserSmokePlannedCheckCount = Get-SummaryArrayCount (Get-ObjectPropertyValue $browserSmokePayload "planned_checks" @())
+  } catch {
+    $browserSmokeFailureCode = "browser_smoke_json_unreadable"
+    $browserSmokeFailureDetail = ConvertTo-SummaryText $_
+  }
+}
 
 $skippedGates = @()
 if ($SkipReleaseCheck) {
@@ -431,6 +449,10 @@ $initialAcceptancePrefillLines = @(
   "- Skipped gates: $(if ($skippedGates.Count -gt 0) { $skippedGates -join ', ' } else { 'none' })",
   "- Browser-smoke command status: $browserSmokeCommandStatus",
   "- Browser-smoke command failure: $(if ([string]::IsNullOrWhiteSpace($browserSmokeCommandFailure)) { 'none' } else { $browserSmokeCommandFailure })",
+  "- Browser-smoke recorded status: $(if ([string]::IsNullOrWhiteSpace($browserSmokeRecordedStatus)) { 'none' } else { $browserSmokeRecordedStatus })",
+  "- Browser-smoke failure code: $(if ([string]::IsNullOrWhiteSpace($browserSmokeFailureCode)) { 'none' } else { $browserSmokeFailureCode })",
+  "- Browser-smoke failure detail: $(if ([string]::IsNullOrWhiteSpace($browserSmokeFailureDetail)) { 'none' } else { $browserSmokeFailureDetail })",
+  "- Browser-smoke completed/planned checks: $browserSmokeCompletedCheckCount/$browserSmokePlannedCheckCount",
   "- Validation status: pending",
   "- Validation warnings: pending",
   "- Validation failures: pending",
@@ -616,6 +638,11 @@ $summary = [ordered]@{
   next_actions = $nextActions
   browser_smoke_command_status = $browserSmokeCommandStatus
   browser_smoke_command_failure = $browserSmokeCommandFailure
+  browser_smoke_recorded_status = $browserSmokeRecordedStatus
+  browser_smoke_failure_code = $browserSmokeFailureCode
+  browser_smoke_failure_detail = $browserSmokeFailureDetail
+  browser_smoke_completed_check_count = $browserSmokeCompletedCheckCount
+  browser_smoke_planned_check_count = $browserSmokePlannedCheckCount
   daily_workflow_summary = $dailyWorkflowSummary
   daily_workflow_validation = $dailyWorkflowValidation
   git_status_path = $gitStatusPath
@@ -658,6 +685,10 @@ $acceptanceFinalStatusLines = @(
   "- Skipped gates: $(if ($skippedGates.Count -gt 0) { $skippedGates -join ', ' } else { 'none' })",
   "- Browser-smoke command status: $browserSmokeCommandStatus",
   "- Browser-smoke command failure: $(if ([string]::IsNullOrWhiteSpace($browserSmokeCommandFailure)) { 'none' } else { $browserSmokeCommandFailure })",
+  "- Browser-smoke recorded status: $(if ([string]::IsNullOrWhiteSpace($browserSmokeRecordedStatus)) { 'none' } else { $browserSmokeRecordedStatus })",
+  "- Browser-smoke failure code: $(if ([string]::IsNullOrWhiteSpace($browserSmokeFailureCode)) { 'none' } else { $browserSmokeFailureCode })",
+  "- Browser-smoke failure detail: $(if ([string]::IsNullOrWhiteSpace($browserSmokeFailureDetail)) { 'none' } else { $browserSmokeFailureDetail })",
+  "- Browser-smoke completed/planned checks: $browserSmokeCompletedCheckCount/$browserSmokePlannedCheckCount",
   "- Validation status: $validationStatus",
   "- Validation warnings: $($validationWarnings.Count)",
   "- Validation failures: $($validationFailures.Count)",
@@ -733,6 +764,10 @@ $summaryMarkdown = @(
   "- Release-check log: $releaseCheckLog",
   "- Browser-smoke command status: $browserSmokeCommandStatus",
   "- Browser-smoke command failure: $(if ([string]::IsNullOrWhiteSpace($browserSmokeCommandFailure)) { 'none' } else { $browserSmokeCommandFailure })",
+  "- Browser-smoke recorded status: $(if ([string]::IsNullOrWhiteSpace($browserSmokeRecordedStatus)) { 'none' } else { $browserSmokeRecordedStatus })",
+  "- Browser-smoke failure code: $(if ([string]::IsNullOrWhiteSpace($browserSmokeFailureCode)) { 'none' } else { $browserSmokeFailureCode })",
+  "- Browser-smoke failure detail: $(if ([string]::IsNullOrWhiteSpace($browserSmokeFailureDetail)) { 'none' } else { $browserSmokeFailureDetail })",
+  "- Browser-smoke completed/planned checks: $browserSmokeCompletedCheckCount/$browserSmokePlannedCheckCount",
   "- Browser-smoke JSON: $(if ($SkipBrowser) { 'skipped' } else { $browserSmokeJson })",
   "- Product-readiness JSON: $productReadinessJson",
   "- Admin-health JSON: $adminHealthJson",

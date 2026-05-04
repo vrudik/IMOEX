@@ -359,6 +359,9 @@ def test_private_beta_candidate_wrapper_keeps_draft_browser_failures_reviewable(
     assert "evidence validation failed; continuing to blocked draft summary" in script
     assert "browser_smoke_command_status" in script
     assert "browser_smoke_command_failure" in script
+    assert "browser_smoke_failure_code" in script
+    assert "Browser-smoke completed/planned checks" in script
+    assert "planned_checks" in script
     assert "Resolve the browser-smoke failure recorded in browser-smoke.log and browser-smoke.json" in script
     assert "if (-not $AllowDraftEvidence)" in script
 
