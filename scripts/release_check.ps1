@@ -24,11 +24,6 @@ $backupsPath = Join-Path $releaseRoot "backups-$runId"
 New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $backupsPath | Out-Null
 
-$env:PYTHONPATH = "$repoRoot\.vendor;$repoRoot"
-$env:DATABASE_URL = "sqlite:///$($databasePath.Replace('\', '/'))"
-$env:BACKUPS_DIR = $backupsPath
-$env:IMOEX_RELEASE_ROOT = $Root
-
 Write-Host "[release-check] python: $python"
 Write-Host "[release-check] database: $databasePath"
 
@@ -62,6 +57,22 @@ Invoke-ReleaseStep "checking tracked local artifacts" {
   }
 }
 
+if (-not $SkipBrowser) {
+  Invoke-ReleaseStep "running browser smoke" {
+    $browserArgs = @("-ExecutionPolicy", "Bypass", "-File", (Join-Path $repoRoot "scripts\browser_smoke.ps1"), "-Root", $Root)
+    if (-not [string]::IsNullOrWhiteSpace($BrowserChannel)) {
+      $browserArgs += @("-Channel", $BrowserChannel)
+    }
+    powershell @browserArgs
+    Assert-NativeSuccess "browser smoke"
+  }
+}
+
+$env:PYTHONPATH = "$repoRoot\.vendor;$repoRoot"
+$env:DATABASE_URL = "sqlite:///$($databasePath.Replace('\', '/'))"
+$env:BACKUPS_DIR = $backupsPath
+$env:IMOEX_RELEASE_ROOT = $Root
+
 if ($SkipFullPytest) {
 Invoke-ReleaseStep "running focused release tests" {
     & $python -m pytest tests\test_alembic_migrations.py tests\test_api_health.py tests\test_api_dashboard.py tests\test_dashboard_formatting.py tests\test_marketdata_service.py tests\test_maintenance_backup.py tests\test_security_admin.py tests\test_release_readiness_assets.py tests\test_private_beta_evidence_validation.py -q
@@ -94,17 +105,6 @@ if (-not $SkipRestore) {
   Invoke-ReleaseStep "running backup restore drill" {
     powershell -ExecutionPolicy Bypass -File (Join-Path $repoRoot "scripts\restore_drill.ps1") -Root $Root
     Assert-NativeSuccess "backup restore drill"
-  }
-}
-
-if (-not $SkipBrowser) {
-  Invoke-ReleaseStep "running browser smoke" {
-    $browserArgs = @("-ExecutionPolicy", "Bypass", "-File", (Join-Path $repoRoot "scripts\browser_smoke.ps1"), "-Root", $Root)
-    if (-not [string]::IsNullOrWhiteSpace($BrowserChannel)) {
-      $browserArgs += @("-Channel", $BrowserChannel)
-    }
-    powershell @browserArgs
-    Assert-NativeSuccess "browser smoke"
   }
 }
 

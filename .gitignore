@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .tmp/
+.automation-tmp/
 .venv/
 .vendor/
 

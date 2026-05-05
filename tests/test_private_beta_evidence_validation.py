@@ -70,6 +70,8 @@ def _manifest(
     missing: list[str] | None = None,
     candidate_revision: str = "test",
     release_authorized: bool = False,
+    autotrading_authorized: bool = False,
+    include_autotrading_authorized: bool = True,
     release_check_content: str = "[release-check] product readiness OK\n[release-check] OK\n",
     browser_checks: list[str] | None = None,
     release_notes_content: str | None = None,
@@ -233,8 +235,30 @@ def _manifest(
             content=(
                 "# Private-Beta Acceptance Checklist\n"
                 "## Candidate Output Prefill\n"
+                "- Signals-only decision support: true\n"
+                "- Release decision authorized: false\n"
+                "- Production deployment authorized: false\n"
+                "- Pricing commitment authorized: false\n"
+                "- Order routing authorized: false\n"
+                "- Autotrading authorized: false\n"
                 "This prefill does not authorize private beta, production deployment, pricing, "
                 "broker execution, order routing, or autotrading.\n"
+            ),
+        ),
+        _artifact(
+            tmp_path,
+            "candidate_summary",
+            content=(
+                "# Private-Beta Candidate Summary\n"
+                "## Safety Flags\n"
+                "- Signals-only decision support: true\n"
+                "- Release decision authorized by this wrapper: false\n"
+                "- Production deployment authorized by this wrapper: false\n"
+                "- Pricing commitment authorized by this wrapper: false\n"
+                "- Order routing authorized by this wrapper: false\n"
+                "- Autotrading authorized by this wrapper: false\n"
+                "This summary does not authorize production deployment, pricing, broker execution, "
+                "order routing, autotrading, or private-beta launch.\n"
             ),
         ),
         _artifact(tmp_path, "release_notes_template"),
@@ -252,21 +276,21 @@ def _manifest(
             artifact["path"] = str(tmp_path / f"missing-{artifact['key']}.txt")
 
     manifest_path = tmp_path / "private-beta-evidence-manifest.json"
-    _write_json(
-        manifest_path,
-        {
-            "generated_at": "2026-04-28T00:00:00Z",
-            "candidate_revision": candidate_revision,
-            "analytics_mode": "disabled",
-            "signals_only_decision_support": True,
-            "release_decision_authorized": release_authorized,
-            "production_deployment_authorized": False,
-            "pricing_commitment_authorized": False,
-            "order_routing_authorized": False,
-            "missing_required_artifacts": missing,
-            "artifacts": artifacts,
-        },
-    )
+    manifest_payload = {
+        "generated_at": "2026-04-28T00:00:00Z",
+        "candidate_revision": candidate_revision,
+        "analytics_mode": "disabled",
+        "signals_only_decision_support": True,
+        "release_decision_authorized": release_authorized,
+        "production_deployment_authorized": False,
+        "pricing_commitment_authorized": False,
+        "order_routing_authorized": False,
+        "missing_required_artifacts": missing,
+        "artifacts": artifacts,
+    }
+    if include_autotrading_authorized:
+        manifest_payload["autotrading_authorized"] = autotrading_authorized
+    _write_json(manifest_path, manifest_payload)
     return manifest_path
 
 
@@ -751,6 +775,34 @@ def test_private_beta_evidence_validator_blocks_execution_language_in_workspace_
     assert "workspace_snapshot_watchlist_workbench_execution_language" in failure_codes
 
 
+def test_private_beta_evidence_validator_blocks_nested_execution_flags_in_workspace_snapshot(
+    tmp_path: Path,
+) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "workspace_snapshot":
+            workspace_snapshot = json.loads(Path(artifact["path"]).read_text(encoding="utf-8"))
+            workspace_snapshot["morning_brief"]["autotrading_authorized"] = False
+            workspace_snapshot["watchlist_workbench"]["items"] = [
+                {"watch_key": "default:Si:root", "order_routing_authorized": False}
+            ]
+            Path(artifact["path"]).write_text(json.dumps(workspace_snapshot), encoding="utf-8")
+            break
+    output = tmp_path / "validation-workspace-execution-flags-failed.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    failures = [item for item in payload["failures"] if item["code"] == "workspace_snapshot_forbidden_execution_flag"]
+    assert len(failures) == 2
+    failure_messages = {item["message"] for item in failures}
+    assert any("$.morning_brief.autotrading_authorized" in message for message in failure_messages)
+    assert any("$.watchlist_workbench.items" in message for message in failure_messages)
+
+
 def test_private_beta_evidence_validator_blocks_incomplete_telegram_ops_preview(tmp_path: Path) -> None:
     manifest = _manifest(tmp_path)
     manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
@@ -799,6 +851,30 @@ def test_private_beta_evidence_validator_blocks_incomplete_telegram_ops_preview_
     assert any(item["code"] == "telegram_ops_preview_alert_item_incomplete" for item in payload["failures"])
 
 
+def test_private_beta_evidence_validator_blocks_execution_flags_in_telegram_previews(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "telegram_preview":
+            telegram_preview = json.loads(Path(artifact["path"]).read_text(encoding="utf-8"))
+            telegram_preview["autotrading_authorized"] = False
+            Path(artifact["path"]).write_text(json.dumps(telegram_preview), encoding="utf-8")
+        if artifact["key"] == "telegram_ops_preview":
+            telegram_ops_preview = json.loads(Path(artifact["path"]).read_text(encoding="utf-8"))
+            telegram_ops_preview["alert_items"][0]["order_routing_authorized"] = False
+            Path(artifact["path"]).write_text(json.dumps(telegram_ops_preview), encoding="utf-8")
+    output = tmp_path / "validation-telegram-execution-flags-failed.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    failure_codes = {item["code"] for item in payload["failures"]}
+    assert "telegram_preview_forbidden_execution_flag" in failure_codes
+    assert "telegram_ops_preview_forbidden_execution_flag" in failure_codes
+
+
 def test_private_beta_evidence_validator_blocks_missing_acceptance_prefill(tmp_path: Path) -> None:
     manifest = _manifest(tmp_path)
     payload = json.loads(manifest.read_text(encoding="utf-8"))
@@ -837,6 +913,101 @@ def test_private_beta_evidence_validator_warns_on_draft_missing_acceptance_prefi
     warning_codes = {item["code"] for item in payload["warnings"]}
     assert "draft_acceptance_checklist_prefill_missing" in warning_codes
     assert "draft_acceptance_checklist_safety_phrase_missing" in warning_codes
+
+
+def test_private_beta_evidence_validator_blocks_missing_acceptance_safety_flags(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in payload["artifacts"]:
+        if artifact["key"] == "acceptance_checklist":
+            Path(artifact["path"]).write_text(
+                "\n".join(
+                    [
+                        "# Private-Beta Acceptance Checklist",
+                        "## Candidate Output Prefill",
+                        "- Signals-only decision support: true",
+                        "- Release decision authorized: false",
+                        "- Production deployment authorized: false",
+                        "- Pricing commitment authorized: false",
+                        "- Order routing authorized: false",
+                        "",
+                        "This prefill does not authorize private beta, production deployment, pricing, "
+                        "broker execution, order routing, or autotrading.",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            break
+    manifest.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    output = tmp_path / "validation-acceptance-safety-flags-failed.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    assert any(
+        item["code"] == "acceptance_checklist_safety_flag_missing"
+        and "Autotrading authorized: false" in item["message"]
+        for item in payload["failures"]
+    )
+
+
+def test_private_beta_evidence_validator_blocks_missing_candidate_summary_safety_flags(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in payload["artifacts"]:
+        if artifact["key"] == "candidate_summary":
+            Path(artifact["path"]).write_text(
+                "\n".join(
+                    [
+                        "# Private-Beta Candidate Summary",
+                        "## Safety Flags",
+                        "- Signals-only decision support: true",
+                        "- Release decision authorized by this wrapper: false",
+                        "- Production deployment authorized by this wrapper: false",
+                        "- Pricing commitment authorized by this wrapper: false",
+                        "- Order routing authorized by this wrapper: false",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            break
+    manifest.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    output = tmp_path / "validation-candidate-summary-safety-flags-failed.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    assert any(
+        item["code"] == "candidate_summary_safety_flag_missing"
+        and "Autotrading authorized by this wrapper: false" in item["message"]
+        for item in payload["failures"]
+    )
+
+
+def test_private_beta_evidence_validator_warns_on_draft_missing_candidate_summary_safety_flags(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in payload["artifacts"]:
+        if artifact["key"] == "candidate_summary":
+            Path(artifact["path"]).write_text(
+                "# Private-Beta Candidate Summary\n## Safety Flags\n",
+                encoding="utf-8",
+            )
+            break
+    manifest.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    output = tmp_path / "validation-draft-candidate-summary-safety-flags-warning.json"
+
+    result = _run_validator(manifest, output, allow_draft=True)
+
+    assert result.returncode == 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "pass"
+    warning_codes = {item["code"] for item in payload["warnings"]}
+    assert "draft_candidate_summary_safety_flag_missing" in warning_codes
 
 
 def test_private_beta_evidence_validator_blocks_release_notes_placeholders(tmp_path: Path) -> None:
@@ -1705,6 +1876,33 @@ def test_private_beta_evidence_validator_blocks_launch_authorization_flag(tmp_pa
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["status"] == "fail"
     assert any(item["code"] == "invalid_flag" for item in payload["failures"])
+
+
+def test_private_beta_evidence_validator_blocks_autotrading_authorization_flag(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path, autotrading_authorized=True)
+    output = tmp_path / "validation-autotrading-failed.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    assert any(item["code"] == "invalid_flag" for item in payload["failures"])
+
+
+def test_private_beta_evidence_validator_blocks_missing_autotrading_authorization_flag(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path, include_autotrading_authorized=False)
+    output = tmp_path / "validation-autotrading-missing-failed.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    assert any(
+        item["code"] == "missing_flag" and "autotrading_authorized" in item["message"]
+        for item in payload["failures"]
+    )
 
 
 def test_private_beta_evidence_validator_blocks_incomplete_browser_smoke(tmp_path: Path) -> None:

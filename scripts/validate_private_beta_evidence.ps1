@@ -116,6 +116,12 @@ function Get-JsonPropertyValue {
 }
 
 $forbiddenExecutionLanguagePattern = "(?i)\b(order\s*-?\s*routing|autotrading|broker\s+execution)\b"
+$forbiddenExecutionFlagNames = @(
+  "order_routing_authorized",
+  "autotrading_authorized",
+  "autotrading_enabled",
+  "broker_execution_enabled"
+)
 
 function Test-ForbiddenExecutionLanguage {
   param([object]$Value)
@@ -152,6 +158,61 @@ function Test-ForbiddenExecutionLanguage {
     }
   }
   return $false
+}
+
+function Find-ForbiddenExecutionFlagPaths {
+  param(
+    [object]$Value,
+    [string]$Path = "$"
+  )
+
+  $matches = @()
+  if ($null -eq $Value -or $Value -is [string] -or $Value -is [ValueType]) {
+    return @($matches)
+  }
+
+  if ($Value -is [System.Collections.IDictionary]) {
+    foreach ($entry in $Value.GetEnumerator()) {
+      $name = [string]$entry.Key
+      $childPath = "$Path.$name"
+      if ($forbiddenExecutionFlagNames -contains $name) {
+        $matches += $childPath
+      }
+      $matches += Find-ForbiddenExecutionFlagPaths -Value $entry.Value -Path $childPath
+    }
+    return @($matches)
+  }
+
+  if ($Value -is [System.Collections.IEnumerable]) {
+    $index = 0
+    foreach ($item in $Value) {
+      $matches += Find-ForbiddenExecutionFlagPaths -Value $item -Path "$Path[$index]"
+      $index += 1
+    }
+    return @($matches)
+  }
+
+  foreach ($property in $Value.PSObject.Properties) {
+    $name = [string]$property.Name
+    $childPath = "$Path.$name"
+    if ($forbiddenExecutionFlagNames -contains $name) {
+      $matches += $childPath
+    }
+    $matches += Find-ForbiddenExecutionFlagPaths -Value $property.Value -Path $childPath
+  }
+  return @($matches)
+}
+
+function Add-ForbiddenExecutionFlagFailures {
+  param(
+    [string]$Code,
+    [string]$ArtifactLabel,
+    [object]$Value
+  )
+
+  foreach ($forbiddenFlagPath in @(Find-ForbiddenExecutionFlagPaths -Value $Value)) {
+    Add-Failure $Code "$ArtifactLabel must not include forbidden execution flag '$forbiddenFlagPath'."
+  }
 }
 
 function Test-ManifestFlag {
@@ -228,6 +289,7 @@ Test-ManifestFlag "release_decision_authorized" $false
 Test-ManifestFlag "production_deployment_authorized" $false
 Test-ManifestFlag "pricing_commitment_authorized" $false
 Test-ManifestFlag "order_routing_authorized" $false
+Test-ManifestFlag "autotrading_authorized" $false
 
 if ($allowedAnalyticsModes -notcontains [string]$manifest.analytics_mode) {
   Add-Failure "invalid_analytics_mode" "Analytics mode must be one of: $($allowedAnalyticsModes -join ', ')."
@@ -493,16 +555,13 @@ if (-not [string]::IsNullOrWhiteSpace($workspaceSnapshotPath)) {
       }
     }
   }
-  foreach ($forbiddenField in @("order_routing_authorized", "autotrading_enabled", "broker_execution_enabled")) {
-    if ($workspaceSnapshot.PSObject.Properties.Name -contains $forbiddenField) {
-      Add-Failure "workspace_snapshot_forbidden_execution_flag" "Workspace snapshot JSON must not include '$forbiddenField'."
-    }
-  }
+  Add-ForbiddenExecutionFlagFailures "workspace_snapshot_forbidden_execution_flag" "Workspace snapshot JSON" $workspaceSnapshot
 }
 
 $telegramPreviewPath = Get-ArtifactPath "telegram_preview"
 if (-not [string]::IsNullOrWhiteSpace($telegramPreviewPath)) {
   $telegramPreview = Get-Content -Path $telegramPreviewPath -Raw | ConvertFrom-Json
+  Add-ForbiddenExecutionFlagFailures "telegram_preview_forbidden_execution_flag" "Telegram preview JSON" $telegramPreview
   if ([string]::IsNullOrWhiteSpace([string]$telegramPreview.root)) {
     Add-Failure "telegram_preview_root_missing" "Telegram preview JSON must include a root."
   }
@@ -523,6 +582,7 @@ if (-not [string]::IsNullOrWhiteSpace($telegramPreviewPath)) {
 $telegramOpsPreviewPath = Get-ArtifactPath "telegram_ops_preview"
 if (-not [string]::IsNullOrWhiteSpace($telegramOpsPreviewPath)) {
   $telegramOpsPreview = Get-Content -Path $telegramOpsPreviewPath -Raw | ConvertFrom-Json
+  Add-ForbiddenExecutionFlagFailures "telegram_ops_preview_forbidden_execution_flag" "Telegram ops preview JSON" $telegramOpsPreview
   if (-not ($telegramOpsPreview.PSObject.Properties.Name -contains "enabled")) {
     Add-Failure "telegram_ops_preview_enabled_missing" "Telegram ops preview JSON must include enabled."
   }
@@ -638,6 +698,43 @@ if (-not [string]::IsNullOrWhiteSpace($acceptanceChecklistPath)) {
       Add-Warning "draft_acceptance_checklist_safety_phrase_missing" "Draft acceptance checklist does not include the no-authorization safety phrase."
     } else {
       Add-Failure "acceptance_checklist_safety_phrase_missing" "Candidate-local acceptance checklist must confirm it does not authorize private beta."
+    }
+  }
+  foreach ($requiredSafetyFlag in @(
+      "Signals-only decision support: true",
+      "Release decision authorized: false",
+      "Production deployment authorized: false",
+      "Pricing commitment authorized: false",
+      "Order routing authorized: false",
+      "Autotrading authorized: false"
+    )) {
+    if ($acceptanceChecklist -notmatch [regex]::Escape($requiredSafetyFlag)) {
+      if ($AllowDraft) {
+        Add-Warning "draft_acceptance_checklist_safety_flag_missing" "Draft acceptance checklist does not include '$requiredSafetyFlag'."
+      } else {
+        Add-Failure "acceptance_checklist_safety_flag_missing" "Candidate-local acceptance checklist must include '$requiredSafetyFlag'."
+      }
+    }
+  }
+}
+
+$candidateSummaryPath = Get-ArtifactPath "candidate_summary"
+if (-not [string]::IsNullOrWhiteSpace($candidateSummaryPath)) {
+  $candidateSummary = Get-Content -Path $candidateSummaryPath -Raw
+  foreach ($requiredSafetyFlag in @(
+      "Signals-only decision support: true",
+      "Release decision authorized by this wrapper: false",
+      "Production deployment authorized by this wrapper: false",
+      "Pricing commitment authorized by this wrapper: false",
+      "Order routing authorized by this wrapper: false",
+      "Autotrading authorized by this wrapper: false"
+    )) {
+    if ($candidateSummary -notmatch [regex]::Escape($requiredSafetyFlag)) {
+      if ($AllowDraft) {
+        Add-Warning "draft_candidate_summary_safety_flag_missing" "Draft candidate summary does not include '$requiredSafetyFlag'."
+      } else {
+        Add-Failure "candidate_summary_safety_flag_missing" "Operator-readable candidate summary must include '$requiredSafetyFlag'."
+      }
     }
   }
 }

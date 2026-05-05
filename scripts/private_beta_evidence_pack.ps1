@@ -11,6 +11,7 @@ param(
   [string]$RestoreDrillSummary = "",
   [string]$PerformanceBaselineJson = "",
   [string]$AcceptanceChecklist = "",
+  [string]$CandidateSummary = "",
   [string]$ReleaseNotes = "",
   [ValidateSet("disabled", "local-only-export", "approved-opt-in-telemetry")]
   [string]$AnalyticsMode = "disabled",
@@ -96,6 +97,10 @@ $artifacts = @(
   New-EvidenceItem "release_notes" "Release notes" $ReleaseNotes "Notes list accepted warnings and explicit non-goals."
 )
 
+if (-not [string]::IsNullOrWhiteSpace($CandidateSummary)) {
+  $artifacts += New-EvidenceItem "candidate_summary" "Operator-readable candidate summary" $CandidateSummary "Summary includes validation status, next actions, and explicit signals-only/no-execution safety flags."
+}
+
 $missingRequired = @($artifacts | Where-Object { -not $_.present })
 $manifestPath = Join-Path $OutputDir "private-beta-evidence-manifest.json"
 $summaryPath = Join-Path $OutputDir "private-beta-evidence-summary.md"
@@ -109,6 +114,7 @@ $manifest = [ordered]@{
   production_deployment_authorized = $false
   pricing_commitment_authorized = $false
   order_routing_authorized = $false
+  autotrading_authorized = $false
   missing_required_artifacts = @($missingRequired | ForEach-Object { $_.key })
   artifacts = $artifacts
 }
@@ -125,6 +131,7 @@ $lines = @(
   "- Production deployment authorized by this script: false",
   "- Pricing commitment authorized by this script: false",
   "- Order routing authorized by this script: false",
+  "- Autotrading authorized by this script: false",
   "",
   "## Artifacts"
 )

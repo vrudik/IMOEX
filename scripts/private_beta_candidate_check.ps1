@@ -118,24 +118,30 @@ function Assert-NativeSuccess {
   }
 }
 
-function Invoke-LoggedNative {
+function Invoke-LoggedProcess {
   param(
     [string]$Name,
     [string]$LogPath,
-    [scriptblock]$Command
+    [string]$FilePath,
+    [string[]]$ArgumentList
   )
 
   Write-Host "[private-beta-candidate] $Name"
-  $previousErrorActionPreference = $ErrorActionPreference
   $rawOutput = @()
-  $exitCode = 0
+  $processError = $null
+  $previousErrorActionPreference = $ErrorActionPreference
   try {
     $ErrorActionPreference = "Continue"
-    $rawOutput = & $Command 2>&1
+    $rawOutput = & $FilePath @ArgumentList 2>&1
     $exitCode = $LASTEXITCODE
+  } catch {
+    $processError = $_
+    $exitCode = 1
+    $rawOutput += $processError
   } finally {
     $ErrorActionPreference = $previousErrorActionPreference
   }
+
   $output = @(
     $rawOutput | ForEach-Object {
       if ($_ -is [System.Management.Automation.ErrorRecord]) {
@@ -147,6 +153,10 @@ function Invoke-LoggedNative {
   )
   $output | Set-Content -Path $LogPath -Encoding UTF8
   $output | Out-Host
+
+  if ($null -ne $processError) {
+    throw "$Name failed to start: $($processError.ToString())"
+  }
   if ($exitCode -ne 0) {
     throw "$Name failed with exit code $exitCode"
   }
@@ -199,6 +209,54 @@ function ConvertTo-SummaryText {
   return (([string]$Value) -replace "\s+", " ").Trim()
 }
 
+function Assert-TextContainsAll {
+  param(
+    [string]$Name,
+    [string]$Text,
+    [string[]]$RequiredText
+  )
+
+  foreach ($required in $RequiredText) {
+    if ($Text -notmatch [regex]::Escape($required)) {
+      throw "$Name is missing required safety evidence: $required"
+    }
+  }
+}
+
+function Copy-RequiredEvidenceArtifact {
+  param(
+    [string]$Name,
+    [string]$Source,
+    [string]$Destination
+  )
+
+  if (-not (Test-Path -LiteralPath $Source)) {
+    throw "$Name source file is missing: $Source"
+  }
+  if (-not (Test-Path -LiteralPath $Destination)) {
+    throw "$Name archived evidence copy is missing from the manifest output: $Destination"
+  }
+  Copy-Item -LiteralPath $Source -Destination $Destination -Force
+}
+
+$acceptanceChecklistSafetyFlags = @(
+  "Signals-only decision support: true",
+  "Release decision authorized: false",
+  "Production deployment authorized: false",
+  "Pricing commitment authorized: false",
+  "Order routing authorized: false",
+  "Autotrading authorized: false"
+)
+
+$candidateSummarySafetyFlags = @(
+  "Signals-only decision support: true",
+  "Release decision authorized by this wrapper: false",
+  "Production deployment authorized by this wrapper: false",
+  "Pricing commitment authorized by this wrapper: false",
+  "Order routing authorized by this wrapper: false",
+  "Autotrading authorized by this wrapper: false"
+)
+
 Write-Host "[private-beta-candidate] output: $OutputDir"
 Write-Host "[private-beta-candidate] python: $python"
 Write-Host "[private-beta-candidate] root: $Root"
@@ -224,15 +282,58 @@ if (-not $SkipReleaseCheck) {
     $releaseArgs += @("-BrowserChannel", $BrowserChannel)
   }
 
-  Invoke-LoggedNative "running release check" $releaseCheckLog { powershell @releaseArgs }
+  Invoke-LoggedProcess "running release check" $releaseCheckLog "powershell" $releaseArgs
 } else {
   "Skipped by -SkipReleaseCheck. This output directory is draft evidence only." | Set-Content -Path $releaseCheckLog -Encoding UTF8
+}
+
+$browserSmokeCommandStatus = if ($SkipBrowser) { "skipped" } else { "pending" }
+$browserSmokeCommandFailure = ""
+if (-not $SkipBrowser) {
+  $browserArgs = @((Join-Path $repoRoot "scripts\browser_smoke.py"), "--root", $Root, "--secondary-root", $SecondaryRoot, "--output", $browserSmokeJson)
+  if (-not [string]::IsNullOrWhiteSpace($BrowserChannel)) {
+    $browserArgs += @("--channel", $BrowserChannel)
+  }
+  try {
+    Invoke-LoggedProcess "running browser smoke" (Join-Path $OutputDir "browser-smoke.log") $python $browserArgs
+    $browserSmokeCommandStatus = "passed"
+  } catch {
+    $browserSmokeCommandStatus = "failed"
+    $browserSmokeCommandFailure = ConvertTo-SummaryText $_
+    if (-not $AllowDraftEvidence) {
+      throw
+    }
+    Write-Host "[private-beta-candidate] browser smoke failed; continuing as draft evidence only: $browserSmokeCommandFailure"
+  }
+}
+$browserSmokeRecordedStatus = if ($SkipBrowser) { "skipped" } else { "" }
+$browserSmokeFailureCode = ""
+$browserSmokeFailureDetail = ""
+$browserSmokeCompletedCheckCount = 0
+$browserSmokePlannedCheckCount = 0
+if (-not $SkipBrowser -and (Test-Path -LiteralPath $browserSmokeJson)) {
+  try {
+    $browserSmokePayload = Get-Content -Path $browserSmokeJson -Raw | ConvertFrom-Json
+    $browserSmokeRecordedStatus = [string](Get-ObjectPropertyValue $browserSmokePayload "status" "")
+    $browserSmokeFailureCode = [string](Get-ObjectPropertyValue $browserSmokePayload "failure_code" "")
+    $browserSmokeFailureDetail = ConvertTo-SummaryText (Get-ObjectPropertyValue $browserSmokePayload "failure" "")
+    $browserSmokeCompletedCheckCount = Get-SummaryArrayCount (Get-ObjectPropertyValue $browserSmokePayload "checks" @())
+    $browserSmokePlannedCheckCount = Get-SummaryArrayCount (Get-ObjectPropertyValue $browserSmokePayload "planned_checks" @())
+  } catch {
+    $browserSmokeFailureCode = "browser_smoke_json_unreadable"
+    $browserSmokeFailureDetail = ConvertTo-SummaryText $_
+  }
 }
 
 Write-Host "[private-beta-candidate] priming candidate snapshot"
 $env:PYTHONPATH = "$repoRoot\.vendor;$repoRoot"
 $env:DATABASE_URL = "sqlite:///$($snapshotDb.Replace('\', '/'))"
 $env:BACKUPS_DIR = $backupsDir
+$env:APP_ENVIRONMENT = "local"
+$env:MARKET_DATA_LIVE_ENABLED = "false"
+$env:MOEX_REFERENCE_AUTO_SYNC_ENABLED = "false"
+$env:PRODUCT_READINESS_REQUIRE_LIVE_MARKET_DATA = "false"
+$env:LOG_JSON = "false"
 $env:IMOEX_CANDIDATE_ROOT = $Root
 $env:IMOEX_CANDIDATE_OUTPUT_DIR = $OutputDir
 $env:IMOEX_CANDIDATE_PRODUCT_READINESS = $productReadinessJson
@@ -312,53 +413,29 @@ print("[private-beta-candidate] API snapshots OK")
 Assert-NativeSuccess "candidate API snapshots"
 
 if (-not $SkipPerformance) {
-  Invoke-LoggedNative "capturing performance baseline" (Join-Path $OutputDir "performance-baseline.log") {
-    powershell -ExecutionPolicy Bypass -File (Join-Path $repoRoot "scripts\performance_baseline.ps1") -Root $Root -OutputPath $performanceBaselineJson
-  }
+  Invoke-LoggedProcess "capturing performance baseline" (Join-Path $OutputDir "performance-baseline.log") "powershell" @(
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    (Join-Path $repoRoot "scripts\performance_baseline.ps1"),
+    "-Root",
+    $Root,
+    "-OutputPath",
+    $performanceBaselineJson
+  )
 }
 
 if (-not $SkipRestore) {
-  Invoke-LoggedNative "running restore drill" (Join-Path $OutputDir "restore-drill.log") {
-    powershell -ExecutionPolicy Bypass -File (Join-Path $repoRoot "scripts\restore_drill.ps1") -Root $Root -OutputPath $restoreDrillSummary
-  }
-}
-
-$browserSmokeCommandStatus = if ($SkipBrowser) { "skipped" } else { "pending" }
-$browserSmokeCommandFailure = ""
-if (-not $SkipBrowser) {
-  $browserArgs = @((Join-Path $repoRoot "scripts\browser_smoke.py"), "--root", $Root, "--secondary-root", $SecondaryRoot, "--output", $browserSmokeJson)
-  if (-not [string]::IsNullOrWhiteSpace($BrowserChannel)) {
-    $browserArgs += @("--channel", $BrowserChannel)
-  }
-  try {
-    Invoke-LoggedNative "running browser smoke" (Join-Path $OutputDir "browser-smoke.log") { & $python @browserArgs }
-    $browserSmokeCommandStatus = "passed"
-  } catch {
-    $browserSmokeCommandStatus = "failed"
-    $browserSmokeCommandFailure = ConvertTo-SummaryText $_
-    if (-not $AllowDraftEvidence) {
-      throw
-    }
-    Write-Host "[private-beta-candidate] browser smoke failed; continuing as draft evidence only: $browserSmokeCommandFailure"
-  }
-}
-$browserSmokeRecordedStatus = if ($SkipBrowser) { "skipped" } else { "" }
-$browserSmokeFailureCode = ""
-$browserSmokeFailureDetail = ""
-$browserSmokeCompletedCheckCount = 0
-$browserSmokePlannedCheckCount = 0
-if (-not $SkipBrowser -and (Test-Path -LiteralPath $browserSmokeJson)) {
-  try {
-    $browserSmokePayload = Get-Content -Path $browserSmokeJson -Raw | ConvertFrom-Json
-    $browserSmokeRecordedStatus = [string](Get-ObjectPropertyValue $browserSmokePayload "status" "")
-    $browserSmokeFailureCode = [string](Get-ObjectPropertyValue $browserSmokePayload "failure_code" "")
-    $browserSmokeFailureDetail = ConvertTo-SummaryText (Get-ObjectPropertyValue $browserSmokePayload "failure" "")
-    $browserSmokeCompletedCheckCount = Get-SummaryArrayCount (Get-ObjectPropertyValue $browserSmokePayload "checks" @())
-    $browserSmokePlannedCheckCount = Get-SummaryArrayCount (Get-ObjectPropertyValue $browserSmokePayload "planned_checks" @())
-  } catch {
-    $browserSmokeFailureCode = "browser_smoke_json_unreadable"
-    $browserSmokeFailureDetail = ConvertTo-SummaryText $_
-  }
+  Invoke-LoggedProcess "running restore drill" (Join-Path $OutputDir "restore-drill.log") "powershell" @(
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    (Join-Path $repoRoot "scripts\restore_drill.ps1"),
+    "-Root",
+    $Root,
+    "-OutputPath",
+    $restoreDrillSummary
+  )
 }
 
 $skippedGates = @()
@@ -456,6 +533,12 @@ $initialAcceptancePrefillLines = @(
   "- Validation status: pending",
   "- Validation warnings: pending",
   "- Validation failures: pending",
+  "- Signals-only decision support: true",
+  "- Release decision authorized: false",
+  "- Production deployment authorized: false",
+  "- Pricing commitment authorized: false",
+  "- Order routing authorized: false",
+  "- Autotrading authorized: false",
   "- Morning Brief evidence: signals_only=$($dailyWorkflowSummary.morning_brief.signals_only); market_status=$($dailyWorkflowSummary.morning_brief.market_status); telegram_status=$($dailyWorkflowSummary.morning_brief.telegram_status); top_attention=$($dailyWorkflowSummary.morning_brief.top_attention_count); dont_chase=$($dailyWorkflowSummary.morning_brief.dont_chase_count)",
   "- Today's Operating Queue evidence: signals_only=$($dailyWorkflowSummary.todays_operating_queue.signals_only); total=$($dailyWorkflowSummary.todays_operating_queue.total_items); review_due=$($dailyWorkflowSummary.todays_operating_queue.review_due_items); reviewed_today=$($dailyWorkflowSummary.todays_operating_queue.reviewed_today_items); watched_roots=$(if ($watchedRoots.Count -gt 0) { $watchedRoots -join ', ' } else { 'none' }); first_due=$firstDueLabel; next_step=$($dailyWorkflowSummary.todays_operating_queue.next_step)",
   "- Candidate summary Markdown: $summaryMarkdownPath",
@@ -476,7 +559,36 @@ $initialAcceptancePrefillLines = @(
   "",
   "This prefill is generated by the local candidate wrapper. It does not authorize private beta, production deployment, pricing, broker execution, order routing, or autotrading."
 )
+Assert-TextContainsAll "candidate acceptance checklist prefill" ($initialAcceptancePrefillLines -join "`n") $acceptanceChecklistSafetyFlags
 $initialAcceptancePrefillLines | Add-Content -Path $acceptanceChecklistDraft -Encoding UTF8
+
+$initialSummaryMarkdown = @(
+  "# Private-Beta Candidate Summary",
+  "",
+  "- Output directory: $OutputDir",
+  "- Candidate revision: $candidateRevision",
+  "- Candidate review status: pending_validation",
+  "- Working tree state: $candidateWorktreeState",
+  "- Dirty/untracked entry count: $candidateDirtyCount",
+  "- Clean git required: $([bool]$RequireCleanGit)",
+  "- Release notes mode: $releaseNotesMode",
+  "- Release notes source: $releaseNotesSource",
+  "- Git status snapshot: $gitStatusPath",
+  "- Evidence validation JSON: $evidenceValidationJson",
+  "",
+  "## Safety Flags",
+  "",
+  "- Signals-only decision support: true",
+  "- Release decision authorized by this wrapper: false",
+  "- Production deployment authorized by this wrapper: false",
+  "- Pricing commitment authorized by this wrapper: false",
+  "- Order routing authorized by this wrapper: false",
+  "- Autotrading authorized by this wrapper: false",
+  "",
+  "This initial summary is generated by the local candidate wrapper before evidence validation. It does not authorize production deployment, pricing, broker execution, order routing, autotrading, or private-beta launch."
+)
+Assert-TextContainsAll "initial candidate summary" ($initialSummaryMarkdown -join "`n") $candidateSummarySafetyFlags
+$initialSummaryMarkdown | Set-Content -Path $summaryMarkdownPath -Encoding UTF8
 
 $evidenceArgs = @(
   "-ExecutionPolicy", "Bypass",
@@ -490,6 +602,7 @@ $evidenceArgs = @(
   "-TelegramPreviewJson", $telegramPreviewJson,
   "-TelegramOpsPreviewJson", $telegramOpsPreviewJson,
   "-AcceptanceChecklist", $acceptanceChecklistDraft,
+  "-CandidateSummary", $summaryMarkdownPath,
   "-ReleaseNotes", $releaseNotesDraft,
   "-AnalyticsMode", $AnalyticsMode
 )
@@ -667,6 +780,7 @@ $summary = [ordered]@{
   production_deployment_authorized = $false
   pricing_commitment_authorized = $false
   order_routing_authorized = $false
+  autotrading_authorized = $false
 }
 
 $summary | ConvertTo-Json -Depth 5 | Set-Content -Path $summaryPath -Encoding UTF8
@@ -714,9 +828,8 @@ $acceptanceFinalStatusLines = @(
 )
 $acceptanceFinalStatusLines | Add-Content -Path $acceptanceChecklistDraft -Encoding UTF8
 $acceptanceChecklistEvidenceCopy = Join-Path $evidenceDir "acceptance_checklist-$(Split-Path -Leaf $acceptanceChecklistDraft)"
-if (Test-Path -LiteralPath $acceptanceChecklistEvidenceCopy) {
-  Copy-Item -LiteralPath $acceptanceChecklistDraft -Destination $acceptanceChecklistEvidenceCopy -Force
-}
+Assert-TextContainsAll "candidate acceptance checklist" (Get-Content -Path $acceptanceChecklistDraft -Raw) $acceptanceChecklistSafetyFlags
+Copy-RequiredEvidenceArtifact "candidate acceptance checklist" $acceptanceChecklistDraft $acceptanceChecklistEvidenceCopy
 
 $validationLines = @(
   "## Evidence Validation",
@@ -796,10 +909,14 @@ $summaryMarkdown = @(
   "- Production deployment authorized by this wrapper: false",
   "- Pricing commitment authorized by this wrapper: false",
   "- Order routing authorized by this wrapper: false",
+  "- Autotrading authorized by this wrapper: false",
   "",
   "This summary is an operator-readable index only. It does not authorize production deployment, pricing, broker execution, order routing, autotrading, or private-beta launch."
 )
+Assert-TextContainsAll "final candidate summary" ($summaryMarkdown -join "`n") $candidateSummarySafetyFlags
 $summaryMarkdown | Set-Content -Path $summaryMarkdownPath -Encoding UTF8
+$candidateSummaryEvidenceCopy = Join-Path $evidenceDir "candidate_summary-$(Split-Path -Leaf $summaryMarkdownPath)"
+Copy-RequiredEvidenceArtifact "candidate summary" $summaryMarkdownPath $candidateSummaryEvidenceCopy
 
 Write-Host "[private-beta-candidate] summary: $summaryPath"
 Write-Host "[private-beta-candidate] summary markdown: $summaryMarkdownPath"

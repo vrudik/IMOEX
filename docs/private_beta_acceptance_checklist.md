@@ -1,25 +1,25 @@
 # Private-Beta Acceptance Checklist
 
-Updated: 2026-04-27
+Updated: 2026-05-05
 
-This checklist is the final non-production acceptance gate before any private-beta deployment decision. It does not authorize production rollout, pricing, brokerage connectivity, or order execution. The app remains signals-only decision support.
+This checklist is the final non-production acceptance gate before any private-beta deployment decision. It does not authorize production rollout, pricing, brokerage connectivity, order routing, order execution, or autotrading. The app remains signals-only decision support.
 
 ## Required Evidence Pack
 
 Attach or archive these artifacts for the candidate build:
 
 - Optional local candidate output from `scripts/private_beta_candidate_check.ps1` when the evidence pack is produced on the operator workstation.
-- Operator-readable candidate summary from `candidate-summary.md` when `scripts/private_beta_candidate_check.ps1` is used, including candidate git revision, working-tree state, browser-smoke command status, recorded failure code/detail and completed/planned check counts when smoke fails, daily workflow evidence rollup for Morning Command Brief and Today's Operating Queue, validation reconciliation flags, evidence validation status, warnings, failures, and next actions.
+- Operator-readable candidate summary from `candidate-summary.md` when `scripts/private_beta_candidate_check.ps1` is used, including candidate git revision, working-tree state, browser-smoke command status, recorded failure code/detail and completed/planned check counts when smoke fails, daily workflow evidence rollup for Morning Command Brief and Today's Operating Queue, validation reconciliation flags, evidence validation status, explicit safety flags, warnings, failures, and next actions.
 - Candidate-local acceptance checklist draft from `acceptance-checklist-draft.md` when `scripts/private_beta_candidate_check.ps1` is used, including the generated `Candidate Output Prefill`.
 - Private-beta evidence manifest from `scripts/private_beta_evidence_pack.ps1`.
-- Evidence validation JSON from `scripts/validate_private_beta_evidence.ps1`, including manifest flags, release-check green status or draft warning status, browser-smoke checks and failure status for Morning Command Brief and Today's Operating Queue visibility, workspace snapshot readiness, `daily_workflow_evidence` for Morning Command Brief and Today's Operating Queue counts/reconciliation, Today's Operating Queue count reconciliation, first due identity, and next-step shape against the archived watchlist, execution-language guards for both daily workflow contracts, Telegram preview readiness, Telegram ops preview readiness, restore-drill status, performance labels, and release-note safety phrases.
+- Evidence validation JSON from `scripts/validate_private_beta_evidence.ps1`, including signals-only/no-launch/no-pricing/no-order-routing/no-autotrading manifest flags, release-check green status or draft warning status, browser-smoke checks and failure status for Morning Command Brief and Today's Operating Queue visibility, workspace snapshot readiness, `daily_workflow_evidence` for Morning Command Brief and Today's Operating Queue counts/reconciliation, Today's Operating Queue count reconciliation, first due identity, and next-step shape against the archived watchlist, execution-language guards for both daily workflow contracts, Telegram preview readiness, Telegram ops preview readiness, nested execution-authorization flag guards for workspace and Telegram evidence, restore-drill status, performance labels, and release-note safety phrases.
 - `release_check.ps1` output showing `product readiness OK` and `OK`.
 - Browser smoke JSON from `scripts/browser_smoke.ps1`, including workspace, Morning Command Brief visibility, Today's Operating Queue visibility, runtime prompt governance, multi-root switch, current price, day/week/month charts, drag measurement, mobile charts, and no horizontal overflow.
 - Product-readiness JSON for the target environment, including backup freshness, restore-drill evidence, scheduler, delivery, migration, market-data policy, and admin/runtime security checks.
 - Admin health JSON for the target environment.
-- Workspace snapshot JSON from `/api/v1/workspace`, proving the Morning Command Brief and Today's Operating Queue API contracts are present, signals-only, and truthful about market-data state.
-- Telegram preview JSON from `/api/v1/notifications/telegram/preview`, proving preview readiness without authorizing unintended sends.
-- Telegram ops preview JSON from `/api/v1/notifications/telegram/ops-preview`, proving ops alert preview readiness without authorizing alert sends.
+- Workspace snapshot JSON from `/api/v1/workspace`, proving the Morning Command Brief and Today's Operating Queue API contracts are present, signals-only, truthful about market-data state, and free of nested execution-authorization flags.
+- Telegram preview JSON from `/api/v1/notifications/telegram/preview`, proving preview readiness without authorizing unintended sends or carrying execution-authorization flags.
+- Telegram ops preview JSON from `/api/v1/notifications/telegram/ops-preview`, proving ops alert preview readiness without authorizing alert sends or carrying execution-authorization flags.
 - Restore-drill summary for the target database class: SQLite restore drill for SQLite, Postgres restore drill for Postgres.
 - Performance baseline output for dashboard, workspace, signal detail, runtime, council, journal, and product-readiness surfaces.
 - External alerting map from `docs/alerting_expectations.md`, including destinations or explicit non-production deferral.
@@ -81,6 +81,7 @@ Before allowing the build into private beta, record:
 - Generated `Candidate Output Prefill` values reviewed for this candidate.
 - Candidate summary next actions.
 - Candidate summary validation status and accepted warnings/failures.
+- Candidate summary safety flags, including `autotrading_authorized=false`, reviewed from the archived `candidate_summary` manifest artifact when local candidate tooling is used.
 - Candidate summary daily workflow evidence rollup reviewed, including Morning Command Brief market/Telegram status and Today's Operating Queue counts, first due item, next step, and validator reconciliation against the archived workspace watchlist.
 - Private-beta evidence manifest path.
 - Private-beta evidence validation path.

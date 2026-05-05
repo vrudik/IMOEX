@@ -8,6 +8,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 def test_release_check_script_runs_required_gates() -> None:
     script = (REPO_ROOT / "scripts" / "release_check.ps1").read_text(encoding="utf-8")
+    gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
 
     assert "tests\\test_alembic_migrations.py" in script
     assert "tests\\test_dashboard_formatting.py" in script
@@ -25,6 +26,22 @@ def test_release_check_script_runs_required_gates() -> None:
     assert "/api/v1/admin/health" in script
     assert "/api/v1/notifications/telegram/preview" in script
     assert "git -C $repoRoot ls-files" in script
+    assert ".automation-tmp/" in gitignore
+    assert script.index('Invoke-ReleaseStep "running browser smoke"') < script.index(
+        '$env:DATABASE_URL = "sqlite:///'
+    )
+    assert script.index('Invoke-ReleaseStep "running browser smoke"') < script.index(
+        'Invoke-ReleaseStep "running focused release tests"'
+    )
+    assert script.index('Invoke-ReleaseStep "running browser smoke"') < script.index(
+        'Invoke-ReleaseStep "running full pytest suite"'
+    )
+    assert script.index('Invoke-ReleaseStep "running browser smoke"') < script.index(
+        'Invoke-ReleaseStep "running local smoke"'
+    )
+    assert script.index('Invoke-ReleaseStep "running browser smoke"') < script.index(
+        'Invoke-ReleaseStep "capturing performance baseline"'
+    )
 
 
 def test_private_beta_evidence_pack_script_collects_required_artifacts() -> None:
@@ -41,6 +58,7 @@ def test_private_beta_evidence_pack_script_collects_required_artifacts() -> None
     assert "RestoreDrillSummary" in script
     assert "PerformanceBaselineJson" in script
     assert "AcceptanceChecklist" in script
+    assert "CandidateSummary" in script
     assert "ReleaseNotes" in script
     assert "docs\\alerting_expectations.md" in script
     assert "docs\\product_analytics_events.md" in script
@@ -52,6 +70,8 @@ def test_private_beta_evidence_pack_script_collects_required_artifacts() -> None
     assert "production_deployment_authorized" in script
     assert "pricing_commitment_authorized" in script
     assert "order_routing_authorized" in script
+    assert "autotrading_authorized" in script
+    assert "Autotrading authorized by this script: false" in script
 
 
 def test_private_beta_candidate_check_script_collects_local_candidate_evidence() -> None:
@@ -68,7 +88,17 @@ def test_private_beta_candidate_check_script_collects_local_candidate_evidence()
     assert "private_beta_acceptance_checklist.md" in script
     assert "acceptance-checklist-draft.md" in script
     assert "acceptance_checklist-" in script
+    assert "candidate_summary-" in script
+    assert '$env:APP_ENVIRONMENT = "local"' in script
+    assert '$env:MARKET_DATA_LIVE_ENABLED = "false"' in script
+    assert '$env:MOEX_REFERENCE_AUTO_SYNC_ENABLED = "false"' in script
+    assert '$env:PRODUCT_READINESS_REQUIRE_LIVE_MARKET_DATA = "false"' in script
     assert "Candidate Output Prefill" in script
+    assert "CandidateSummary" in script
+    assert "initialSummaryMarkdown" in script
+    assert "Assert-TextContainsAll" in script
+    assert "Copy-RequiredEvidenceArtifact" in script
+    assert "archived evidence copy is missing from the manifest output" in script
     assert "Candidate summary Markdown" in script
     assert "Candidate summary JSON" in script
     assert "Daily Workflow Evidence" in script
@@ -97,7 +127,11 @@ def test_private_beta_candidate_check_script_collects_local_candidate_evidence()
     assert "release_notes_mode" in script
     assert "Full private-beta candidate generation requires completed release notes" in script
     assert "Private-beta candidate requires a clean git working tree" in script
+    assert "Invoke-LoggedProcess" in script
     assert "previousErrorActionPreference" in script
+    assert '$ErrorActionPreference = "Continue"' in script
+    assert "& $FilePath @ArgumentList" in script
+    assert "2>&1" in script
     assert "System.Management.Automation.ErrorRecord" in script
     assert "$exitCode -ne 0" in script
     assert "browser smoke failed; continuing as draft evidence only" in script
@@ -108,6 +142,12 @@ def test_private_beta_candidate_check_script_collects_local_candidate_evidence()
     assert "browser_smoke_failure_detail" in script
     assert "browser_smoke_completed_check_count" in script
     assert "browser_smoke_planned_check_count" in script
+    assert script.index('Invoke-LoggedProcess "running browser smoke"') < script.index(
+        'Assert-NativeSuccess "candidate API snapshots"'
+    )
+    assert script.index('Invoke-LoggedProcess "running browser smoke"') < script.index(
+        'Invoke-LoggedProcess "capturing performance baseline"'
+    )
     assert "Browser-smoke command status" in script
     assert "Browser-smoke failure code" in script
     assert "Browser-smoke completed/planned checks" in script
@@ -130,9 +170,21 @@ def test_private_beta_candidate_check_script_collects_local_candidate_evidence()
     assert "evidence_validation_status" in script
     assert "evidence_validation_warnings" in script
     assert "evidence_validation_failures" in script
+    assert script.index('Assert-TextContainsAll "candidate acceptance checklist"') < script.index(
+        'Copy-RequiredEvidenceArtifact "candidate acceptance checklist"'
+    )
+    assert script.index('Assert-TextContainsAll "final candidate summary"') < script.index(
+        'Copy-RequiredEvidenceArtifact "candidate summary"'
+    )
+    assert "Release decision authorized: false" in script
+    assert "Production deployment authorized: false" in script
+    assert "Pricing commitment authorized: false" in script
+    assert "Order routing authorized: false" in script
+    assert "Autotrading authorized: false" in script
     assert "Morning Brief signals-only" in script
     assert "Today's Operating Queue next step" in script
     assert "Order routing authorized by this wrapper: false" in script
+    assert "Autotrading authorized by this wrapper: false" in script
     assert "/api/v1/health/product-readiness" in script
     assert "/api/v1/admin/health" in script
     assert "/api/v1/workspace" in script
@@ -143,6 +195,7 @@ def test_private_beta_candidate_check_script_collects_local_candidate_evidence()
     assert "production_deployment_authorized" in script
     assert "pricing_commitment_authorized" in script
     assert "order_routing_authorized" in script
+    assert "autotrading_authorized" in script
 
 
 def test_validate_private_beta_evidence_script_enforces_candidate_guardrails() -> None:
@@ -199,11 +252,18 @@ def test_validate_private_beta_evidence_script_enforces_candidate_guardrails() -
     assert "acceptance_checklist_prefill_missing" in script
     assert "draft_acceptance_checklist_prefill_missing" in script
     assert "acceptance_checklist_safety_phrase_missing" in script
+    assert "acceptance_checklist_safety_flag_missing" in script
+    assert "candidate_summary_safety_flag_missing" in script
+    assert "draft_candidate_summary_safety_flag_missing" in script
+    assert "telegram_preview_forbidden_execution_flag" in script
+    assert "telegram_ops_preview_forbidden_execution_flag" in script
+    assert "Add-ForbiddenExecutionFlagFailures" in script
     assert "signals_only_decision_support" in script
     assert "release_decision_authorized" in script
     assert "production_deployment_authorized" in script
     assert "pricing_commitment_authorized" in script
     assert "order_routing_authorized" in script
+    assert "autotrading_authorized" in script
     assert "product_readiness" in script
     assert "admin_health" in script
     assert "workspace_snapshot" in script
@@ -222,6 +282,8 @@ def test_validate_private_beta_evidence_script_enforces_candidate_guardrails() -
     assert "total_matches_watchlist" in script
     assert "next_step_matches_state" in script
     assert "workspace_snapshot_forbidden_execution_flag" in script
+    assert "Find-ForbiddenExecutionFlagPaths" in script
+    assert "forbidden execution flag" in script
     assert "telegram_preview" in script
     assert "telegram_ops_preview" in script
     assert "telegram_preview_root_missing" in script
@@ -356,6 +418,9 @@ def test_release_checklist_documents_release_and_rollback_policy() -> None:
     assert "Telegram preview JSON" in acceptance
     assert "Telegram ops preview JSON" in acceptance
     assert "Workspace snapshot JSON" in acceptance
+    assert "nested execution-authorization flags" in acceptance
+    assert "without authorizing unintended sends or carrying execution-authorization flags" in acceptance
+    assert "without authorizing alert sends or carrying execution-authorization flags" in acceptance
     assert "release notes link Workspace snapshot JSON, Telegram preview JSON, and Telegram ops preview JSON evidence artifacts" in acceptance
     assert "Morning Command Brief" in acceptance
     assert "Today's Operating Queue" in acceptance
@@ -427,6 +492,26 @@ def test_release_checklist_documents_release_and_rollback_policy() -> None:
     assert "autotrading" in release_notes
     assert "signals-only decision support" in release_notes
     assert "pg_restore --clean --if-exists" in postgres_runbook
+
+
+def test_release_checklist_documents_no_autotrading_evidence_guards() -> None:
+    release_checklist = (REPO_ROOT / "docs" / "release_checklist.md").read_text(encoding="utf-8")
+    acceptance_checklist = (REPO_ROOT / "docs" / "private_beta_acceptance_checklist.md").read_text(
+        encoding="utf-8"
+    )
+    product_plan = (REPO_ROOT / "docs" / "product_ready_execution_plan.md").read_text(encoding="utf-8")
+
+    assert "no-launch/no-pricing/no-order-routing/no-autotrading flags" in release_checklist
+    assert "checklist prefill with explicit safety flags" in release_checklist
+    assert "order routing, autotrading, or private-beta launch" in release_checklist
+    assert "no execution, order-routing, or autotrading behavior" in release_checklist
+    assert "nested workspace and Telegram preview execution-authorization flag guards" in release_checklist
+    assert "order routing, order execution, or autotrading" in acceptance_checklist
+    assert "signals-only/no-launch/no-pricing/no-order-routing/no-autotrading manifest flags" in acceptance_checklist
+    assert "checklist prefills to explicitly deny autotrading authorization" in product_plan
+    assert "acceptance checklist entry point with the no-autotrading evidence guardrails" in product_plan
+    assert "Reject nested execution-authorization flags" in product_plan
+    assert "Reject execution-authorization flags in archived Telegram delivery and ops preview evidence" in product_plan
 
 
 def test_restore_drill_script_restores_into_fresh_database_path() -> None:

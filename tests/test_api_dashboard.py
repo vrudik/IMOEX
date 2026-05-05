@@ -6,6 +6,25 @@ from fastapi.testclient import TestClient
 from libs.utils.config import settings
 
 
+SUPPORTED_CONTRACT_EXPIRIES: dict[str, tuple[tuple[str, date], ...]] = {
+    "Si": (("SiM6", date(2026, 6, 18)), ("SiU6", date(2026, 9, 17))),
+    "BR": (("BRK6", date(2026, 5, 4)), ("BRM6", date(2026, 6, 1))),
+    "MXI": (("MXM6", date(2026, 6, 18)), ("MXU6", date(2026, 9, 17))),
+}
+
+
+def _expected_supported_contracts(root_code: str, trading_day: date) -> tuple[str, str, date]:
+    eligible = [
+        (contract_code, expiry_date)
+        for contract_code, expiry_date in SUPPORTED_CONTRACT_EXPIRIES[root_code]
+        if expiry_date >= trading_day
+    ]
+    assert eligible, f"No supported contract remains eligible for {root_code} on {trading_day}"
+    active_contract, expiry_date = eligible[0]
+    next_contract = eligible[1][0] if len(eligible) > 1 else active_contract
+    return active_contract, next_contract, expiry_date
+
+
 def test_dashboard_snapshot_returns_delivery_payload(client: TestClient) -> None:
     response = client.get("/api/v1/dashboard", params={"root": "Si"})
 
@@ -96,18 +115,13 @@ def test_workspace_snapshot_returns_user_facing_payload(client: TestClient) -> N
 
 
 def test_workspace_snapshot_uses_current_supported_contract_expiry_dates(client: TestClient) -> None:
-    expected_contracts = {
-        "Si": ("SiM6", "SiU6", date(2026, 6, 18)),
-        "BR": ("BRK6", "BRM6", date(2026, 5, 4)),
-        "MXI": ("MXM6", "MXU6", date(2026, 6, 18)),
-    }
-
-    for root_code, (active_contract, next_contract, expiry_date) in expected_contracts.items():
+    for root_code in SUPPORTED_CONTRACT_EXPIRIES:
         response = client.get("/api/v1/workspace", params={"root": root_code})
 
         assert response.status_code == 200
         payload = response.json()
         trading_day = date.fromisoformat(payload["root_details"]["session"]["trading_day"])
+        active_contract, next_contract, expiry_date = _expected_supported_contracts(root_code, trading_day)
 
         assert payload["root_details"]["continuous_series"]["active_contract"] == active_contract
         assert payload["root_details"]["continuous_series"]["next_contract"] == next_contract

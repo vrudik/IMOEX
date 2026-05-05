@@ -1,6 +1,6 @@
 # Product-Ready Execution Plan
 
-Updated: 2026-04-28
+Updated: 2026-05-05
 
 This document is the working execution plan for taking the IMOEX app from a feature-rich operator prototype to a product-ready decision-support system. The priority order is strict:
 
@@ -181,7 +181,7 @@ This tranche is `Operator-Ready Beta`. It turns the stabilized control plane int
 - [x] Add a private-beta release-notes template for accepted warnings, explicit non-goals, support boundaries, rollback, and decision owner.
 - [x] Add a local private-beta candidate evidence wrapper that collects release-check logs, product-readiness/admin snapshots, draft release notes, and an evidence manifest without authorizing launch.
 - [x] Harden draft private-beta candidate generation so non-fatal release-check stderr is logged without aborting zero-exit evidence runs.
-- [x] Add a private-beta evidence validator so draft/full candidate packs can be checked for required artifacts and no-launch/no-pricing/no-order-routing guardrails.
+- [x] Add a private-beta evidence validator so draft/full candidate packs can be checked for required artifacts and no-launch/no-pricing/no-order-routing/no-autotrading guardrails.
 - [x] Add behavioral release-gate tests for the private-beta evidence validator, including complete, draft-missing, and forbidden-launch-flag manifests.
 - [x] Tighten private-beta evidence validation so browser smoke, restore drill, and performance baseline artifacts are checked for required content, not just file presence.
 - [x] Add an operator-readable private-beta candidate summary so evidence directories can be reviewed without opening multiple JSON files.
@@ -229,6 +229,14 @@ This tranche is `Operator-Ready Beta`. It turns the stabilized control plane int
 - [x] Wire browser-smoke headed mode correctly so local permission/startup blockers can be diagnosed without changing release-gate semantics.
 - [x] Keep draft private-beta candidate summaries reviewable when browser smoke fails locally, while preserving full browser smoke as a release blocker.
 - [x] Expose browser-smoke failure code, detail, and completed/planned check counts in private-beta candidate summaries and checklist prefills.
+- [x] Require private-beta evidence manifests, candidate summaries, and checklist prefills to explicitly deny autotrading authorization.
+- [x] Validate archived candidate-summary safety flags when wrapper-generated private-beta evidence includes the operator-readable summary.
+- [x] Harden private-beta candidate wrapper process logging so native commands keep stdout/stderr evidence without shell command-string quoting.
+- [x] Force local private-beta candidate snapshots into non-production hidden-market-data mode so draft evidence stays truthful and does not hang on unavailable live feeds.
+- [x] Align the private-beta acceptance checklist entry point with the no-autotrading evidence guardrails.
+- [x] Fail private-beta candidate generation if final archived checklist or candidate-summary evidence copies are missing.
+- [x] Reject nested execution-authorization flags in archived workspace snapshot evidence.
+- [x] Reject execution-authorization flags in archived Telegram delivery and ops preview evidence.
 
 ## Immediate Next Steps
 
