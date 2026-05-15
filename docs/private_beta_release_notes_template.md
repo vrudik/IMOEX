@@ -52,6 +52,8 @@ These are not part of this candidate unless a separate explicit decision exists:
 - Workspace trust ribbon checked: `<pass/fail/not run>`
 - Morning Command Brief checked: `<pass/fail/not run>`
 - Today's Operating Queue checked: `<pass/fail/not run>`
+- Readiness Next Steps checked: `<pass/fail/not run>`
+- Market freshness alerts checked: `<pass/fail/not run>`
 - Current price and day/week/month charts checked: `<pass/fail/not run>`
 - Root switch checked: `<pass/fail/not run>`
 - Signal detail checked: `<pass/fail/not run>`

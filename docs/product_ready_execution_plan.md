@@ -1,6 +1,6 @@
 # Product-Ready Execution Plan
 
-Updated: 2026-05-05
+Updated: 2026-05-14
 
 This document is the working execution plan for taking the IMOEX app from a feature-rich operator prototype to a product-ready decision-support system. The priority order is strict:
 
@@ -237,6 +237,18 @@ This tranche is `Operator-Ready Beta`. It turns the stabilized control plane int
 - [x] Fail private-beta candidate generation if final archived checklist or candidate-summary evidence copies are missing.
 - [x] Reject nested execution-authorization flags in archived workspace snapshot evidence.
 - [x] Reject execution-authorization flags in archived Telegram delivery and ops preview evidence.
+- [x] Add a read-only Readiness Next Steps workspace panel and typed API slice for market-data truth, Telegram mode, daily review, and delivery reason-trail gaps.
+- [x] Archive and validate Readiness Next Steps workspace evidence so private-beta reviewers can check required gaps without scraping HTML.
+- [x] Add typed workspace market freshness alerts for hidden or degraded selected-root feed states without execution language.
+- [x] Add browser-smoke and release-note evidence checks for workspace market freshness alerts.
+- [x] Add machine-readable candidate-summary rollups for market freshness alert evidence and validation.
+- [x] Add a read-only `/workspace/market` large-chart view with candles, line, a level map, visible idea corridor/change levels, and hidden-state handling backed only by the existing traceable market snapshot.
+- [x] Move market-chart level text out of candle SVGs into level strips and keep idea corridors/change levels consistent for active directional signals on secondary roots.
+- [x] Simplify the focused `/workspace/market` chart page by removing the global utility shell and duplicate large-chart actions.
+- [x] Clarify Council versus Runtime ownership by replacing the duplicated full runtime panel on Council with a compact read-only context summary and a single Runtime handoff.
+- [x] Bind market-chart corridors to horizon-specific active signals so 1D, 1W, and 1M no longer reuse one identical idea/level set.
+- [x] Replace the duplicate `/workspace/market` levels chart with a dedicated level-map view showing price, entry, target, idea-change line, and distance chips.
+- [x] Surface a market-hours/candle-availability reason when charts are hidden, including local MOEX/FORTS session state and missing timeframe codes instead of a generic hidden message.
 
 ## Immediate Next Steps
 

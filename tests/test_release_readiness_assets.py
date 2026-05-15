@@ -105,10 +105,17 @@ def test_private_beta_candidate_check_script_collects_local_candidate_evidence()
     assert "Daily Workflow Validation" in script
     assert "daily_workflow_summary" in script
     assert "daily_workflow_validation" in script
+    assert "market_freshness_alerts = [ordered]@{" in script
+    assert "alert_keys = $marketFreshnessAlertKeys" in script
+    assert "market_freshness_alerts = $marketFreshnessValidation" in script
     assert "Morning Brief evidence" in script
     assert "Today's Operating Queue evidence" in script
+    assert "Market freshness alerts evidence" in script
+    assert "Readiness Next Steps evidence" in script
     assert "Today's Operating Queue total matches watchlist" in script
     assert "Today's Operating Queue next step matches state" in script
+    assert "Market freshness alerts required keys present" in script
+    assert "Readiness Next Steps market truth matches snapshot" in script
     assert "first_due_label" in script
     assert "product-readiness.json" in script
     assert "admin-health.json" in script
@@ -183,6 +190,8 @@ def test_private_beta_candidate_check_script_collects_local_candidate_evidence()
     assert "Autotrading authorized: false" in script
     assert "Morning Brief signals-only" in script
     assert "Today's Operating Queue next step" in script
+    assert "Market freshness alerts" in script
+    assert "Readiness Next Steps next step" in script
     assert "Order routing authorized by this wrapper: false" in script
     assert "Autotrading authorized by this wrapper: false" in script
     assert "/api/v1/health/product-readiness" in script
@@ -256,6 +265,7 @@ def test_validate_private_beta_evidence_script_enforces_candidate_guardrails() -
     assert "candidate_summary_safety_flag_missing" in script
     assert "draft_candidate_summary_safety_flag_missing" in script
     assert "telegram_preview_forbidden_execution_flag" in script
+    assert "workspace_snapshot_market_freshness_alerts_required" in script
     assert "telegram_ops_preview_forbidden_execution_flag" in script
     assert "Add-ForbiddenExecutionFlagFailures" in script
     assert "signals_only_decision_support" in script
@@ -276,6 +286,10 @@ def test_validate_private_beta_evidence_script_enforces_candidate_guardrails() -
     assert "workspace_snapshot_watchlist_workbench_first_due_missing" in script
     assert "workspace_snapshot_watchlist_workbench_first_due_mismatch" in script
     assert "workspace_snapshot_watchlist_workbench_next_step_mismatch" in script
+    assert "workspace_snapshot_readiness_next_steps_not_signals_only" in script
+    assert "workspace_snapshot_readiness_next_steps_required_items_missing" in script
+    assert "workspace_snapshot_readiness_next_steps_counts_mismatch" in script
+    assert "workspace_snapshot_readiness_next_steps_guardrail_language" in script
     assert "workspace_snapshot_morning_brief_execution_language" in script
     assert "workspace_snapshot_watchlist_workbench_execution_language" in script
     assert "daily_workflow_evidence" in script
@@ -294,6 +308,8 @@ def test_validate_private_beta_evidence_script_enforces_candidate_guardrails() -
     assert "browser_smoke_failed" in script
     assert "browser_smoke_missing_check" in script
     assert "workspace_watchlist_workbench_visible" in script
+    assert "workspace_readiness_next_steps_visible" in script
+    assert "workspace_market_freshness_alerts_visible" in script
     assert "restore_drill_not_pass" in script
     assert "performance_baseline_missing_label" in script
     assert "Explicit Non-Goals" in script
@@ -407,6 +423,8 @@ def test_release_checklist_documents_release_and_rollback_policy() -> None:
     assert "Candidate summary next actions" in acceptance
     assert "Candidate summary validation status and accepted warnings/failures" in acceptance
     assert "Candidate summary daily workflow evidence rollup reviewed" in acceptance
+    assert "Readiness Next Steps" in acceptance
+    assert "market freshness alerts" in acceptance
     assert "private_beta_evidence_pack.ps1" in acceptance
     assert "validate_private_beta_evidence.ps1" in acceptance
     assert "browser-smoke checks" in acceptance
@@ -442,6 +460,8 @@ def test_release_checklist_documents_release_and_rollback_policy() -> None:
     assert "concrete rollback owner" in acceptance
     assert "rollback verification coverage" in acceptance
     assert "Today's Operating Queue visibility" in checklist
+    assert "Readiness Next Steps visibility" in checklist
+    assert "market freshness alert visibility" in acceptance
     assert "-PreparedReleaseNotes" in acceptance
     assert "Required Monitors" in alerting
     assert "Feed Loss And Market Freshness" in alerting
@@ -481,6 +501,8 @@ def test_release_checklist_documents_release_and_rollback_policy() -> None:
     assert "Telegram ops preview JSON" in release_notes
     assert "Workspace snapshot JSON" in release_notes
     assert "Today's Operating Queue checked" in release_notes
+    assert "Readiness Next Steps checked" in release_notes
+    assert "Market freshness alerts checked" in release_notes
     assert "Accepted Warnings" in release_notes
     assert "Explicit Non-Goals" in release_notes
     assert "Operator Walkthrough Result" in release_notes
@@ -550,6 +572,10 @@ def test_browser_smoke_covers_workspace_and_runtime_prompt_governance() -> None:
     assert "[data-morning-brief-dont-chase]" in script
     assert "[data-watchlist-workbench]" in script
     assert "[data-watchlist-workbench-summary]" in script
+    assert "[data-readiness-next-steps]" in script
+    assert "[data-readiness-gap]" in script
+    assert "[data-market-freshness-alerts]" in script
+    assert "data-market-freshness-key=\"market_data_hidden\"" in script
     assert "Operating Queue" in script
     assert "browser_startup_blocked" in script
     assert "browser startup is blocked by local OS permissions" in script

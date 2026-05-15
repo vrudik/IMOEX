@@ -5,6 +5,58 @@ from html import escape
 from apps.api.routes.dashboard_formatting import format_price_value, format_signed_pct
 
 
+def render_market_freshness_alerts(alerts, *, language: str) -> str:
+    items = list(alerts or [])
+    if not items:
+        return ""
+
+    copy = _market_freshness_alert_copy(language)
+    cards = "".join(_render_market_freshness_alert(item, copy=copy) for item in items)
+    return (
+        '<section class="panel market-freshness-alerts" data-market-freshness-alerts>'
+        '<div class="panel-head">'
+        "<div>"
+        f'<h2>{escape(copy["title"])}</h2>'
+        f'<p>{escape(copy["subtitle"])}</p>'
+        "</div>"
+        f'<span class="filter-chip is-active">{len(items)} {escape(copy["count_label"])}</span>'
+        "</div>"
+        f'<div class="summary-grid">{cards}</div>'
+        "</section>"
+    )
+
+
+def _render_market_freshness_alert(alert, *, copy: dict[str, object]) -> str:
+    localized_items = copy.get("items", {})
+    item_copy = localized_items.get(alert.key, {}) if isinstance(localized_items, dict) else {}
+    title = str(item_copy.get("title", alert.title))
+    detail = str(item_copy.get("detail", alert.detail))
+    status_labels = copy.get("status_labels", {})
+    status_label = (
+        str(status_labels.get(alert.status, alert.status)) if isinstance(status_labels, dict) else alert.status
+    )
+    raw_detail = str(alert.detail)
+    dynamic_detail = f'<small>{escape(raw_detail)}</small>' if raw_detail and raw_detail != detail else ""
+    return (
+        f'<article class="decision-card tone-{escape(alert.tone)}" data-market-freshness-alert '
+        f'data-market-freshness-key="{escape(alert.key)}" '
+        f'data-market-freshness-status="{escape(alert.status)}" '
+        f'data-market-freshness-root="{escape(alert.root_code)}">'
+        f'<span>{escape(status_label)}</span>'
+        f'<strong>{escape(title)}</strong>'
+        f'<p>{escape(detail)}</p>'
+        f"{dynamic_detail}"
+        '<div class="metric-row">'
+        f'<small>{escape(copy["signals_only"])}</small>'
+        f'<small>{escape(copy["root_label"])} {escape(alert.root_code)}</small>'
+        "</div>"
+        '<div class="card-actions">'
+        f'<a class="button" href="{escape(alert.href)}">{escape(copy["action"])}</a>'
+        "</div>"
+        "</article>"
+    )
+
+
 def render_morning_brief(snapshot, *, language: str) -> str:
     copy = _morning_brief_copy(language)
     brief = getattr(snapshot, "morning_brief", None)
@@ -112,6 +164,63 @@ def render_morning_brief(snapshot, *, language: str) -> str:
         f'<small>{escape(copy["data_mode"])} {escape(data_mode)}</small>'
         "</div>"
         "</section>"
+    )
+
+
+def render_readiness_next_steps(snapshot, *, language: str) -> str:
+    copy = _readiness_next_steps_copy(language)
+    readiness = getattr(snapshot, "readiness_next_steps", None)
+    if readiness is None:
+        return ""
+
+    items = list(getattr(readiness, "items", []) or [])
+    cards = (
+        "".join(_render_readiness_next_step_item(item, copy=copy) for item in items)
+        or f'<p class="empty">{escape(copy["empty"])}</p>'
+    )
+    status_text = copy["ready"] if readiness.open_items == 0 else f'{readiness.open_items} {copy["open"]}'
+    return (
+        '<section class="panel readiness-next-steps" data-readiness-next-steps>'
+        '<div class="panel-head">'
+        "<div>"
+        f'<h2>{escape(copy["title"])}</h2>'
+        f'<p>{escape(copy["subtitle"])}</p>'
+        "</div>"
+        f'<span class="filter-chip is-active">{escape(status_text)}</span>'
+        "</div>"
+        f'<div class="summary-grid">{cards}</div>'
+        '<div class="metric-row">'
+        f'<small>{escape(copy["signals_only"])}</small>'
+        f'<small>{escape(copy["ready_label"])} {readiness.ready_items}</small>'
+        f'<small>{escape(copy["open_label"])} {readiness.open_items}</small>'
+        f'<small>{escape(copy["next_step"])} {escape(readiness.next_step)}</small>'
+        "</div>"
+        "</section>"
+    )
+
+
+def _render_readiness_next_step_item(item, *, copy: dict[str, object]) -> str:
+    localized_items = copy.get("items", {})
+    item_copy = localized_items.get(item.key, {}) if isinstance(localized_items, dict) else {}
+    title = str(item_copy.get("title", item.title))
+    detail = str(item_copy.get(f"detail_{item.status}", item_copy.get("detail", item.detail)))
+    status_labels = copy.get("status_labels", {})
+    status_label = str(status_labels.get(item.status, item.status)) if isinstance(status_labels, dict) else item.status
+    action_label = str(copy["action"])
+    raw_detail = str(item.detail)
+    dynamic_detail = f'<small>{escape(raw_detail)}</small>' if raw_detail and raw_detail != detail else ""
+    return (
+        f'<article class="decision-card tone-{escape(item.tone)}" data-readiness-gap '
+        f'data-readiness-gap-key="{escape(item.key)}" '
+        f'data-readiness-gap-status="{escape(item.status)}">'
+        f'<span>{escape(status_label)}</span>'
+        f'<strong>{escape(title)}</strong>'
+        f'<p>{escape(detail)}</p>'
+        f"{dynamic_detail}"
+        '<div class="card-actions">'
+        f'<a class="button" href="{escape(item.href)}">{escape(action_label)}</a>'
+        "</div>"
+        "</article>"
     )
 
 
@@ -338,6 +447,114 @@ def _attention_inbox_copy(language: str) -> dict[str, str]:
         "price_hidden": "hidden",
         "root_item": "root",
         "empty": "No active attention candidates yet.",
+    }
+
+
+def _market_freshness_alert_copy(language: str) -> dict[str, object]:
+    if language == "ru":
+        return {
+            "title": "\u0410\u043b\u0435\u0440\u0442\u044b \u0441\u0432\u0435\u0436\u0435\u0441\u0442\u0438 market data",
+            "subtitle": "\u0412\u0438\u0434\u043d\u044b \u0442\u043e\u043b\u044c\u043a\u043e, \u043a\u043e\u0433\u0434\u0430 \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u043e\u0439 \u0441\u0435\u0440\u0438\u0438 \u043d\u0443\u0436\u043d\u0430 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 feed.",
+            "count_label": "\u0430\u043b\u0435\u0440\u0442",
+            "signals_only": "signals-only",
+            "root_label": "\u0421\u0435\u0440\u0438\u044f:",
+            "action": "\u041e\u0442\u043a\u0440\u044b\u0442\u044c evidence",
+            "status_labels": {
+                "hidden": "\u0441\u043a\u0440\u044b\u0442\u043e",
+                "stale": "stale",
+                "degraded": "degraded",
+                "degraded_feed": "degraded feed",
+                "aging": "aging",
+                "unknown": "unknown",
+            },
+            "items": {
+                "market_data_hidden": {
+                    "title": "\u0414\u0430\u043d\u043d\u044b\u0435 \u0441\u043a\u0440\u044b\u0442\u044b",
+                    "detail": "\u0426\u0435\u043d\u0430 \u0438 \u0433\u0440\u0430\u0444\u0438\u043a\u0438 \u0441\u043a\u0440\u044b\u0442\u044b, \u043f\u043e\u043a\u0430 \u043d\u0435\u0442 \u0442\u0440\u0430\u0441\u0441\u0438\u0440\u0443\u0435\u043c\u043e\u0433\u043e \u0441\u043d\u0438\u043c\u043a\u0430.",
+                },
+                "market_data_not_fresh": {
+                    "title": "Feed \u0442\u0440\u0435\u0431\u0443\u0435\u0442 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438",
+                    "detail": "\u041f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435 \u0441\u0432\u0435\u0436\u0435\u0441\u0442\u044c \u0446\u0435\u043d\u044b \u0438 \u0433\u0440\u0430\u0444\u0438\u043a\u043e\u0432 \u043f\u0435\u0440\u0435\u0434 \u0440\u0430\u0437\u0431\u043e\u0440\u043e\u043c \u0441\u0435\u0442\u0430\u043f\u0430.",
+                },
+                "runtime_data_mode_degraded": {
+                    "title": "\u0420\u0435\u0436\u0438\u043c \u0434\u0430\u043d\u043d\u044b\u0445 degraded",
+                    "detail": "\u041e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a \u0446\u0435\u043d\u044b \u0434\u0435\u0433\u0440\u0430\u0434\u0438\u0440\u043e\u0432\u0430\u043b \u0438\u043b\u0438 \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d.",
+                },
+            },
+        }
+    return {
+        "title": "Market Freshness Alerts",
+        "subtitle": "Shown only when the selected root needs feed review.",
+        "count_label": "alert",
+        "signals_only": "signals-only",
+        "root_label": "Root:",
+        "action": "Open evidence",
+        "status_labels": {},
+        "items": {},
+    }
+
+
+def _readiness_next_steps_copy(language: str) -> dict[str, object]:
+    if language == "ru":
+        return {
+            "title": "\u0427\u0442\u043e \u0435\u0449\u0451 \u0437\u0430\u043a\u0440\u044b\u0442\u044c",
+            "subtitle": "\u041a\u043e\u0440\u043e\u0442\u043a\u0438\u0439 readiness-\u0441\u0440\u0435\u0437 \u043f\u0435\u0440\u0435\u0434 private-beta \u0440\u0435\u0448\u0435\u043d\u0438\u0435\u043c.",
+            "signals_only": "signals-only",
+            "ready_label": "\u0413\u043e\u0442\u043e\u0432\u043e:",
+            "open_label": "\u041e\u0442\u043a\u0440\u044b\u0442\u043e:",
+            "next_step": "\u0428\u0430\u0433:",
+            "ready": "\u0433\u043e\u0442\u043e\u0432\u043e",
+            "open": "\u043e\u0442\u043a\u0440\u044b\u0442\u043e",
+            "empty": "\u041d\u0435\u0442 readiness-\u043f\u0443\u043d\u043a\u0442\u043e\u0432.",
+            "action": "\u041e\u0442\u043a\u0440\u044b\u0442\u044c",
+            "status_labels": {
+                "ready": "\u0433\u043e\u0442\u043e\u0432\u043e",
+                "review": "\u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c",
+                "open": "\u043e\u0442\u043a\u0440\u044b\u0442\u043e",
+                "blocked": "\u0431\u043b\u043e\u043a\u0435\u0440",
+            },
+            "items": {
+                "market_data_truth": {
+                    "title": "\u0427\u0435\u0441\u0442\u043d\u043e\u0441\u0442\u044c market data",
+                    "detail_blocked": "\u0426\u0435\u043d\u044b \u0438 \u0433\u0440\u0430\u0444\u0438\u043a\u0438 \u0441\u043a\u0440\u044b\u0442\u044b, \u043f\u043e\u043a\u0430 \u043d\u0435\u0442 \u0442\u0440\u0430\u0441\u0441\u0438\u0440\u0443\u0435\u043c\u043e\u0433\u043e feed.",
+                    "detail_review": "\u0421\u0442\u0430\u0442\u0443\u0441 feed \u0442\u0440\u0435\u0431\u0443\u0435\u0442 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438 \u043f\u0435\u0440\u0435\u0434 acceptance.",
+                    "detail_ready": "\u0426\u0435\u043d\u0430 \u0438 \u0433\u0440\u0430\u0444\u0438\u043a\u0438 \u0432\u0438\u0434\u043d\u044b \u0441 \u0447\u0435\u0441\u0442\u043d\u044b\u043c feed-\u0441\u0442\u0430\u0442\u0443\u0441\u043e\u043c.",
+                },
+                "telegram_mode": {
+                    "title": "\u0420\u0435\u0436\u0438\u043c Telegram",
+                    "detail_review": "Preview \u0433\u043e\u0442\u043e\u0432; \u0432\u043a\u043b\u044e\u0447\u0430\u0442\u044c delivery \u0442\u043e\u043b\u044c\u043a\u043e \u043f\u043e \u044f\u0432\u043d\u043e\u043c\u0443 \u0440\u0435\u0448\u0435\u043d\u0438\u044e \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u0430.",
+                    "detail_ready": "\u041f\u0440\u0438\u043a\u0440\u0435\u043f\u0438\u0442\u0435 preview-\u0434\u043e\u043a\u0430\u0437\u0430\u0442\u0435\u043b\u044c\u0441\u0442\u0432\u043e \u0438 \u0440\u0435\u0436\u0438\u043c \u0432 release notes.",
+                },
+                "daily_review": {
+                    "title": "\u0414\u043d\u0435\u0432\u043d\u0430\u044f \u043e\u0447\u0435\u0440\u0435\u0434\u044c",
+                    "detail_open": "\u041e\u0447\u0435\u0440\u0435\u0434\u044c \u0435\u0449\u0451 \u0442\u0440\u0435\u0431\u0443\u0435\u0442 \u0440\u0435\u0432\u044c\u044e \u043f\u0435\u0440\u0435\u0434 \u0444\u0438\u043d\u0430\u043b\u044c\u043d\u044b\u043c\u0438 notes.",
+                    "detail_ready": "Today's Operating Queue \u0431\u0435\u0437 overdue \u043f\u0443\u043d\u043a\u0442\u043e\u0432.",
+                },
+                "delivery_reason_trails": {
+                    "title": "\u0421\u043b\u0435\u0434\u044b delivery-\u0440\u0435\u0448\u0435\u043d\u0438\u0439",
+                    "detail_review": "\u0414\u043e\u0431\u0430\u0432\u044c\u0442\u0435 preview, dry-run, skip \u0438\u043b\u0438 suppression evidence \u0434\u043e acceptance review.",
+                    "detail_ready": "\u041d\u0435\u0434\u0430\u0432\u043d\u044f\u044f delivery-\u0430\u043a\u0442\u0438\u0432\u043d\u043e\u0441\u0442\u044c \u0438\u043c\u0435\u0435\u0442 \u043e\u0431\u044a\u044f\u0441\u043d\u0438\u043c\u044b\u0435 reason trails.",
+                },
+            },
+        }
+    return {
+        "title": "Readiness Next Steps",
+        "subtitle": "A short private-beta readiness slice before any acceptance decision.",
+        "signals_only": "signals-only",
+        "ready_label": "Ready:",
+        "open_label": "Open:",
+        "next_step": "Step:",
+        "ready": "ready",
+        "open": "open",
+        "empty": "No readiness items yet.",
+        "action": "Open",
+        "status_labels": {
+            "ready": "ready",
+            "review": "review",
+            "open": "open",
+            "blocked": "blocker",
+        },
+        "items": {},
     }
 
 

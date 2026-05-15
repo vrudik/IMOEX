@@ -75,6 +75,7 @@ from apps.api.routes.dashboard_page_shell import apply_page_utility_shell as _ap
 from apps.api.routes.dashboard_market import (
     market_level_copy as _market_level_copy,
     market_overlay_copy as _market_overlay_copy,
+    render_market_fullscreen_page as _render_market_fullscreen_page,
     render_market_snapshot as _render_market_snapshot,
 )
 from apps.api.routes.dashboard_onboarding import render_operator_onboarding as _render_operator_onboarding
@@ -106,7 +107,9 @@ from apps.api.routes.dashboard_workspace_data import (
 )
 from apps.api.routes.dashboard_workspace import (
     render_attention_inbox as _render_attention_inbox,
+    render_market_freshness_alerts as _render_market_freshness_alerts,
     render_morning_brief as _render_morning_brief,
+    render_readiness_next_steps as _render_readiness_next_steps,
     render_root_pulse_card as _render_root_pulse_card,
     render_workspace_signal_tile as _render_workspace_signal_tile,
 )
@@ -474,8 +477,8 @@ def _localize_html(html: str, language: str) -> str:
         "Для этой серии есть хотя бы один свежий и здоровый рыночный API.",
     )
     html = html.replace(
-        "Healthy reference data is available, but live broker feeds are not fully active.",
-        "Справочные данные доступны, но live-брокерские источники работают не полностью.",
+        "MOEX live charts are available; broker and shadow feeds are not fully active.",
+        "MOEX live-графики доступны; брокерские и теневые источники настроены не полностью.",
     )
     html = html.replace(
         "Primary price source is degraded or unavailable.",
@@ -669,9 +672,11 @@ def _localize_html(html: str, language: str) -> str:
     return html
 
 
-def _decorate_html_page(html: str, *, language: str, page_key: str) -> str:
+def _decorate_html_page(html: str, *, language: str, page_key: str, utility_shell: bool = True) -> str:
     html = _localize_html(html, language)
     html = html.replace('<html lang="en">', f'<html lang="{language}">', 1)
+    if not utility_shell:
+        return html
     return _apply_page_utility_shell(html, language=language, page_key=page_key)
 
 
@@ -965,6 +970,27 @@ async def get_workspace_page(
     )
     return HTMLResponse(
         _decorate_html_page(_render_workspace(snapshot, language=language), language=language, page_key="workspace")
+    )
+
+
+@router.get("/workspace/market", response_class=HTMLResponse)
+async def get_workspace_market_page(request: Request, root: str | None = None) -> HTMLResponse:
+    _ensure_dashboard_enabled()
+    language = _resolve_language(request)
+    snapshot = _build_workspace_snapshot(root=root)
+    return HTMLResponse(
+        _decorate_html_page(
+            _render_market_fullscreen_page(
+                snapshot.market_snapshot,
+                roots=snapshot.roots,
+                selected_root=snapshot.selected_root,
+                language=language,
+                availability=snapshot.market_availability,
+            ),
+            language=language,
+            page_key="market",
+            utility_shell=False,
+        )
     )
 
 
@@ -2823,6 +2849,8 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
     trust_ribbon = _render_trust_ribbon(snapshot.trust_ribbon)
     operator_onboarding = _render_operator_onboarding(language)
     morning_brief = _render_morning_brief(snapshot, language=language)
+    market_freshness_alerts = _render_market_freshness_alerts(snapshot.market_freshness_alerts, language=language)
+    readiness_next_steps = _render_readiness_next_steps(snapshot, language=language)
     watchlist = _render_watchlist(snapshot.watchlist)
     attention_inbox = _render_attention_inbox(snapshot.attention_inbox, language=language)
     comparison = _render_horizon_comparison(snapshot.comparison)
@@ -2835,6 +2863,7 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         language=language,
         root_code=snapshot.selected_root,
         signal_id=focus.signal_id if focus is not None else None,
+        availability=snapshot.market_availability,
     )
     workspace_state_strip = _render_surface_state_strip(
         strip_key="workspace",
@@ -2875,7 +2904,11 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
                     "Live quote and candles are visible for the selected instrument."
                     if snapshot.market_snapshot is not None
                     else (
-                        "Charts are hidden until live quote and candle data are available."
+                        (
+                            snapshot.market_availability.detail
+                            if snapshot.market_availability is not None
+                            else "Charts are hidden until live quote and candle data are available."
+                        )
                         if language != "ru"
                         else "Графики скрыты, пока не появятся живые котировки и свечи."
                     )
@@ -2938,6 +2971,14 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
             "level_entry_note": "Базовый вход в сетап." if language == "ru" else "Primary setup entry.",
             "level_invalidation_note": "Уровень, после которого идея ломается." if language == "ru" else "Level that breaks the setup.",
             "level_target_note": "Основная цель для идеи." if language == "ru" else "Primary target for the setup.",
+            "open_large": "Открыть крупно" if language == "ru" else "Open large",
+            "large_note": (
+                "Отдельная вкладка: свечи, линия, уровни и коридор идеи."
+                if language == "ru"
+                else "Separate tab: candles, line, level map, and idea corridor."
+            ),
+            "idea_corridor": "Коридор идеи" if language == "ru" else "Idea corridor",
+            "idea_change": "Смена идеи" if language == "ru" else "Idea changes",
             "measure_hint": (
                 "Протяните по графику, чтобы измерить дельту между свечами."
                 if language == "ru"
@@ -4278,6 +4319,8 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
     {trust_ribbon}
     {workspace_state_strip}
     {morning_brief}
+    {market_freshness_alerts}
+    {readiness_next_steps}
     {operator_onboarding}
     {attention_inbox}
     <section class="panel">
@@ -4813,6 +4856,24 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       }}
       return record;
     }};
+    const marketFullscreenHref = (rootCode) => {{
+      const normalized = String(rootCode || "").trim();
+      return normalized ? `/workspace/market?root=${{encodeURIComponent(normalized)}}` : "/workspace/market";
+    }};
+    const renderMarketFullscreenAction = (rootCode) => {{
+      return `<div data-market-fullscreen-action style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin:0 0 14px;padding:10px 12px;border-radius:12px;border:1px solid rgba(17,105,102,0.18);background:rgba(17,105,102,0.07);"><a class="button primary" data-market-fullscreen-link target="_blank" rel="noopener" href="${{escapePreviewText(marketFullscreenHref(rootCode))}}">${{escapePreviewText(marketPanelCopy.open_large || "Open large")}}</a><span class="muted" style="font-size:13px;">${{escapePreviewText(marketPanelCopy.large_note || "")}}</span></div>`;
+    }};
+    const renderIdeaCorridor = (series, mapPriceY, width, height) => {{
+      const overlays = overlayRecordFromSeries(series);
+      if (typeof overlays.invalidation !== "number" || typeof overlays.target !== "number") {{
+        return "";
+      }}
+      const yA = mapPriceY(overlays.invalidation);
+      const yB = mapPriceY(overlays.target);
+      const top = Math.min(yA, yB);
+      const bandHeight = Math.max(Math.abs(yA - yB), 4);
+      return `<rect data-market-idea-corridor x="0" y="${{top.toFixed(1)}}" width="${{width.toFixed(1)}}" height="${{bandHeight.toFixed(1)}}" fill="rgba(17,105,102,0.09)" stroke="rgba(17,105,102,0.18)" stroke-width="1"></rect>`;
+    }};
     const formatLevelDistance = (fromValue, toValue) => {{
       if (
         typeof fromValue !== "number"
@@ -4971,6 +5032,39 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
       }}).join("");
       return `<div data-market-distance-bar style="display:grid;gap:8px;"><div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#5c6970;">${{escapePreviewText(marketLevelCopy.distance_bar)}}</div><div style="position:relative;height:34px;"><div style="position:absolute;left:0;right:0;top:18px;height:4px;border-radius:999px;background:linear-gradient(90deg, rgba(187,113,34,0.22), rgba(23,54,77,0.18), rgba(17,105,102,0.22));"></div>${{markers}}</div><div style="display:flex;flex-wrap:wrap;gap:8px;">${{chips}}</div></div>`;
     }};
+    const renderMarketLevelStrip = (series, unit = "") => {{
+      if (!series) {{
+        return "";
+      }}
+      const overlays = overlayRecordFromSeries(series);
+      const unitSuffix = unit ? ` ${{escapePreviewText(unit)}}` : "";
+      const signalHorizon = series.signal_horizon ? String(series.signal_horizon) : "";
+      const signalId = series.signal_id ? String(series.signal_id) : "";
+      const signalAttrs = `${{signalHorizon ? ` data-market-signal-horizon="${{escapePreviewText(signalHorizon)}}"` : ""}}${{signalId ? ` data-market-signal-id="${{escapePreviewText(signalId)}}"` : ""}}`;
+      const baseStyle = "display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:7px 8px;border-radius:10px;border:1px solid rgba(21,32,42,0.08);background:rgba(255,255,255,0.68);font-size:11px;color:#5c6970;";
+      if (
+        typeof overlays.entry !== "number"
+        || typeof overlays.target !== "number"
+        || typeof overlays.invalidation !== "number"
+        || typeof series.current_price !== "number"
+      ) {{
+        return `<div data-market-level-strip data-market-level-state="pending"${{signalAttrs}} style="${{baseStyle}}"><strong style="color:#15202a;">${{escapePreviewText(marketLevelCopy.pending || "Waiting for levels")}}</strong><span>${{escapePreviewText(marketLevelCopy.pending_detail || "")}}</span></div>`;
+      }}
+      const corridorLow = Math.min(overlays.invalidation, overlays.target);
+      const corridorHigh = Math.max(overlays.invalidation, overlays.target);
+      const points = [
+        {{ key: "entry", label: marketOverlayLabels.entry || "Entry", value: overlays.entry, color: "#17364d" }},
+        {{ key: "price", label: marketLevelCopy.price_short || "Price", value: series.current_price, color: "#15202a" }},
+        {{ key: "invalidation", label: marketPanelCopy.idea_change || marketOverlayLabels.invalidation || "Idea changes", value: overlays.invalidation, color: "#bb7122" }},
+        {{ key: "target", label: marketOverlayLabels.target || "Target", value: overlays.target, color: "#116966" }},
+      ];
+      const chips = points.map((point) => {{
+        return `<span data-market-level-chip data-level-key="${{escapePreviewText(point.key)}}" style="display:inline-flex;align-items:center;gap:6px;min-width:0;padding:5px 8px;border-radius:999px;background:rgba(255,255,255,0.88);border:1px solid rgba(21,32,42,0.08);white-space:nowrap;"><span style="width:8px;height:8px;border-radius:999px;background:${{point.color}};flex:0 0 auto;"></span><span>${{escapePreviewText(point.label)}} ${{formatPreviewPrice(point.value)}}${{unitSuffix}}</span></span>`;
+      }}).join("");
+      const horizonSuffix = signalHorizon ? ` ${{signalHorizon}}` : "";
+      const corridorText = `${{marketPanelCopy.idea_corridor || "Idea corridor"}}${{horizonSuffix}}: ${{formatPreviewPrice(corridorLow)}}-${{formatPreviewPrice(corridorHigh)}}${{unitSuffix}}`;
+      return `<div data-market-level-strip data-market-level-state="ready"${{signalAttrs}} style="${{baseStyle}}"><strong data-market-idea-corridor-summary style="color:#116966;">${{escapePreviewText(corridorText)}}</strong>${{chips}}</div>`;
+    }};
     const renderRootPreviewChart = (series) => {{
       if (!series || !Array.isArray(series.points) || series.points.length === 0) {{
         return `<div class="empty">${{rootPreviewMessages.unavailable}}</div>`;
@@ -5000,17 +5094,20 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         const tone = closeValue >= openValue ? "#2f7e57" : "#b44a3d";
         return `<line x1="${{x.toFixed(1)}}" y1="${{highY.toFixed(1)}}" x2="${{x.toFixed(1)}}" y2="${{lowY.toFixed(1)}}" stroke="${{tone}}" stroke-width="1.8" stroke-linecap="round"></line><rect x="${{(x - (bodyWidth / 2)).toFixed(1)}}" y="${{bodyTop.toFixed(1)}}" width="${{bodyWidth.toFixed(1)}}" height="${{bodyHeight.toFixed(1)}}" rx="2" fill="${{tone}}" fill-opacity="0.92"></rect>`;
       }}).join("");
+      const ideaCorridor = renderIdeaCorridor(series, mapPriceY, width, height);
       const overlays = Array.isArray(series.overlays) ? series.overlays.map((overlay) => {{
-        const style = marketOverlayStyle(overlay.key);
+        const key = String(overlay.key || "");
+        const style = marketOverlayStyle(key);
         const y = mapPriceY(overlay.value);
-        const label = escapePreviewText(marketOverlayLabels[overlay.key] || overlay.key);
-        return `<line x1="0" y1="${{y.toFixed(1)}}" x2="${{width.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="${{style.stroke}}" stroke-width="1.2" stroke-dasharray="${{style.dasharray}}" opacity="0.95" data-market-overlay-line data-overlay-key="${{escapePreviewText(overlay.key)}}" style="cursor:pointer;"></line><line x1="0" y1="${{y.toFixed(1)}}" x2="${{width.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="transparent" stroke-width="10" data-market-overlay-hit data-overlay-key="${{escapePreviewText(overlay.key)}}" style="cursor:pointer;"></line><text x="${{(width - 6).toFixed(1)}}" y="${{Math.max(12, Math.min(height - 4, y - 2)).toFixed(1)}}" text-anchor="end" fill="${{style.stroke}}" font-size="10" font-weight="700" data-market-overlay-label data-overlay-key="${{escapePreviewText(overlay.key)}}" style="cursor:pointer;">${{label}}</text>`;
+        const label = escapePreviewText(key === "invalidation" ? (marketPanelCopy.idea_change || "Idea changes") : (marketOverlayLabels[key] || key));
+        const ideaChangeAttr = key === "invalidation" ? " data-market-idea-change-line" : "";
+        return `<line x1="0" y1="${{y.toFixed(1)}}" x2="${{width.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="${{style.stroke}}" stroke-width="1.2" stroke-dasharray="${{style.dasharray}}" opacity="0.95" data-market-overlay-line data-overlay-key="${{escapePreviewText(key)}}"${{ideaChangeAttr}} style="cursor:pointer;"></line><line x1="0" y1="${{y.toFixed(1)}}" x2="${{width.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="transparent" stroke-width="10" data-market-overlay-hit data-overlay-key="${{escapePreviewText(key)}}" style="cursor:pointer;"></line>`;
       }}).join("") : "";
       const currentPriceY = mapPriceY(series.current_price);
-      const currentLine = `<line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{width.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="#15202a" stroke-width="1.3" opacity="0.78" data-market-current-line></line><line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{width.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="transparent" stroke-width="10" data-market-current-hit data-market-snap-key="price"></line><circle cx="${{(width - 6).toFixed(1)}}" cy="${{currentPriceY.toFixed(1)}}" r="3.4" fill="#15202a"></circle><text x="6" y="${{Math.max(12, Math.min(height - 4, currentPriceY - 4)).toFixed(1)}}" fill="#15202a" font-size="10" font-weight="700">${{escapePreviewText(marketLevelCopy.price_short)}}</text>`;
+      const currentLine = `<line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{width.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="#15202a" stroke-width="1.3" opacity="0.78" data-market-current-line></line><line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{width.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="transparent" stroke-width="10" data-market-current-hit data-market-snap-key="price"></line><circle cx="${{(width - 6).toFixed(1)}}" cy="${{currentPriceY.toFixed(1)}}" r="3.4" fill="#15202a"></circle>`;
       const measureLayer = `<g data-market-measure-layer style="display:none;pointer-events:none;"><line x1="0" y1="0" x2="0" y2="0" stroke="#17364d" stroke-width="1.8" stroke-dasharray="5 4" opacity="0.92" data-market-measure-line></line><circle cx="0" cy="0" r="3.2" fill="#17364d" data-market-measure-start-dot></circle><circle cx="0" cy="0" r="3.2" fill="#17364d" data-market-measure-end-dot></circle><text x="0" y="0" text-anchor="middle" fill="#17364d" font-size="10" font-weight="800" data-market-measure-label></text></g>`;
       const crosshairLayer = `<g data-market-crosshair-layer style="display:none;"><line x1="0" y1="0" x2="0" y2="${{height.toFixed(1)}}" stroke="rgba(21,32,42,0.22)" stroke-width="1" stroke-dasharray="3 3" data-market-crosshair-x></line><line x1="0" y1="0" x2="${{width.toFixed(1)}}" y2="0" stroke="rgba(21,32,42,0.18)" stroke-width="1" stroke-dasharray="3 3" data-market-crosshair-y></line><circle cx="0" cy="0" r="3.2" fill="#15202a" data-market-crosshair-dot></circle></g>`;
-      return `<svg viewBox="0 0 248 96" preserveAspectRatio="none" data-market-chart-svg><line x1="0" y1="${{mapPriceY(series.open_price).toFixed(1)}}" x2="248" y2="${{mapPriceY(series.open_price).toFixed(1)}}" stroke="rgba(21,32,42,0.08)" stroke-width="1" stroke-dasharray="4 4"></line>${{overlays}}${{currentLine}}${{candles}}${{measureLayer}}${{crosshairLayer}}</svg>`;
+      return `<svg viewBox="0 0 248 96" preserveAspectRatio="none" data-market-chart-svg><line x1="0" y1="${{mapPriceY(series.open_price).toFixed(1)}}" x2="248" y2="${{mapPriceY(series.open_price).toFixed(1)}}" stroke="rgba(21,32,42,0.08)" stroke-width="1" stroke-dasharray="4 4"></line>${{ideaCorridor}}${{overlays}}${{currentLine}}${{candles}}${{measureLayer}}${{crosshairLayer}}</svg>`;
     }};
     const setRootLanePriceLine = (rootCode, snapshot) => {{
       const card = document.querySelector(`[data-root-preview-card][data-root-code="${{rootCode}}"]`);
@@ -5233,19 +5330,22 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
             const tone = closeValue >= openValue ? "#2f7e57" : "#b44a3d";
             return `<line x1="${{x.toFixed(1)}}" y1="${{highY.toFixed(1)}}" x2="${{x.toFixed(1)}}" y2="${{lowY.toFixed(1)}}" stroke="${{tone}}" stroke-width="1.8" stroke-linecap="round"></line><rect x="${{(x - (bodyWidth / 2)).toFixed(1)}}" y="${{bodyTop.toFixed(1)}}" width="${{bodyWidth.toFixed(1)}}" height="${{bodyHeight.toFixed(1)}}" rx="2" fill="${{tone}}" fill-opacity="0.92"></rect>`;
           }}).join("");
+          const ideaCorridor = renderIdeaCorridor(series, mapPriceY, viewWidth, viewHeight);
           const overlays = Array.isArray(series.overlays) ? series.overlays.map((overlay) => {{
-            const style = marketOverlayStyle(overlay.key);
+            const key = String(overlay.key || "");
+            const style = marketOverlayStyle(key);
             const y = mapPriceY(overlay.value);
-            const label = escapePreviewText(marketOverlayLabels[overlay.key] || overlay.key);
-            return `<line x1="0" y1="${{y.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="${{style.stroke}}" stroke-width="1.2" stroke-dasharray="${{style.dasharray}}" opacity="0.95" data-market-overlay-line data-overlay-key="${{escapePreviewText(overlay.key)}}" style="cursor:pointer;"></line><line x1="0" y1="${{y.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="transparent" stroke-width="10" data-market-overlay-hit data-overlay-key="${{escapePreviewText(overlay.key)}}" style="cursor:pointer;"></line><text x="${{(viewWidth - 6).toFixed(1)}}" y="${{Math.max(12, Math.min(viewHeight - 4, y - 2)).toFixed(1)}}" text-anchor="end" fill="${{style.stroke}}" font-size="10" font-weight="700" data-market-overlay-label data-overlay-key="${{escapePreviewText(overlay.key)}}">${{label}}</text>`;
+            const label = escapePreviewText(key === "invalidation" ? (marketPanelCopy.idea_change || "Idea changes") : (marketOverlayLabels[key] || key));
+            const ideaChangeAttr = key === "invalidation" ? " data-market-idea-change-line" : "";
+            return `<line x1="0" y1="${{y.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="${{style.stroke}}" stroke-width="1.2" stroke-dasharray="${{style.dasharray}}" opacity="0.95" data-market-overlay-line data-overlay-key="${{escapePreviewText(key)}}"${{ideaChangeAttr}} style="cursor:pointer;"></line><line x1="0" y1="${{y.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="transparent" stroke-width="10" data-market-overlay-hit data-overlay-key="${{escapePreviewText(key)}}" style="cursor:pointer;"></line>`;
           }}).join("") : "";
           const baselineValue = points[0] && typeof points[0].open === "number" ? points[0].open : series.open_price;
           const currentPriceY = mapPriceY(series.current_price);
-          const currentLine = `<line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="#15202a" stroke-width="1.3" opacity="0.78" data-market-current-line></line><line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="transparent" stroke-width="10" data-market-current-hit data-market-snap-key="price"></line><circle cx="${{(viewWidth - 6).toFixed(1)}}" cy="${{currentPriceY.toFixed(1)}}" r="3.4" fill="#15202a"></circle><text x="6" y="${{Math.max(12, Math.min(viewHeight - 4, currentPriceY - 4)).toFixed(1)}}" fill="#15202a" font-size="10" font-weight="700">${{escapePreviewText(marketLevelCopy.price_short)}}</text>`;
+          const currentLine = `<line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="#15202a" stroke-width="1.3" opacity="0.78" data-market-current-line></line><line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="transparent" stroke-width="10" data-market-current-hit data-market-snap-key="price"></line><circle cx="${{(viewWidth - 6).toFixed(1)}}" cy="${{currentPriceY.toFixed(1)}}" r="3.4" fill="#15202a"></circle>`;
           const measureLayer = `<g data-market-measure-layer style="display:none;pointer-events:none;"><line x1="0" y1="0" x2="0" y2="0" stroke="#17364d" stroke-width="1.8" stroke-dasharray="5 4" opacity="0.92" data-market-measure-line></line><circle cx="0" cy="0" r="3.2" fill="#17364d" data-market-measure-start-dot></circle><circle cx="0" cy="0" r="3.2" fill="#17364d" data-market-measure-end-dot></circle><text x="0" y="0" text-anchor="middle" fill="#17364d" font-size="10" font-weight="800" data-market-measure-label></text></g>`;
           const crosshair = `<g data-market-crosshair-layer style="display:none;"><line x1="0" y1="0" x2="0" y2="${{viewHeight.toFixed(1)}}" stroke="rgba(21,32,42,0.22)" stroke-width="1" stroke-dasharray="3 3" data-market-crosshair-x></line><line x1="0" y1="0" x2="${{viewWidth.toFixed(1)}}" y2="0" stroke="rgba(21,32,42,0.18)" stroke-width="1" stroke-dasharray="3 3" data-market-crosshair-y></line><circle cx="0" cy="0" r="3.2" fill="#15202a" data-market-crosshair-dot></circle></g>`;
           return {{
-            markup: `<line x1="0" y1="${{mapPriceY(baselineValue).toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{mapPriceY(baselineValue).toFixed(1)}}" stroke="rgba(21,32,42,0.08)" stroke-width="1" stroke-dasharray="4 4"></line>${{overlays}}${{currentLine}}${{candles}}${{measureLayer}}${{crosshair}}`,
+            markup: `<line x1="0" y1="${{mapPriceY(baselineValue).toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{mapPriceY(baselineValue).toFixed(1)}}" stroke="rgba(21,32,42,0.08)" stroke-width="1" stroke-dasharray="4 4"></line>${{ideaCorridor}}${{overlays}}${{currentLine}}${{candles}}${{measureLayer}}${{crosshair}}`,
             mapPriceY,
           }};
         }};
@@ -5718,7 +5818,10 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         renderRange(card.dataset.marketRangeKey || "full");
       }});
     }};
-    const renderMarketPanelUnavailable = () => `<div class="panel-head"><h2>${{escapePreviewText(marketPanelCopy.title)}}</h2><p>${{escapePreviewText(marketPanelCopy.subtitle)}}</p></div><div class="metric-list" data-market-unavailable><article class="action-card tone-warning"><strong>${{escapePreviewText(marketPanelCopy.unavailable_title || marketPanelCopy.warning_title)}}</strong><p class="muted">${{escapePreviewText(marketPanelCopy.unavailable_body || marketPanelCopy.warning_body)}}</p></article></div>`;
+    const renderMarketPanelUnavailable = () => {{
+      const rootCode = liveMarketPanelNode ? liveMarketPanelNode.dataset.marketRootCode : "";
+      return `<div class="panel-head"><div><h2>${{escapePreviewText(marketPanelCopy.title)}}</h2><p>${{escapePreviewText(marketPanelCopy.subtitle)}}</p></div></div>${{renderMarketFullscreenAction(rootCode)}}<div class="metric-list" data-market-unavailable><article class="action-card tone-warning"><strong>${{escapePreviewText(marketPanelCopy.unavailable_title || marketPanelCopy.warning_title)}}</strong><p class="muted">${{escapePreviewText(marketPanelCopy.unavailable_body || marketPanelCopy.warning_body)}}</p></article></div>`;
+    }};
     const renderMarketPanelBody = (snapshot) => {{
       if (!snapshot) {{
         return renderMarketPanelUnavailable();
@@ -5733,9 +5836,10 @@ def _render_workspace(snapshot: WorkspaceSnapshot, *, language: str) -> str:
         }}
         const overlaySummary = renderOverlaySummary(series, snapshot.unit);
         const distanceBar = buildMarketDistanceBar(series, snapshot.unit);
-        return `<article style="padding:14px 16px;border-radius:18px;border:1px solid rgba(21, 32, 42, 0.1);background:rgba(255,255,255,0.72);display:grid;gap:10px;"><div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;"><strong>${{escapePreviewText(rootPreviewTimeframes[series.label] || series.label)}} · ${{escapePreviewText(series.label)}}</strong><span style="font-weight:700;color:${{series.change_abs >= 0 ? "#2f7e57" : "#b44a3d"}};">${{formatPreviewPrice(series.current_price)}}${{unitSuffix}}</span></div>${{renderRootPreviewChart(series)}}<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#5c6970;"><span>${{escapePreviewText(series.points[0] ? series.points[0].label : series.label)}}</span><span>${{escapePreviewText(series.points[series.points.length - 1] ? series.points[series.points.length - 1].label : series.label)}}</span></div><p class="muted">${{escapePreviewText(rootPreviewMessages.open)}} ${{formatPreviewPrice(series.open_price)}}${{unitSuffix}} | ${{escapePreviewText(rootPreviewMessages.change)}} ${{formatPreviewPrice(series.change_abs)}}${{unitSuffix}} (${{formatPreviewPct(series.change_pct)}})</p><p class="muted">${{escapePreviewText(rootPreviewMessages.range)}} ${{formatPreviewPrice(series.low_price)}}${{unitSuffix}} - ${{formatPreviewPrice(series.high_price)}}${{unitSuffix}}</p>${{distanceBar}}${{overlaySummary ? `<p class="muted">${{escapePreviewText(marketPanelCopy.levels)}} ${{escapePreviewText(overlaySummary)}}</p>` : ""}}</article>`;
+        const levelStrip = renderMarketLevelStrip(series, snapshot.unit);
+        return `<article style="padding:14px 16px;border-radius:18px;border:1px solid rgba(21, 32, 42, 0.1);background:rgba(255,255,255,0.72);display:grid;gap:10px;"><div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;"><strong>${{escapePreviewText(rootPreviewTimeframes[series.label] || series.label)}} · ${{escapePreviewText(series.label)}}</strong><span style="font-weight:700;color:${{series.change_abs >= 0 ? "#2f7e57" : "#b44a3d"}};">${{formatPreviewPrice(series.current_price)}}${{unitSuffix}}</span></div>${{levelStrip}}${{renderRootPreviewChart(series)}}<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#5c6970;"><span>${{escapePreviewText(series.points[0] ? series.points[0].label : series.label)}}</span><span>${{escapePreviewText(series.points[series.points.length - 1] ? series.points[series.points.length - 1].label : series.label)}}</span></div><p class="muted">${{escapePreviewText(rootPreviewMessages.open)}} ${{formatPreviewPrice(series.open_price)}}${{unitSuffix}} | ${{escapePreviewText(rootPreviewMessages.change)}} ${{formatPreviewPrice(series.change_abs)}}${{unitSuffix}} (${{formatPreviewPct(series.change_pct)}})</p><p class="muted">${{escapePreviewText(rootPreviewMessages.range)}} ${{formatPreviewPrice(series.low_price)}}${{unitSuffix}} - ${{formatPreviewPrice(series.high_price)}}${{unitSuffix}}</p>${{distanceBar}}${{overlaySummary ? `<p class="muted">${{escapePreviewText(marketPanelCopy.levels)}} ${{escapePreviewText(overlaySummary)}}</p>` : ""}}</article>`;
       }};
-      return `<div class="panel-head"><h2>${{escapePreviewText(marketPanelCopy.title)}}</h2><p>${{escapePreviewText(marketPanelCopy.subtitle)}}</p></div>${{warning}}<div class="metric-list" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));"><article><span>${{escapePreviewText(marketPanelCopy.current_price)}}</span><strong>${{formatPreviewPrice(snapshot.current_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.root_code)}} · ${{escapePreviewText(snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.daily_change)}}</span><strong>${{snapshot.price_change_abs >= 0 ? "+" : ""}}${{formatPreviewPrice(snapshot.price_change_abs)}}${{unitSuffix}}</strong><p class="muted">${{formatPreviewPct(snapshot.price_change_pct)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.day_high)}}</span><strong>${{formatPreviewPrice(snapshot.daily.high_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.daily.points[snapshot.daily.points.length - 1] ? snapshot.daily.points[snapshot.daily.points.length - 1].label : snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.day_low)}}</span><strong>${{formatPreviewPrice(snapshot.daily.low_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.daily.points[0] ? snapshot.daily.points[0].label : snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.updated)}}</span><strong>${{escapePreviewText(formatPreviewTime(snapshot.as_of))}}</strong><p class="muted">${{escapePreviewText(marketPanelCopy.status)}}: ${{escapePreviewText(snapshot.status || "n/a")}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.source)}}</span><strong>${{escapePreviewText(snapshot.price_source)}}</strong><p class="muted">${{escapePreviewText(snapshot.base_asset)}}</p></article></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:16px;">${{renderPanelChart(snapshot.daily)}}${{renderPanelChart(snapshot.weekly)}}${{renderPanelChart(snapshot.monthly)}}</div>`;
+      return `<div class="panel-head"><div><h2>${{escapePreviewText(marketPanelCopy.title)}}</h2><p>${{escapePreviewText(marketPanelCopy.subtitle)}}</p></div></div>${{renderMarketFullscreenAction(snapshot.root_code)}}${{warning}}<div class="metric-list" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));"><article><span>${{escapePreviewText(marketPanelCopy.current_price)}}</span><strong>${{formatPreviewPrice(snapshot.current_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.root_code)}} · ${{escapePreviewText(snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.daily_change)}}</span><strong>${{snapshot.price_change_abs >= 0 ? "+" : ""}}${{formatPreviewPrice(snapshot.price_change_abs)}}${{unitSuffix}}</strong><p class="muted">${{formatPreviewPct(snapshot.price_change_pct)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.day_high)}}</span><strong>${{formatPreviewPrice(snapshot.daily.high_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.daily.points[snapshot.daily.points.length - 1] ? snapshot.daily.points[snapshot.daily.points.length - 1].label : snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.day_low)}}</span><strong>${{formatPreviewPrice(snapshot.daily.low_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.daily.points[0] ? snapshot.daily.points[0].label : snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.updated)}}</span><strong>${{escapePreviewText(formatPreviewTime(snapshot.as_of))}}</strong><p class="muted">${{escapePreviewText(marketPanelCopy.status)}}: ${{escapePreviewText(snapshot.status || "n/a")}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.source)}}</span><strong>${{escapePreviewText(snapshot.price_source)}}</strong><p class="muted">${{escapePreviewText(snapshot.base_asset)}}</p></article></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:16px;">${{renderPanelChart(snapshot.daily)}}${{renderPanelChart(snapshot.weekly)}}${{renderPanelChart(snapshot.monthly)}}</div>`;
     }};
     const setRootPreviewContent = (rootCode, timeframe, snapshot) => {{
       const card = document.querySelector(`[data-root-preview-card][data-root-code="${{rootCode}}"]`);
@@ -8007,7 +8111,6 @@ def _render_council_page(
     root_details = snapshot.root_details
     panel = snapshot.control_panel
     primary_feed = _primary_market_feed(panel)
-    control_panel = _render_control_panel(panel)
     sidebar = _render_page_sidebar(
         "council",
         root=snapshot.selected_root,
@@ -8062,6 +8165,7 @@ def _render_council_page(
         "purpose": "Зачем нужен" if is_ru else "Why it matters",
         "prompt": "Текущий prompt" if is_ru else "Current prompt",
         "manage_prompt": "Управлять prompt" if is_ru else "Manage prompt",
+        "open_runtime": "Открыть Runtime" if is_ru else "Open Runtime",
         "fixed": "Сейчас роль жёстко закреплена за этой моделью." if is_ru else "This role is currently fixed to this model.",
         "dynamic": "Роль выбирается динамически." if is_ru else "This role is routed dynamically.",
         "decision_title": "Почему итог сейчас такой" if is_ru else "Why the current output looks like this",
@@ -8081,9 +8185,9 @@ def _render_council_page(
         ),
         "runtime_title": "Текущий стек моделей и источников" if is_ru else "Current model and data stack",
         "runtime_note": (
-            "Здесь уже полный runtime: какие модели закреплены за ролями и чьи данные реально используются."
+            "Короткая сводка нужна только для проверки контекста решения. Изменение моделей, prompt и источников живёт во вкладке Runtime."
             if is_ru
-            else "This is the full runtime: which models own the roles and whose data is actually being used."
+            else "This compact summary only verifies the decision context. Model, prompt, and source controls live on the Runtime tab."
         ),
     }
 
@@ -8147,6 +8251,61 @@ def _render_council_page(
         if is_ru
         else f"{next_contract} · expiry in {days_to_expiry}d ({expiry_date}) · roll {roll_share}"
     )
+    data_mode_tone = (
+        "tone-positive"
+        if panel.data_mode == "live"
+        else "tone-warning"
+        if panel.data_mode == "snapshot"
+        else "tone-negative"
+    )
+    reference_tone = (
+        "tone-positive"
+        if panel.reference_sync.status == "fresh"
+        else "tone-warning"
+        if panel.reference_sync.status == "stale"
+        else "tone-negative"
+    )
+    role_count_label = str(len(panel.model_roles))
+    feed_count_label = str(len(panel.market_data_feeds))
+    runtime_summary = f"""
+      <div class="control-summary-grid" data-council-runtime-summary>
+        <article class="control-summary-card">
+          <label>{"Runtime" if not is_ru else "Runtime"}</label>
+          <strong>{escape(panel.llm_product)} · {escape(panel.llm_model)}</strong>
+          <small>{escape(panel.llm_owner)}</small>
+        </article>
+        <article class="control-summary-card is-wide {data_mode_tone}">
+          <label>{"Data mode" if not is_ru else "Режим данных"}</label>
+          <strong>{escape(data_mode)}</strong>
+          <small>{escape(panel.data_mode_detail or ("No detail available." if not is_ru else "Детали недоступны."))}</small>
+        </article>
+        <article class="control-summary-card {reference_tone}">
+          <label>{"Contract reference" if not is_ru else "Справочник контрактов"}</label>
+          <strong>{escape(reference_state)}</strong>
+          <small>{escape(panel.reference_sync.detail or ("No detail available." if not is_ru else "Детали недоступны."))}</small>
+        </article>
+        <article class="control-summary-card">
+          <label>{"Latest market data" if not is_ru else "Последние рыночные данные"}</label>
+          <strong>{escape(_format_timestamp(panel.latest_market_data_at))}</strong>
+          <small>{escape(price_source)}</small>
+        </article>
+        <article class="control-summary-card">
+          <label>{"Council roles" if not is_ru else "Роли совета"}</label>
+          <strong>{escape(role_count_label)}</strong>
+          <small>{"Routing is managed on Runtime." if not is_ru else "Маршрутизация управляется во вкладке Runtime."}</small>
+        </article>
+        <article class="control-summary-card">
+          <label>{"Market feeds" if not is_ru else "Рыночные источники"}</label>
+          <strong>{escape(feed_count_label)}</strong>
+          <small>{"Feed details are managed on Runtime." if not is_ru else "Детали источников управляются во вкладке Runtime."}</small>
+        </article>
+        <article class="control-summary-card is-wide">
+          <label>{"Runtime controls" if not is_ru else "Управление runtime"}</label>
+          <strong>{"Runtime owns controls" if not is_ru else "Управление вынесено отдельно"}</strong>
+          <small><a class="button" data-council-runtime-link href="/workspace/runtime?root={escape(snapshot.selected_root)}">{escape(copy["open_runtime"])}</a></small>
+        </article>
+      </div>
+    """
 
     prompt_lookup = {item.role_key: item for item in runtime_snapshot.role_prompts}
     role_cards = []
@@ -8191,26 +8350,26 @@ def _render_council_page(
 
     why_now_items = "".join(f"<li>{escape(item)}</li>" for item in (focus.drivers if focus is not None else [])) or f"<li>{escape('Драйверы пока не зафиксированы.' if is_ru else 'No drivers are recorded yet.')}</li>"
     pushback_items = "".join(f"<li>{escape(item)}</li>" for item in (focus.objections if focus is not None else [])) or f"<li>{escape('Сдерживающие факторы пока не зафиксированы.' if is_ru else 'No pushback is recorded yet.')}</li>"
-    invalidation_items = "".join(f"<li>{escape(item)}</li>" for item in (focus.invalidation_conditions if focus is not None else [])) or f"<li>{escape('?????????????? ???????????? ???????? ???? ??????????????????????????.' if is_ru else 'No invalidation conditions are recorded yet.')}</li>"
+    invalidation_items = "".join(f"<li>{escape(item)}</li>" for item in (focus.invalidation_conditions if focus is not None else [])) or f"<li>{escape('Условия отмены пока не зафиксированы.' if is_ru else 'No invalidation conditions are recorded yet.')}</li>"
     disagreement_map = _render_confidence_decomposition(snapshot.focus_confidence)
     counterfactual_prompt = (
-        "?????? ?????????????????? ???????????????? ?? no-trade, ?? ?????????? ???????? ???????????????????? ?????????????? ???????????????????????"
+        "Что переводит сценарий в no-trade, и какое одно наблюдение усиливает conviction?"
         if is_ru
         else "What would make this a no-trade, and what single observation would upgrade conviction?"
     )
     counterfactual_note = (
-        ("???????????????????? ????????????????: " if is_ru else "No-trade trigger: ")
+        ("Порог отмены: " if is_ru else "No-trade trigger: ")
         + escape(
             focus.invalidation_conditions[0]
             if focus is not None and focus.invalidation_conditions
             else (
-                "?????? ?????????????? ?????????????????? ???????????????? ?????? ???????????????????? ?????????? ????????????."
+                "Если ключевой драйвер ломается или свежесть данных заметно ухудшается."
                 if is_ru
                 else "If the key driver breaks or data freshness degrades materially."
             )
         )
         + "<br>"
-        + (("?????????????? conviction: ") if is_ru else "Conviction upgrade: ")
+        + (("Усиление conviction: ") if is_ru else "Conviction upgrade: ")
         + escape(
             focus.drivers[0]
             if focus is not None and focus.drivers
@@ -8450,7 +8609,7 @@ def _render_council_page(
     <section class="panel"><div class="panel-head"><h2>{"Контрфактические подсказки" if is_ru else "Counterfactual prompts"}</h2></div><p class="panel-note">{escape(counterfactual_prompt)}</p><div class="metric-list"><article><strong>{"Порог отмены" if is_ru else "No-trade trigger"}</strong><p class="muted">{counterfactual_note}</p></article></div></section>
     <section class="panel"><div class="panel-head"><h2>{"Позиционирование по сессии" if is_ru else "Session-aware posture guidance"}</h2></div><p class="panel-note">{"Короткий обзор для opening auction, post-clearing, rollover window и моментов с пониженной ликвидностью." if is_ru else "A compact review for the opening auction, post-clearing, rollover window, and low-liquidity caution zones."}</p>{session_guidance}</section>
     <section class="panel"><div class="panel-head"><h2>{escape(copy["score_title"])}</h2></div><p class="panel-note">{escape(copy["score_note"])}</p><div class="score-grid"><article class="score-card"><span>{"Приоритет" if is_ru else "Priority"}</span><strong>{escape(str(focus.priority_score) if focus is not None else "n/a")}</strong><p>{"Показывает, насколько высоко сигнал должен стоять в пользовательской ленте." if is_ru else "Shows how high the signal should sit in the user-facing queue."}</p></article><article class="score-card"><span>{"Уверенность" if is_ru else "Confidence"}</span><strong>{escape(f"{focus.confidence_final:.2f}" if focus is not None else "n/a")}</strong><p>{"Показывает, насколько устойчив итоговый сценарий после калибровки." if is_ru else "Shows how stable the final scenario looks after calibration."}</p></article><article class="score-card"><span>{"Скептик" if is_ru else "Skeptic"}</span><strong>{escape(f"{focus.skeptic_score:.2f}" if focus is not None else "n/a")}</strong><p>{"Чем выше значение, тем меньше у скептика возражений к текущей идее." if is_ru else "Higher means the skeptic has fewer objections to the current idea."}</p></article><article class="score-card"><span>{"Риск ролла" if is_ru else "Roll risk"}</span><strong>{escape(f"{focus.roll_risk:.2f}" if focus is not None else "n/a")}</strong><p>{"Чем выше значение, тем сильнее переход между контрактами может исказить сигнал." if is_ru else "Higher means the contract transition can distort the setup more strongly."}</p></article><article class="score-card"><span>{"Риск экспирации" if is_ru else "Expiry risk"}</span><strong>{escape(f"{focus.expiry_risk:.2f}" if focus is not None else "n/a")}</strong><p>{"Чем выше значение, тем больше близость экспирации влияет на решение." if is_ru else "Higher means time-to-expiry matters more for this decision."}</p></article></div></section>
-    <section class="panel"><div class="panel-head"><h2>{escape(copy["runtime_title"])}</h2></div><p class="panel-note">{escape(copy["runtime_note"])}</p>{control_panel}</section>
+    <section class="panel" data-council-runtime-panel><div class="panel-head"><h2>{escape(copy["runtime_title"])}</h2></div><p class="panel-note">{escape(copy["runtime_note"])}</p>{runtime_summary}</section>
   </main>
   </div>
 </body>
@@ -9576,6 +9735,14 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot, *, language: str
             "level_entry_note": "Базовый вход в сетап." if language == "ru" else "Primary setup entry.",
             "level_invalidation_note": "Уровень, после которого идея ломается." if language == "ru" else "Level that breaks the setup.",
             "level_target_note": "Основная цель для идеи." if language == "ru" else "Primary target for the setup.",
+            "open_large": "Открыть крупно" if language == "ru" else "Open large",
+            "large_note": (
+                "Отдельная вкладка: свечи, линия, уровни и коридор идеи."
+                if language == "ru"
+                else "Separate tab: candles, line, level map, and idea corridor."
+            ),
+            "idea_corridor": "Коридор идеи" if language == "ru" else "Idea corridor",
+            "idea_change": "Смена идеи" if language == "ru" else "Idea changes",
             "measure_hint": (
                 "Протяните по графику, чтобы измерить дельту между свечами."
                 if language == "ru"
@@ -9594,6 +9761,7 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot, *, language: str
         language=language,
         root_code=signal.root,
         signal_id=signal.signal_id,
+        availability=snapshot.market_availability,
     )
     signal_state_strip = _render_surface_state_strip(
         strip_key="signal",
@@ -10231,6 +10399,24 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot, *, language: str
       }}
       return record;
     }};
+    const marketFullscreenHref = (rootCode) => {{
+      const normalized = String(rootCode || "").trim();
+      return normalized ? `/workspace/market?root=${{encodeURIComponent(normalized)}}` : "/workspace/market";
+    }};
+    const renderMarketFullscreenAction = (rootCode) => {{
+      return `<div data-market-fullscreen-action style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin:0 0 14px;padding:10px 12px;border-radius:12px;border:1px solid rgba(17,105,102,0.18);background:rgba(17,105,102,0.07);"><a class="button primary" data-market-fullscreen-link target="_blank" rel="noopener" href="${{escapePreviewText(marketFullscreenHref(rootCode))}}">${{escapePreviewText(marketPanelCopy.open_large || "Open large")}}</a><span class="muted" style="font-size:13px;">${{escapePreviewText(marketPanelCopy.large_note || "")}}</span></div>`;
+    }};
+    const renderIdeaCorridor = (series, mapPriceY, width, height) => {{
+      const overlays = overlayRecordFromSeries(series);
+      if (typeof overlays.invalidation !== "number" || typeof overlays.target !== "number") {{
+        return "";
+      }}
+      const yA = mapPriceY(overlays.invalidation);
+      const yB = mapPriceY(overlays.target);
+      const top = Math.min(yA, yB);
+      const bandHeight = Math.max(Math.abs(yA - yB), 4);
+      return `<rect data-market-idea-corridor x="0" y="${{top.toFixed(1)}}" width="${{width.toFixed(1)}}" height="${{bandHeight.toFixed(1)}}" fill="rgba(17,105,102,0.09)" stroke="rgba(17,105,102,0.18)" stroke-width="1"></rect>`;
+    }};
     const formatLevelDistance = (fromValue, toValue) => {{
       if (
         typeof fromValue !== "number"
@@ -10279,6 +10465,39 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot, *, language: str
         return `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 8px;border-radius:999px;background:rgba(255,255,255,0.82);border:1px solid rgba(21,32,42,0.08);font-size:11px;color:#5c6970;"><span style="width:7px;height:7px;border-radius:999px;background:${{point.color}};"></span>${{escapePreviewText(point.label)}} ${{escapePreviewText(detail)}}</span>`;
       }}).join("");
       return `<div data-market-distance-bar style="display:grid;gap:8px;"><div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#5c6970;">${{escapePreviewText(marketLevelCopy.distance_bar)}}</div><div style="position:relative;height:34px;"><div style="position:absolute;left:0;right:0;top:18px;height:4px;border-radius:999px;background:linear-gradient(90deg, rgba(187,113,34,0.22), rgba(23,54,77,0.18), rgba(17,105,102,0.22));"></div>${{markers}}</div><div style="display:flex;flex-wrap:wrap;gap:8px;">${{chips}}</div></div>`;
+    }};
+    const renderMarketLevelStrip = (series, unit = "") => {{
+      if (!series) {{
+        return "";
+      }}
+      const overlays = overlayRecordFromSeries(series);
+      const unitSuffix = unit ? ` ${{escapePreviewText(unit)}}` : "";
+      const signalHorizon = series.signal_horizon ? String(series.signal_horizon) : "";
+      const signalId = series.signal_id ? String(series.signal_id) : "";
+      const signalAttrs = `${{signalHorizon ? ` data-market-signal-horizon="${{escapePreviewText(signalHorizon)}}"` : ""}}${{signalId ? ` data-market-signal-id="${{escapePreviewText(signalId)}}"` : ""}}`;
+      const baseStyle = "display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:7px 8px;border-radius:10px;border:1px solid rgba(21,32,42,0.08);background:rgba(255,255,255,0.68);font-size:11px;color:#5c6970;";
+      if (
+        typeof overlays.entry !== "number"
+        || typeof overlays.target !== "number"
+        || typeof overlays.invalidation !== "number"
+        || typeof series.current_price !== "number"
+      ) {{
+        return `<div data-market-level-strip data-market-level-state="pending"${{signalAttrs}} style="${{baseStyle}}"><strong style="color:#15202a;">${{escapePreviewText(marketLevelCopy.pending || "Waiting for levels")}}</strong><span>${{escapePreviewText(marketLevelCopy.pending_detail || "")}}</span></div>`;
+      }}
+      const corridorLow = Math.min(overlays.invalidation, overlays.target);
+      const corridorHigh = Math.max(overlays.invalidation, overlays.target);
+      const points = [
+        {{ key: "entry", label: marketOverlayLabels.entry || "Entry", value: overlays.entry, color: "#17364d" }},
+        {{ key: "price", label: marketLevelCopy.price_short || "Price", value: series.current_price, color: "#15202a" }},
+        {{ key: "invalidation", label: marketPanelCopy.idea_change || marketOverlayLabels.invalidation || "Idea changes", value: overlays.invalidation, color: "#bb7122" }},
+        {{ key: "target", label: marketOverlayLabels.target || "Target", value: overlays.target, color: "#116966" }},
+      ];
+      const chips = points.map((point) => {{
+        return `<span data-market-level-chip data-level-key="${{escapePreviewText(point.key)}}" style="display:inline-flex;align-items:center;gap:6px;min-width:0;padding:5px 8px;border-radius:999px;background:rgba(255,255,255,0.88);border:1px solid rgba(21,32,42,0.08);white-space:nowrap;"><span style="width:8px;height:8px;border-radius:999px;background:${{point.color}};flex:0 0 auto;"></span><span>${{escapePreviewText(point.label)}} ${{formatPreviewPrice(point.value)}}${{unitSuffix}}</span></span>`;
+      }}).join("");
+      const horizonSuffix = signalHorizon ? ` ${{signalHorizon}}` : "";
+      const corridorText = `${{marketPanelCopy.idea_corridor || "Idea corridor"}}${{horizonSuffix}}: ${{formatPreviewPrice(corridorLow)}}-${{formatPreviewPrice(corridorHigh)}}${{unitSuffix}}`;
+      return `<div data-market-level-strip data-market-level-state="ready"${{signalAttrs}} style="${{baseStyle}}"><strong data-market-idea-corridor-summary style="color:#116966;">${{escapePreviewText(corridorText)}}</strong>${{chips}}</div>`;
     }};
     const renderMarketOhlcReadout = (point, unit = "", chartTitle = "") => {{
       if (!point) {{
@@ -10474,19 +10693,22 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot, *, language: str
             const tone = closeValue >= openValue ? "#2f7e57" : "#b44a3d";
             return `<line x1="${{x.toFixed(1)}}" y1="${{highY.toFixed(1)}}" x2="${{x.toFixed(1)}}" y2="${{lowY.toFixed(1)}}" stroke="${{tone}}" stroke-width="1.8" stroke-linecap="round"></line><rect x="${{(x - (bodyWidth / 2)).toFixed(1)}}" y="${{bodyTop.toFixed(1)}}" width="${{bodyWidth.toFixed(1)}}" height="${{bodyHeight.toFixed(1)}}" rx="2" fill="${{tone}}" fill-opacity="0.92"></rect>`;
           }}).join("");
+          const ideaCorridor = renderIdeaCorridor(series, mapPriceY, viewWidth, viewHeight);
           const overlays = Array.isArray(series.overlays) ? series.overlays.map((overlay) => {{
-            const style = marketOverlayStyle(overlay.key);
+            const key = String(overlay.key || "");
+            const style = marketOverlayStyle(key);
             const y = mapPriceY(overlay.value);
-            const label = escapePreviewText(marketOverlayLabels[overlay.key] || overlay.key);
-            return `<line x1="0" y1="${{y.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="${{style.stroke}}" stroke-width="1.2" stroke-dasharray="${{style.dasharray}}" opacity="0.95" data-market-overlay-line data-overlay-key="${{escapePreviewText(overlay.key)}}" style="cursor:pointer;"></line><line x1="0" y1="${{y.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="transparent" stroke-width="10" data-market-overlay-hit data-overlay-key="${{escapePreviewText(overlay.key)}}" style="cursor:pointer;"></line><text x="${{(viewWidth - 6).toFixed(1)}}" y="${{Math.max(12, Math.min(viewHeight - 4, y - 2)).toFixed(1)}}" text-anchor="end" fill="${{style.stroke}}" font-size="10" font-weight="700" data-market-overlay-label data-overlay-key="${{escapePreviewText(overlay.key)}}">${{label}}</text>`;
+            const label = escapePreviewText(key === "invalidation" ? (marketPanelCopy.idea_change || "Idea changes") : (marketOverlayLabels[key] || key));
+            const ideaChangeAttr = key === "invalidation" ? " data-market-idea-change-line" : "";
+            return `<line x1="0" y1="${{y.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="${{style.stroke}}" stroke-width="1.2" stroke-dasharray="${{style.dasharray}}" opacity="0.95" data-market-overlay-line data-overlay-key="${{escapePreviewText(key)}}"${{ideaChangeAttr}} style="cursor:pointer;"></line><line x1="0" y1="${{y.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="transparent" stroke-width="10" data-market-overlay-hit data-overlay-key="${{escapePreviewText(key)}}" style="cursor:pointer;"></line>`;
           }}).join("") : "";
           const baselineValue = points[0] && typeof points[0].open === "number" ? points[0].open : series.open_price;
           const currentPriceY = mapPriceY(series.current_price);
-          const currentLine = `<line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="#15202a" stroke-width="1.3" opacity="0.78" data-market-current-line></line><line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="transparent" stroke-width="10" data-market-current-hit data-market-snap-key="price"></line><circle cx="${{(viewWidth - 6).toFixed(1)}}" cy="${{currentPriceY.toFixed(1)}}" r="3.4" fill="#15202a"></circle><text x="6" y="${{Math.max(12, Math.min(viewHeight - 4, currentPriceY - 4)).toFixed(1)}}" fill="#15202a" font-size="10" font-weight="700">${{escapePreviewText(marketLevelCopy.price_short)}}</text>`;
+          const currentLine = `<line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="#15202a" stroke-width="1.3" opacity="0.78" data-market-current-line></line><line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="transparent" stroke-width="10" data-market-current-hit data-market-snap-key="price"></line><circle cx="${{(viewWidth - 6).toFixed(1)}}" cy="${{currentPriceY.toFixed(1)}}" r="3.4" fill="#15202a"></circle>`;
           const measureLayer = `<g data-market-measure-layer style="display:none;pointer-events:none;"><line x1="0" y1="0" x2="0" y2="0" stroke="#17364d" stroke-width="1.8" stroke-dasharray="5 4" opacity="0.92" data-market-measure-line></line><circle cx="0" cy="0" r="3.2" fill="#17364d" data-market-measure-start-dot></circle><circle cx="0" cy="0" r="3.2" fill="#17364d" data-market-measure-end-dot></circle><text x="0" y="0" text-anchor="middle" fill="#17364d" font-size="10" font-weight="800" data-market-measure-label></text></g>`;
           const crosshair = `<g data-market-crosshair-layer style="display:none;"><line x1="0" y1="0" x2="0" y2="${{viewHeight.toFixed(1)}}" stroke="rgba(21,32,42,0.22)" stroke-width="1" stroke-dasharray="3 3" data-market-crosshair-x></line><line x1="0" y1="0" x2="${{viewWidth.toFixed(1)}}" y2="0" stroke="rgba(21,32,42,0.18)" stroke-width="1" stroke-dasharray="3 3" data-market-crosshair-y></line><circle cx="0" cy="0" r="3.2" fill="#15202a" data-market-crosshair-dot></circle></g>`;
           return {{
-            markup: `<line x1="0" y1="${{mapPriceY(baselineValue).toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{mapPriceY(baselineValue).toFixed(1)}}" stroke="rgba(21,32,42,0.08)" stroke-width="1" stroke-dasharray="4 4"></line>${{overlays}}${{currentLine}}${{candles}}${{measureLayer}}${{crosshair}}`,
+            markup: `<line x1="0" y1="${{mapPriceY(baselineValue).toFixed(1)}}" x2="${{viewWidth.toFixed(1)}}" y2="${{mapPriceY(baselineValue).toFixed(1)}}" stroke="rgba(21,32,42,0.08)" stroke-width="1" stroke-dasharray="4 4"></line>${{ideaCorridor}}${{overlays}}${{currentLine}}${{candles}}${{measureLayer}}${{crosshair}}`,
             mapPriceY,
           }};
         }};
@@ -10984,17 +11206,23 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot, *, language: str
         const tone = point.close >= point.open ? "#2f7e57" : "#b44a3d";
         return `<line x1="${{x.toFixed(1)}}" y1="${{highY.toFixed(1)}}" x2="${{x.toFixed(1)}}" y2="${{lowY.toFixed(1)}}" stroke="${{tone}}" stroke-width="1.8" stroke-linecap="round"></line><rect x="${{(x - (bodyWidth / 2)).toFixed(1)}}" y="${{bodyTop.toFixed(1)}}" width="${{bodyWidth.toFixed(1)}}" height="${{bodyHeight.toFixed(1)}}" rx="2" fill="${{tone}}" fill-opacity="0.92"></rect>`;
       }}).join("");
+      const ideaCorridor = renderIdeaCorridor(series, mapPriceY, width, height);
       const overlays = Array.isArray(series.overlays) ? series.overlays.map((overlay) => {{
-        const style = marketOverlayStyle(overlay.key);
+        const key = String(overlay.key || "");
+        const style = marketOverlayStyle(key);
         const y = mapPriceY(overlay.value);
-        const label = escapePreviewText(marketOverlayLabels[overlay.key] || overlay.key);
-        return `<line x1="0" y1="${{y.toFixed(1)}}" x2="${{width.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="${{style.stroke}}" stroke-width="1.2" stroke-dasharray="${{style.dasharray}}" opacity="0.95"></line><text x="${{(width - 6).toFixed(1)}}" y="${{Math.max(12, Math.min(height - 4, y - 2)).toFixed(1)}}" text-anchor="end" fill="${{style.stroke}}" font-size="10" font-weight="700">${{label}}</text>`;
+        const label = escapePreviewText(key === "invalidation" ? (marketPanelCopy.idea_change || "Idea changes") : (marketOverlayLabels[key] || key));
+        const ideaChangeAttr = key === "invalidation" ? " data-market-idea-change-line" : "";
+        return `<line x1="0" y1="${{y.toFixed(1)}}" x2="${{width.toFixed(1)}}" y2="${{y.toFixed(1)}}" stroke="${{style.stroke}}" stroke-width="1.2" stroke-dasharray="${{style.dasharray}}" opacity="0.95" data-market-overlay-line data-overlay-key="${{escapePreviewText(key)}}"${{ideaChangeAttr}}></line>`;
       }}).join("") : "";
       const currentPriceY = mapPriceY(series.current_price);
-      const currentLine = `<line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{width.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="#15202a" stroke-width="1.3" opacity="0.78" data-market-current-line></line><circle cx="${{(width - 6).toFixed(1)}}" cy="${{currentPriceY.toFixed(1)}}" r="3.4" fill="#15202a"></circle><text x="6" y="${{Math.max(12, Math.min(height - 4, currentPriceY - 4)).toFixed(1)}}" fill="#15202a" font-size="10" font-weight="700">${{escapePreviewText(marketLevelCopy.price_short)}}</text>`;
-      return `<svg viewBox="0 0 220 92" preserveAspectRatio="none" style="width:100%;height:92px;border-radius:14px;background:linear-gradient(180deg, rgba(15,108,103,0.06), rgba(255,255,255,0.6));"><line x1="0" y1="${{mapPriceY(series.open_price).toFixed(1)}}" x2="${{width}}" y2="${{mapPriceY(series.open_price).toFixed(1)}}" stroke="rgba(21,32,42,0.08)" stroke-width="1" stroke-dasharray="4 4"></line>${{overlays}}${{currentLine}}${{candles}}</svg>`;
+      const currentLine = `<line x1="0" y1="${{currentPriceY.toFixed(1)}}" x2="${{width.toFixed(1)}}" y2="${{currentPriceY.toFixed(1)}}" stroke="#15202a" stroke-width="1.3" opacity="0.78" data-market-current-line></line><circle cx="${{(width - 6).toFixed(1)}}" cy="${{currentPriceY.toFixed(1)}}" r="3.4" fill="#15202a"></circle>`;
+      return `<svg viewBox="0 0 220 92" preserveAspectRatio="none" data-market-chart-svg style="width:100%;height:92px;border-radius:14px;background:linear-gradient(180deg, rgba(15,108,103,0.06), rgba(255,255,255,0.6));"><line x1="0" y1="${{mapPriceY(series.open_price).toFixed(1)}}" x2="${{width}}" y2="${{mapPriceY(series.open_price).toFixed(1)}}" stroke="rgba(21,32,42,0.08)" stroke-width="1" stroke-dasharray="4 4"></line>${{ideaCorridor}}${{overlays}}${{currentLine}}${{candles}}</svg>`;
     }};
-    const renderMarketPanelUnavailable = () => `<div class="panel-head"><h2>${{escapePreviewText(marketPanelCopy.title)}}</h2><p>${{escapePreviewText(marketPanelCopy.subtitle)}}</p></div><div class="metric-list" data-market-unavailable><article class="action-card tone-warning"><strong>${{escapePreviewText(marketPanelCopy.unavailable_title || marketPanelCopy.warning_title)}}</strong><p class="muted">${{escapePreviewText(marketPanelCopy.unavailable_body || marketPanelCopy.warning_body)}}</p></article></div>`;
+    const renderMarketPanelUnavailable = () => {{
+      const rootCode = liveMarketPanelNode ? liveMarketPanelNode.dataset.marketRootCode : "";
+      return `<div class="panel-head"><div><h2>${{escapePreviewText(marketPanelCopy.title)}}</h2><p>${{escapePreviewText(marketPanelCopy.subtitle)}}</p></div></div>${{renderMarketFullscreenAction(rootCode)}}<div class="metric-list" data-market-unavailable><article class="action-card tone-warning"><strong>${{escapePreviewText(marketPanelCopy.unavailable_title || marketPanelCopy.warning_title)}}</strong><p class="muted">${{escapePreviewText(marketPanelCopy.unavailable_body || marketPanelCopy.warning_body)}}</p></article></div>`;
+    }};
     const renderMarketPanelBody = (snapshot) => {{
       if (!snapshot) {{
         return renderMarketPanelUnavailable();
@@ -11009,9 +11237,10 @@ def _render_signal_workspace(snapshot: WorkspaceSignalSnapshot, *, language: str
         }}
         const overlaySummary = renderOverlaySummary(series, snapshot.unit);
         const distanceBar = buildMarketDistanceBar(series, snapshot.unit);
-        return `<article data-market-chart-card data-market-timeframe="${{escapePreviewText(series.label || "")}}" style="padding:14px 16px;border-radius:18px;border:1px solid rgba(21, 32, 42, 0.1);background:rgba(255,255,255,0.72);display:grid;gap:10px;"><div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;"><strong>${{escapePreviewText(series.label)}}</strong><span style="font-weight:700;color:${{series.change_abs >= 0 ? "#2f7e57" : "#b44a3d"}};">${{formatPreviewPrice(series.current_price)}}${{unitSuffix}}</span></div>${{renderMarketChart(series)}}<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#5c6970;"><span>${{escapePreviewText(series.points[0] ? series.points[0].label : series.label)}}</span><span>${{escapePreviewText(series.points[series.points.length - 1] ? series.points[series.points.length - 1].label : series.label)}}</span></div><p class="muted">${{escapePreviewText(marketPanelCopy.open)}} ${{formatPreviewPrice(series.open_price)}}${{unitSuffix}} | ${{escapePreviewText(marketPanelCopy.change)}} ${{series.change_abs >= 0 ? "+" : ""}}${{formatPreviewPrice(series.change_abs)}}${{unitSuffix}} (${{formatPreviewPct(series.change_pct)}})</p><p class="muted">${{escapePreviewText(marketPanelCopy.range)}} ${{formatPreviewPrice(series.low_price)}}${{unitSuffix}} - ${{formatPreviewPrice(series.high_price)}}${{unitSuffix}}</p>${{distanceBar}}${{overlaySummary ? `<p class="muted">${{escapePreviewText(marketPanelCopy.levels)}} ${{escapePreviewText(overlaySummary)}}</p>` : ""}}</article>`;
+        const levelStrip = renderMarketLevelStrip(series, snapshot.unit);
+        return `<article data-market-chart-card data-market-timeframe="${{escapePreviewText(series.label || "")}}" style="padding:14px 16px;border-radius:18px;border:1px solid rgba(21, 32, 42, 0.1);background:rgba(255,255,255,0.72);display:grid;gap:10px;"><div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;"><strong>${{escapePreviewText(series.label)}}</strong><span style="font-weight:700;color:${{series.change_abs >= 0 ? "#2f7e57" : "#b44a3d"}};">${{formatPreviewPrice(series.current_price)}}${{unitSuffix}}</span></div>${{levelStrip}}${{renderMarketChart(series)}}<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#5c6970;"><span>${{escapePreviewText(series.points[0] ? series.points[0].label : series.label)}}</span><span>${{escapePreviewText(series.points[series.points.length - 1] ? series.points[series.points.length - 1].label : series.label)}}</span></div><p class="muted">${{escapePreviewText(marketPanelCopy.open)}} ${{formatPreviewPrice(series.open_price)}}${{unitSuffix}} | ${{escapePreviewText(marketPanelCopy.change)}} ${{series.change_abs >= 0 ? "+" : ""}}${{formatPreviewPrice(series.change_abs)}}${{unitSuffix}} (${{formatPreviewPct(series.change_pct)}})</p><p class="muted">${{escapePreviewText(marketPanelCopy.range)}} ${{formatPreviewPrice(series.low_price)}}${{unitSuffix}} - ${{formatPreviewPrice(series.high_price)}}${{unitSuffix}}</p>${{distanceBar}}${{overlaySummary ? `<p class="muted">${{escapePreviewText(marketPanelCopy.levels)}} ${{escapePreviewText(overlaySummary)}}</p>` : ""}}</article>`;
       }};
-      return `<div class="panel-head"><h2>${{escapePreviewText(marketPanelCopy.title)}}</h2><p>${{escapePreviewText(marketPanelCopy.subtitle)}}</p></div>${{warning}}<div class="metric-list" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));"><article data-market-current-price><span>${{escapePreviewText(marketPanelCopy.current_price)}}</span><strong>${{formatPreviewPrice(snapshot.current_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.root_code)}} · ${{escapePreviewText(snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.daily_change)}}</span><strong>${{snapshot.price_change_abs >= 0 ? "+" : ""}}${{formatPreviewPrice(snapshot.price_change_abs)}}${{unitSuffix}}</strong><p class="muted">${{formatPreviewPct(snapshot.price_change_pct)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.day_high)}}</span><strong>${{formatPreviewPrice(snapshot.daily.high_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.daily.points[snapshot.daily.points.length - 1] ? snapshot.daily.points[snapshot.daily.points.length - 1].label : snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.day_low)}}</span><strong>${{formatPreviewPrice(snapshot.daily.low_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.daily.points[0] ? snapshot.daily.points[0].label : snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.updated)}}</span><strong>${{escapePreviewText(formatPreviewTime(snapshot.as_of))}}</strong><p class="muted">${{escapePreviewText(marketPanelCopy.status)}}: ${{escapePreviewText(snapshot.status || "n/a")}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.source)}}</span><strong>${{escapePreviewText(snapshot.price_source)}}</strong><p class="muted">${{escapePreviewText(snapshot.base_asset)}}</p></article></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:16px;">${{renderChartCard(snapshot.daily)}}${{renderChartCard(snapshot.weekly)}}${{renderChartCard(snapshot.monthly)}}</div>`;
+      return `<div class="panel-head"><div><h2>${{escapePreviewText(marketPanelCopy.title)}}</h2><p>${{escapePreviewText(marketPanelCopy.subtitle)}}</p></div></div>${{renderMarketFullscreenAction(snapshot.root_code)}}${{warning}}<div class="metric-list" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));"><article data-market-current-price><span>${{escapePreviewText(marketPanelCopy.current_price)}}</span><strong>${{formatPreviewPrice(snapshot.current_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.root_code)}} · ${{escapePreviewText(snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.daily_change)}}</span><strong>${{snapshot.price_change_abs >= 0 ? "+" : ""}}${{formatPreviewPrice(snapshot.price_change_abs)}}${{unitSuffix}}</strong><p class="muted">${{formatPreviewPct(snapshot.price_change_pct)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.day_high)}}</span><strong>${{formatPreviewPrice(snapshot.daily.high_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.daily.points[snapshot.daily.points.length - 1] ? snapshot.daily.points[snapshot.daily.points.length - 1].label : snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.day_low)}}</span><strong>${{formatPreviewPrice(snapshot.daily.low_price)}}${{unitSuffix}}</strong><p class="muted">${{escapePreviewText(snapshot.daily.points[0] ? snapshot.daily.points[0].label : snapshot.contract)}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.updated)}}</span><strong>${{escapePreviewText(formatPreviewTime(snapshot.as_of))}}</strong><p class="muted">${{escapePreviewText(marketPanelCopy.status)}}: ${{escapePreviewText(snapshot.status || "n/a")}}</p></article><article><span>${{escapePreviewText(marketPanelCopy.source)}}</span><strong>${{escapePreviewText(snapshot.price_source)}}</strong><p class="muted">${{escapePreviewText(snapshot.base_asset)}}</p></article></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:16px;">${{renderChartCard(snapshot.daily)}}${{renderChartCard(snapshot.weekly)}}${{renderChartCard(snapshot.monthly)}}</div>`;
     }};
     const syncMarketPanel = (snapshot) => {{
       if (!liveMarketPanelNode) {{

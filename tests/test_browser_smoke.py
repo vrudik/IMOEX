@@ -65,11 +65,15 @@ def test_browser_smoke_planned_checks_include_daily_workflow_and_chart_evidence(
 
     assert "workspace_morning_brief_visible" in checks
     assert "workspace_watchlist_workbench_visible" in checks
+    assert "workspace_readiness_next_steps_visible" in checks
+    assert "workspace_market_freshness_alerts_visible" in checks
     assert "workspace_root_switch" in checks
     assert "market_fixture_day_week_month_charts_visible" in checks
     assert "market_fixture_mobile_no_horizontal_overflow" in checks
 
     preflight_checks = _planned_checks(secondary_root=None, skip_chart_fixture=True)
     assert "workspace_watchlist_workbench_visible" in preflight_checks
+    assert "workspace_readiness_next_steps_visible" in preflight_checks
+    assert "workspace_market_freshness_alerts_visible" in preflight_checks
     assert "workspace_root_switch" not in preflight_checks
     assert "market_fixture_day_week_month_charts_visible" not in preflight_checks

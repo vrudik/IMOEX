@@ -10,6 +10,10 @@ PAGE_HINTS = {
         "ru": "Начните с сигнала в фокусе и ленты серий, затем проверьте пакет решения, календарь доставок и журнал.",
         "en": "Start with the focus signal and root lane, then review the decision pack, delivery calendar, and journal.",
     },
+    "market": {
+        "ru": "\u0421\u043d\u0430\u0447\u0430\u043b\u0430 \u0441\u0432\u0435\u0440\u044c\u0442\u0435 \u0446\u0435\u043d\u0443, \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a \u0438 \u0432\u0440\u0435\u043c\u044f, \u0437\u0430\u0442\u0435\u043c \u0441\u043c\u043e\u0442\u0440\u0438\u0442\u0435 \u0441\u0432\u0435\u0447\u0438, \u043b\u0438\u043d\u0438\u044e \u0438 \u0443\u0440\u043e\u0432\u043d\u0438 \u043f\u043e \u043a\u0430\u0436\u0434\u043e\u043c\u0443 \u043f\u0435\u0440\u0438\u043e\u0434\u0443.",
+        "en": "Check price, source, and timestamp first, then inspect candles, line, and levels for each timeframe.",
+    },
     "journal": {
         "ru": "Сначала используйте фильтры, затем смотрите ленту журнала и переходите в нужный сигнал из карточки записи.",
         "en": "Use the filters first, then scan the journal tape and jump into the relevant signal from an entry card.",

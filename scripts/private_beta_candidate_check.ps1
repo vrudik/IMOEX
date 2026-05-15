@@ -406,6 +406,11 @@ assert workspace_payload["morning_brief"]["signals_only"] is True, workspace_pay
 assert workspace_payload["watchlist_workbench"]["signals_only"] is True, workspace_payload
 assert workspace_payload["watchlist_workbench"]["total_items"] == len(workspace_payload["watchlist"]), workspace_payload
 assert workspace_payload["watchlist_workbench"]["next_step"], workspace_payload
+assert isinstance(workspace_payload["market_freshness_alerts"], list), workspace_payload
+assert all(item["signals_only"] is True for item in workspace_payload["market_freshness_alerts"]), workspace_payload
+assert workspace_payload["readiness_next_steps"]["signals_only"] is True, workspace_payload
+assert workspace_payload["readiness_next_steps"]["items"], workspace_payload
+assert workspace_payload["readiness_next_steps"]["next_step"], workspace_payload
 assert preview_payload["root"] == root, preview_payload
 assert isinstance(ops_preview_payload["alert_items"], list), ops_preview_payload
 print("[private-beta-candidate] API snapshots OK")
@@ -459,6 +464,10 @@ $summaryMarkdownPath = Join-Path $OutputDir "candidate-summary.md"
 $workspaceSummaryPayload = Get-Content -Path $workspaceSnapshotJson -Raw | ConvertFrom-Json
 $morningBriefPayload = Get-ObjectPropertyValue $workspaceSummaryPayload "morning_brief"
 $watchlistWorkbenchPayload = Get-ObjectPropertyValue $workspaceSummaryPayload "watchlist_workbench"
+$marketFreshnessAlertsValue = Get-ObjectPropertyValue $workspaceSummaryPayload "market_freshness_alerts" @()
+$readinessNextStepsPayload = Get-ObjectPropertyValue $workspaceSummaryPayload "readiness_next_steps"
+$marketFreshnessAlerts = @($marketFreshnessAlertsValue)
+$marketFreshnessAlertKeys = @($marketFreshnessAlerts | ForEach-Object { [string](Get-ObjectPropertyValue $_ "key" "") } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 $watchedRootsValue = Get-ObjectPropertyValue $watchlistWorkbenchPayload "watched_roots" @()
 $watchedRoots = @($watchedRootsValue | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 $firstDueWatchKey = [string](Get-ObjectPropertyValue $watchlistWorkbenchPayload "first_due_watch_key" "")
@@ -471,6 +480,9 @@ $firstDueLabel = if (-not [string]::IsNullOrWhiteSpace($firstDueSignalId)) {
 } else {
   "none"
 }
+$readinessItemsValue = Get-ObjectPropertyValue $readinessNextStepsPayload "items" @()
+$readinessItems = @($readinessItemsValue)
+$readinessItemKeys = @($readinessItems | ForEach-Object { [string](Get-ObjectPropertyValue $_ "key" "") } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 $dailyWorkflowSummary = [ordered]@{
   morning_brief = [ordered]@{
     signals_only = [bool](Get-ObjectPropertyValue $morningBriefPayload "signals_only" $false)
@@ -493,6 +505,18 @@ $dailyWorkflowSummary = [ordered]@{
     first_due_label = $firstDueLabel
     next_step = [string](Get-ObjectPropertyValue $watchlistWorkbenchPayload "next_step" "")
   }
+  market_freshness_alerts = [ordered]@{
+    alert_count = $marketFreshnessAlerts.Count
+    alert_keys = $marketFreshnessAlertKeys
+  }
+  readiness_next_steps = [ordered]@{
+    signals_only = [bool](Get-ObjectPropertyValue $readinessNextStepsPayload "signals_only" $false)
+    open_items = ConvertTo-SummaryInteger (Get-ObjectPropertyValue $readinessNextStepsPayload "open_items" 0)
+    ready_items = ConvertTo-SummaryInteger (Get-ObjectPropertyValue $readinessNextStepsPayload "ready_items" 0)
+    item_count = $readinessItems.Count
+    item_keys = $readinessItemKeys
+    next_step = [string](Get-ObjectPropertyValue $readinessNextStepsPayload "next_step" "")
+  }
 }
 
 $dailyWorkflowLines = @(
@@ -509,7 +533,13 @@ $dailyWorkflowLines = @(
   "- Today's Operating Queue reviewed today: $($dailyWorkflowSummary.todays_operating_queue.reviewed_today_items)",
   "- Today's Operating Queue watched roots: $(if ($watchedRoots.Count -gt 0) { $watchedRoots -join ', ' } else { 'none' })",
   "- Today's Operating Queue first due: $firstDueLabel",
-  "- Today's Operating Queue next step: $($dailyWorkflowSummary.todays_operating_queue.next_step)"
+  "- Today's Operating Queue next step: $($dailyWorkflowSummary.todays_operating_queue.next_step)",
+  "- Market freshness alerts: count=$($marketFreshnessAlerts.Count); keys=$(if ($marketFreshnessAlertKeys.Count -gt 0) { $marketFreshnessAlertKeys -join ', ' } else { 'none' })",
+  "- Readiness Next Steps signals-only: $($dailyWorkflowSummary.readiness_next_steps.signals_only)",
+  "- Readiness Next Steps open items: $($dailyWorkflowSummary.readiness_next_steps.open_items)",
+  "- Readiness Next Steps ready items: $($dailyWorkflowSummary.readiness_next_steps.ready_items)",
+  "- Readiness Next Steps item keys: $(if ($readinessItemKeys.Count -gt 0) { $readinessItemKeys -join ', ' } else { 'none' })",
+  "- Readiness Next Steps next step: $($dailyWorkflowSummary.readiness_next_steps.next_step)"
 )
 
 $initialAcceptancePrefillLines = @(
@@ -541,6 +571,8 @@ $initialAcceptancePrefillLines = @(
   "- Autotrading authorized: false",
   "- Morning Brief evidence: signals_only=$($dailyWorkflowSummary.morning_brief.signals_only); market_status=$($dailyWorkflowSummary.morning_brief.market_status); telegram_status=$($dailyWorkflowSummary.morning_brief.telegram_status); top_attention=$($dailyWorkflowSummary.morning_brief.top_attention_count); dont_chase=$($dailyWorkflowSummary.morning_brief.dont_chase_count)",
   "- Today's Operating Queue evidence: signals_only=$($dailyWorkflowSummary.todays_operating_queue.signals_only); total=$($dailyWorkflowSummary.todays_operating_queue.total_items); review_due=$($dailyWorkflowSummary.todays_operating_queue.review_due_items); reviewed_today=$($dailyWorkflowSummary.todays_operating_queue.reviewed_today_items); watched_roots=$(if ($watchedRoots.Count -gt 0) { $watchedRoots -join ', ' } else { 'none' }); first_due=$firstDueLabel; next_step=$($dailyWorkflowSummary.todays_operating_queue.next_step)",
+  "- Market freshness alerts evidence: count=$($marketFreshnessAlerts.Count); keys=$(if ($marketFreshnessAlertKeys.Count -gt 0) { $marketFreshnessAlertKeys -join ', ' } else { 'none' })",
+  "- Readiness Next Steps evidence: signals_only=$($dailyWorkflowSummary.readiness_next_steps.signals_only); open=$($dailyWorkflowSummary.readiness_next_steps.open_items); ready=$($dailyWorkflowSummary.readiness_next_steps.ready_items); keys=$(if ($readinessItemKeys.Count -gt 0) { $readinessItemKeys -join ', ' } else { 'none' }); next_step=$($dailyWorkflowSummary.readiness_next_steps.next_step)",
   "- Candidate summary Markdown: $summaryMarkdownPath",
   "- Candidate summary JSON: $summaryPath",
   "- Git status snapshot: $gitStatusPath",
@@ -664,6 +696,16 @@ if ($null -ne $validationPayload.failures) {
 $dailyWorkflowValidationPayload = Get-ObjectPropertyValue $validationPayload "daily_workflow_evidence"
 $morningBriefValidationPayload = Get-ObjectPropertyValue $dailyWorkflowValidationPayload "morning_brief"
 $watchlistValidationPayload = Get-ObjectPropertyValue $dailyWorkflowValidationPayload "todays_operating_queue"
+$readinessValidationPayload = Get-ObjectPropertyValue $dailyWorkflowValidationPayload "readiness_next_steps"
+$marketFreshnessValidationPayload = Get-ObjectPropertyValue $validationPayload "market_freshness_alerts"
+$marketFreshnessValidation = [ordered]@{
+  present = [bool](Get-ObjectPropertyValue $marketFreshnessValidationPayload "present" $false)
+  required = [bool](Get-ObjectPropertyValue $marketFreshnessValidationPayload "required" $false)
+  alert_count = ConvertTo-SummaryInteger (Get-ObjectPropertyValue $marketFreshnessValidationPayload "alert_count" 0)
+  required_keys_present = [bool](Get-ObjectPropertyValue $marketFreshnessValidationPayload "required_keys_present" $false)
+  signals_only = [bool](Get-ObjectPropertyValue $marketFreshnessValidationPayload "signals_only" $false)
+  guardrail_language_clear = [bool](Get-ObjectPropertyValue $marketFreshnessValidationPayload "guardrail_language_clear" $false)
+}
 $dailyWorkflowValidation = [ordered]@{
   morning_brief = [ordered]@{
     present = [bool](Get-ObjectPropertyValue $morningBriefValidationPayload "present" $false)
@@ -681,6 +723,16 @@ $dailyWorkflowValidation = [ordered]@{
     next_step_matches_state = [bool](Get-ObjectPropertyValue $watchlistValidationPayload "next_step_matches_state" $false)
     execution_language_clear = [bool](Get-ObjectPropertyValue $watchlistValidationPayload "execution_language_clear" $false)
   }
+  market_freshness_alerts = $marketFreshnessValidation
+  readiness_next_steps = [ordered]@{
+    present = [bool](Get-ObjectPropertyValue $readinessValidationPayload "present" $false)
+    signals_only = [bool](Get-ObjectPropertyValue $readinessValidationPayload "signals_only" $false)
+    required_items_present = [bool](Get-ObjectPropertyValue $readinessValidationPayload "required_items_present" $false)
+    counts_reconcile = [bool](Get-ObjectPropertyValue $readinessValidationPayload "counts_reconcile" $false)
+    status_values_valid = [bool](Get-ObjectPropertyValue $readinessValidationPayload "status_values_valid" $false)
+    market_data_truth_matches_snapshot = [bool](Get-ObjectPropertyValue $readinessValidationPayload "market_data_truth_matches_snapshot" $false)
+    guardrail_language_clear = [bool](Get-ObjectPropertyValue $readinessValidationPayload "guardrail_language_clear" $false)
+  }
 }
 
 $dailyWorkflowValidationLines = @(
@@ -697,7 +749,20 @@ $dailyWorkflowValidationLines = @(
   "- Today's Operating Queue counts reconcile: $($dailyWorkflowValidation.todays_operating_queue.counts_reconcile)",
   "- Today's Operating Queue first due matches watchlist: $($dailyWorkflowValidation.todays_operating_queue.first_due_matches_watchlist)",
   "- Today's Operating Queue next step matches state: $($dailyWorkflowValidation.todays_operating_queue.next_step_matches_state)",
-  "- Today's Operating Queue execution language clear: $($dailyWorkflowValidation.todays_operating_queue.execution_language_clear)"
+  "- Today's Operating Queue execution language clear: $($dailyWorkflowValidation.todays_operating_queue.execution_language_clear)",
+  "- Market freshness alerts present: $($marketFreshnessValidation.present)",
+  "- Market freshness alerts required: $($marketFreshnessValidation.required)",
+  "- Market freshness alerts count: $($marketFreshnessValidation.alert_count)",
+  "- Market freshness alerts required keys present: $($marketFreshnessValidation.required_keys_present)",
+  "- Market freshness alerts signals-only validated: $($marketFreshnessValidation.signals_only)",
+  "- Market freshness alerts guardrail language clear: $($marketFreshnessValidation.guardrail_language_clear)",
+  "- Readiness Next Steps present: $($dailyWorkflowValidation.readiness_next_steps.present)",
+  "- Readiness Next Steps signals-only validated: $($dailyWorkflowValidation.readiness_next_steps.signals_only)",
+  "- Readiness Next Steps required items present: $($dailyWorkflowValidation.readiness_next_steps.required_items_present)",
+  "- Readiness Next Steps counts reconcile: $($dailyWorkflowValidation.readiness_next_steps.counts_reconcile)",
+  "- Readiness Next Steps statuses valid: $($dailyWorkflowValidation.readiness_next_steps.status_values_valid)",
+  "- Readiness Next Steps market truth matches snapshot: $($dailyWorkflowValidation.readiness_next_steps.market_data_truth_matches_snapshot)",
+  "- Readiness Next Steps guardrail language clear: $($dailyWorkflowValidation.readiness_next_steps.guardrail_language_clear)"
 )
 
 $candidateReviewStatus = if ($validationFailures.Count -gt 0) {
@@ -808,6 +873,8 @@ $acceptanceFinalStatusLines = @(
   "- Validation failures: $($validationFailures.Count)",
   "- Morning Brief evidence: signals_only=$($dailyWorkflowSummary.morning_brief.signals_only); market_status=$($dailyWorkflowSummary.morning_brief.market_status); telegram_status=$($dailyWorkflowSummary.morning_brief.telegram_status); top_attention=$($dailyWorkflowSummary.morning_brief.top_attention_count); dont_chase=$($dailyWorkflowSummary.morning_brief.dont_chase_count)",
   "- Today's Operating Queue evidence: signals_only=$($dailyWorkflowSummary.todays_operating_queue.signals_only); total=$($dailyWorkflowSummary.todays_operating_queue.total_items); review_due=$($dailyWorkflowSummary.todays_operating_queue.review_due_items); reviewed_today=$($dailyWorkflowSummary.todays_operating_queue.reviewed_today_items); watched_roots=$(if ($watchedRoots.Count -gt 0) { $watchedRoots -join ', ' } else { 'none' }); first_due=$firstDueLabel; next_step=$($dailyWorkflowSummary.todays_operating_queue.next_step)",
+  "- Market freshness alerts evidence: count=$($marketFreshnessAlerts.Count); keys=$(if ($marketFreshnessAlertKeys.Count -gt 0) { $marketFreshnessAlertKeys -join ', ' } else { 'none' })",
+  "- Readiness Next Steps evidence: signals_only=$($dailyWorkflowSummary.readiness_next_steps.signals_only); open=$($dailyWorkflowSummary.readiness_next_steps.open_items); ready=$($dailyWorkflowSummary.readiness_next_steps.ready_items); keys=$(if ($readinessItemKeys.Count -gt 0) { $readinessItemKeys -join ', ' } else { 'none' }); next_step=$($dailyWorkflowSummary.readiness_next_steps.next_step)",
   "- Candidate summary Markdown: $summaryMarkdownPath",
   "- Candidate summary JSON: $summaryPath",
   "- Git status snapshot: $gitStatusPath",

@@ -211,6 +211,8 @@ def _workspace_smoke(page, *, base_url: str, root: str, secondary_root: str | No
     page.wait_for_selector("[data-watchlist-workbench]", timeout=timeout_ms)
     page.wait_for_selector("[data-watchlist-workbench-summary]", timeout=timeout_ms)
     page.wait_for_selector("[data-watchlist-filters]", timeout=timeout_ms)
+    page.wait_for_selector("[data-readiness-next-steps]", timeout=timeout_ms)
+    page.wait_for_selector("[data-readiness-gap]", timeout=timeout_ms)
     page.wait_for_function(
         """() => {
           const brief = document.querySelector("[data-morning-brief]");
@@ -232,8 +234,37 @@ def _workspace_smoke(page, *, base_url: str, root: str, secondary_root: str | No
         }""",
         timeout=timeout_ms,
     )
+    page.wait_for_function(
+        """() => {
+          const readiness = document.querySelector("[data-readiness-next-steps]");
+          const gaps = document.querySelectorAll("[data-readiness-gap]");
+          return readiness
+            && gaps.length >= 4
+            && readiness.textContent.includes("signals-only")
+            && !/pricing|private-beta launch|production deployment|order routing|autotrading|broker execution/i.test(readiness.textContent);
+        }""",
+        timeout=timeout_ms,
+    )
     page.wait_for_selector("[data-compare-board]", timeout=timeout_ms)
     page.wait_for_selector("[data-market-unavailable]", timeout=timeout_ms)
+    page.wait_for_selector("[data-market-freshness-alerts]", timeout=timeout_ms)
+    page.wait_for_selector(
+        '[data-market-freshness-alert][data-market-freshness-key="market_data_hidden"]',
+        timeout=timeout_ms,
+    )
+    page.wait_for_function(
+        """() => {
+          const panel = document.querySelector("[data-market-freshness-alerts]");
+          const alert = document.querySelector('[data-market-freshness-alert][data-market-freshness-key="market_data_hidden"]');
+          const link = alert ? alert.querySelector('a[href^="/api/v1/health/product-readiness"]') : null;
+          return panel
+            && alert
+            && link
+            && alert.textContent.includes("signals-only")
+            && !/pricing|private-beta launch|production deployment|order routing|autotrading|broker execution/i.test(panel.textContent);
+        }""",
+        timeout=timeout_ms,
+    )
     if secondary_root:
         _workspace_root_switch_smoke(page, secondary_root=secondary_root, timeout_ms=timeout_ms)
     signal_link = page.locator('a[href^="/workspace/signals/"]').first
@@ -275,6 +306,8 @@ def _planned_checks(*, secondary_root: str | None, skip_chart_fixture: bool) -> 
         "workspace_opened",
         "workspace_morning_brief_visible",
         "workspace_watchlist_workbench_visible",
+        "workspace_readiness_next_steps_visible",
+        "workspace_market_freshness_alerts_visible",
         "market_unavailable_state_visible",
         "signal_detail_opened",
         "runtime_admin_key_save_clear",

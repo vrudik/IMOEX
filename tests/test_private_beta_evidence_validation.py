@@ -12,6 +12,8 @@ REQUIRED_BROWSER_CHECKS = [
     "workspace_opened",
     "workspace_morning_brief_visible",
     "workspace_watchlist_workbench_visible",
+    "workspace_readiness_next_steps_visible",
+    "workspace_market_freshness_alerts_visible",
     "runtime_admin_key_save_clear",
     "runtime_prompt_diff",
     "runtime_prompt_draft_saved",
@@ -104,6 +106,8 @@ def _manifest(
             "- Workspace trust ribbon checked: pass",
             "- Morning Command Brief checked: pass",
             "- Today's Operating Queue checked: pass",
+            "- Readiness Next Steps checked: pass",
+            "- Market freshness alerts checked: pass",
             "- Current price and day/week/month charts checked: pass",
             "- Root switch checked: pass",
             "- Signal detail checked: pass",
@@ -176,6 +180,58 @@ def _manifest(
                         "first_due_signal_id": None,
                         "first_due_focus_reason": "Root follow-up",
                         "next_step": "Open the root lane after the Morning Brief, compare current candidates, then mark reviewed.",
+                    },
+                    "market_freshness_alerts": [
+                        {
+                            "key": "market_data_hidden",
+                            "root_code": "Si",
+                            "status": "hidden",
+                            "title": "Market data is hidden",
+                            "detail": "Selected root has no traceable quote and chart snapshot.",
+                            "href": "/api/v1/health/product-readiness?root=Si",
+                            "tone": "warning",
+                            "signals_only": True,
+                        }
+                    ],
+                    "readiness_next_steps": {
+                        "signals_only": True,
+                        "open_items": 3,
+                        "ready_items": 1,
+                        "items": [
+                            {
+                                "key": "market_data_truth",
+                                "title": "Market data is hidden",
+                                "detail": "Prices and charts stay hidden until a traceable feed is available.",
+                                "href": "/api/v1/health/product-readiness?root=Si",
+                                "status": "blocked",
+                                "tone": "warning",
+                            },
+                            {
+                                "key": "telegram_mode",
+                                "title": "Telegram remains preview-only",
+                                "detail": "Preview evidence is available.",
+                                "href": "/api/v1/notifications/telegram/preview?root=Si",
+                                "status": "review",
+                                "tone": "neutral",
+                            },
+                            {
+                                "key": "daily_review",
+                                "title": "Daily queue still needs review",
+                                "detail": "One item needs review.",
+                                "href": "/workspace?root=Si",
+                                "status": "open",
+                                "tone": "warning",
+                            },
+                            {
+                                "key": "delivery_reason_trails",
+                                "title": "Delivery reason trails exist",
+                                "detail": "Recent delivery activity can be reviewed.",
+                                "href": "/workspace/delivery-history?root=Si",
+                                "status": "ready",
+                                "tone": "positive",
+                            },
+                        ],
+                        "next_step": "Close the open readiness items, then update release notes with evidence paths.",
                     },
                 },
             ),
@@ -365,6 +421,30 @@ def test_private_beta_evidence_validator_passes_complete_manifest(tmp_path: Path
     assert daily_workflow["todays_operating_queue"]["first_due_matches_watchlist"] is True
     assert daily_workflow["todays_operating_queue"]["next_step_matches_state"] is True
     assert daily_workflow["todays_operating_queue"]["execution_language_clear"] is True
+    assert daily_workflow["readiness_next_steps"]["present"] is True
+    assert daily_workflow["readiness_next_steps"]["signals_only"] is True
+    assert daily_workflow["readiness_next_steps"]["open_items"] == 3
+    assert daily_workflow["readiness_next_steps"]["ready_items"] == 1
+    assert daily_workflow["readiness_next_steps"]["item_count"] == 4
+    assert set(daily_workflow["readiness_next_steps"]["item_keys"]) == {
+        "market_data_truth",
+        "telegram_mode",
+        "daily_review",
+        "delivery_reason_trails",
+    }
+    assert daily_workflow["readiness_next_steps"]["required_items_present"] is True
+    assert daily_workflow["readiness_next_steps"]["counts_reconcile"] is True
+    assert daily_workflow["readiness_next_steps"]["status_values_valid"] is True
+    assert daily_workflow["readiness_next_steps"]["market_data_truth_matches_snapshot"] is True
+    assert daily_workflow["readiness_next_steps"]["guardrail_language_clear"] is True
+    market_alerts = payload["market_freshness_alerts"]
+    assert market_alerts["present"] is True
+    assert market_alerts["required"] is True
+    assert market_alerts["alert_count"] == 1
+    assert market_alerts["keys"] == ["market_data_hidden"]
+    assert market_alerts["required_keys_present"] is True
+    assert market_alerts["signals_only"] is True
+    assert market_alerts["guardrail_language_clear"] is True
 
 
 def test_private_beta_candidate_wrapper_blocks_full_run_without_prepared_release_notes(tmp_path: Path) -> None:
@@ -634,6 +714,98 @@ def test_private_beta_evidence_validator_blocks_incomplete_watchlist_workbench(t
     assert "workspace_snapshot_watchlist_workbench_next_step_missing" in failure_codes
 
 
+def test_private_beta_evidence_validator_blocks_incomplete_readiness_next_steps(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "workspace_snapshot":
+            workspace_snapshot = json.loads(Path(artifact["path"]).read_text(encoding="utf-8"))
+            workspace_snapshot["readiness_next_steps"] = {
+                "signals_only": False,
+                "open_items": 1,
+                "ready_items": 1,
+                "items": [
+                    {
+                        "key": "market_data_truth",
+                        "status": "synthetic",
+                        "title": "Market data",
+                        "detail": "Approve pricing and private-beta launch.",
+                        "href": "/workspace",
+                    }
+                ],
+                "next_step": "",
+            }
+            Path(artifact["path"]).write_text(json.dumps(workspace_snapshot), encoding="utf-8")
+            break
+    output = tmp_path / "validation-readiness-next-steps-failed.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    failure_codes = {item["code"] for item in payload["failures"]}
+    assert "workspace_snapshot_readiness_next_steps_not_signals_only" in failure_codes
+    assert "workspace_snapshot_readiness_next_steps_required_items_missing" in failure_codes
+    assert "workspace_snapshot_readiness_next_steps_status_invalid" in failure_codes
+    assert "workspace_snapshot_readiness_next_steps_counts_mismatch" in failure_codes
+    assert "workspace_snapshot_readiness_next_steps_market_truth_mismatch" in failure_codes
+    assert "workspace_snapshot_readiness_next_steps_next_step_missing" in failure_codes
+    assert "workspace_snapshot_readiness_next_steps_guardrail_language" in failure_codes
+
+
+def test_private_beta_evidence_validator_requires_market_freshness_alerts_for_hidden_market_data(
+    tmp_path: Path,
+) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "workspace_snapshot":
+            workspace_snapshot = json.loads(Path(artifact["path"]).read_text(encoding="utf-8"))
+            workspace_snapshot["market_freshness_alerts"] = []
+            Path(artifact["path"]).write_text(json.dumps(workspace_snapshot), encoding="utf-8")
+            break
+    output = tmp_path / "validation-market-freshness-alerts-missing.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    failure_codes = {item["code"] for item in payload["failures"]}
+    assert "workspace_snapshot_market_freshness_alerts_required" in failure_codes
+    assert "workspace_snapshot_market_freshness_alerts_required_keys_missing" in failure_codes
+
+
+def test_private_beta_evidence_validator_blocks_unsafe_market_freshness_alerts(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    for artifact in manifest_payload["artifacts"]:
+        if artifact["key"] == "workspace_snapshot":
+            workspace_snapshot = json.loads(Path(artifact["path"]).read_text(encoding="utf-8"))
+            workspace_snapshot["market_freshness_alerts"] = [
+                {
+                    "key": "market_data_hidden",
+                    "root_code": "Si",
+                    "status": "hidden",
+                    "title": "Market data",
+                    "detail": "Approve pricing and private-beta launch.",
+                    "href": "/api/v1/health/product-readiness?root=Si",
+                    "signals_only": False,
+                }
+            ]
+            Path(artifact["path"]).write_text(json.dumps(workspace_snapshot), encoding="utf-8")
+            break
+    output = tmp_path / "validation-market-freshness-alerts-unsafe.json"
+
+    result = _run_validator(manifest, output)
+
+    assert result.returncode != 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    failure_codes = {item["code"] for item in payload["failures"]}
+    assert "workspace_snapshot_market_freshness_alerts_not_signals_only" in failure_codes
+    assert "workspace_snapshot_market_freshness_alerts_guardrail_language" in failure_codes
+
+
 def test_private_beta_evidence_validator_requires_watchlist_workbench_total_to_match_watchlist(
     tmp_path: Path,
 ) -> None:
@@ -761,6 +933,7 @@ def test_private_beta_evidence_validator_blocks_execution_language_in_workspace_
             ]
             workspace_snapshot["morning_brief"]["dont_chase"] = ["No broker execution shortcut is available."]
             workspace_snapshot["watchlist_workbench"]["next_step"] = "Start autotrading after review."
+            workspace_snapshot["readiness_next_steps"]["next_step"] = "Approve pricing and private-beta launch."
             Path(artifact["path"]).write_text(json.dumps(workspace_snapshot), encoding="utf-8")
             break
     output = tmp_path / "validation-workspace-execution-language-failed.json"
@@ -773,6 +946,7 @@ def test_private_beta_evidence_validator_blocks_execution_language_in_workspace_
     failure_codes = {item["code"] for item in payload["failures"]}
     assert "workspace_snapshot_morning_brief_execution_language" in failure_codes
     assert "workspace_snapshot_watchlist_workbench_execution_language" in failure_codes
+    assert "workspace_snapshot_readiness_next_steps_guardrail_language" in failure_codes
 
 
 def test_private_beta_evidence_validator_blocks_nested_execution_flags_in_workspace_snapshot(
@@ -787,6 +961,7 @@ def test_private_beta_evidence_validator_blocks_nested_execution_flags_in_worksp
             workspace_snapshot["watchlist_workbench"]["items"] = [
                 {"watch_key": "default:Si:root", "order_routing_authorized": False}
             ]
+            workspace_snapshot["readiness_next_steps"]["autotrading_authorized"] = False
             Path(artifact["path"]).write_text(json.dumps(workspace_snapshot), encoding="utf-8")
             break
     output = tmp_path / "validation-workspace-execution-flags-failed.json"
@@ -797,10 +972,11 @@ def test_private_beta_evidence_validator_blocks_nested_execution_flags_in_worksp
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["status"] == "fail"
     failures = [item for item in payload["failures"] if item["code"] == "workspace_snapshot_forbidden_execution_flag"]
-    assert len(failures) == 2
+    assert len(failures) == 3
     failure_messages = {item["message"] for item in failures}
     assert any("$.morning_brief.autotrading_authorized" in message for message in failure_messages)
     assert any("$.watchlist_workbench.items" in message for message in failure_messages)
+    assert any("$.readiness_next_steps.autotrading_authorized" in message for message in failure_messages)
 
 
 def test_private_beta_evidence_validator_blocks_incomplete_telegram_ops_preview(tmp_path: Path) -> None:

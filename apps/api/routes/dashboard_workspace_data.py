@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from fastapi import HTTPException
 
 from apps.api.routes.dashboard_delivery_data import build_delivery_activity_snapshot, build_delivery_windows
 from libs.bootstrap.container import get_app_container
 from libs.dashboard.contracts import (
+    MarketFreshnessAlert,
     MorningBriefItem,
     MorningBriefSnapshot,
+    ReadinessNextStepItem,
+    ReadinessNextStepsSnapshot,
     WatchlistWorkbenchSnapshot,
     WorkspaceSignalSnapshot,
     WorkspaceSnapshot,
@@ -47,8 +52,14 @@ def build_workspace_snapshot(
         update={
             "telegram_preview_message": preview.message,
             "telegram_delivery_ready": telegram_delivery_ready,
+            "market_freshness_alerts": build_market_freshness_alerts(snapshot),
             "morning_brief": build_morning_brief(snapshot, telegram_delivery_ready=telegram_delivery_ready),
             "watchlist_workbench": build_watchlist_workbench(snapshot),
+            "readiness_next_steps": build_readiness_next_steps(
+                snapshot,
+                telegram_delivery_ready=telegram_delivery_ready,
+                delivery_activity=delivery_activity,
+            ),
             "delivery_windows": build_delivery_windows(selected_root=snapshot.selected_root),
             "delivery_activity": delivery_activity,
             "delivery_activity_filters": delivery_activity_filters,
@@ -58,6 +69,215 @@ def build_workspace_snapshot(
             "delivery_activity_pagination": delivery_activity_pagination,
         },
         deep=True,
+    )
+
+
+def build_market_freshness_alerts(snapshot: WorkspaceSnapshot) -> list[MarketFreshnessAlert]:
+    root_param = quote(snapshot.selected_root, safe="")
+    alerts: list[MarketFreshnessAlert] = []
+
+    def add_alert(
+        key: str,
+        status: str,
+        title: str,
+        detail: str,
+        href: str,
+        *,
+        tone: str = "warning",
+    ) -> None:
+        alerts.append(
+            MarketFreshnessAlert(
+                key=key,
+                root_code=snapshot.selected_root,
+                status=status,
+                title=title,
+                detail=detail,
+                href=href,
+                tone=tone,
+                signals_only=True,
+            )
+        )
+
+    market_snapshot = snapshot.market_snapshot
+    if market_snapshot is None:
+        availability = getattr(snapshot, "market_availability", None)
+        detail = (
+            getattr(availability, "detail", None)
+            or "Selected root has no traceable quote and chart snapshot; prices and charts stay hidden."
+        )
+        status = getattr(availability, "status", None) or "hidden"
+        add_alert(
+            "market_data_hidden",
+            str(status),
+            "Market data is hidden",
+            str(detail),
+            f"/api/v1/health/product-readiness?root={root_param}",
+        )
+    else:
+        market_status = str(market_snapshot.status or "unknown").lower()
+        if market_status not in {"fresh", "live"}:
+            detail = market_snapshot.status_detail or "Review product-readiness before relying on this setup."
+            add_alert(
+                "market_data_not_fresh",
+                market_status,
+                f"Market data is {market_status}",
+                f"{market_status}: {detail}",
+                f"/api/v1/health/product-readiness?root={root_param}",
+            )
+
+    data_mode = str(getattr(snapshot.control_panel, "data_mode", "") or "").lower()
+    if data_mode == "degraded_feed":
+        detail = (
+            getattr(snapshot.control_panel, "data_mode_detail", None)
+            or "Primary price source is degraded or unavailable."
+        )
+        add_alert(
+            "runtime_data_mode_degraded",
+            "degraded_feed",
+            "Runtime feed posture is degraded",
+            str(detail),
+            f"/workspace/runtime?root={root_param}",
+        )
+
+    return alerts
+
+
+def build_readiness_next_steps(
+    snapshot: WorkspaceSnapshot,
+    *,
+    telegram_delivery_ready: bool,
+    delivery_activity: list[object],
+) -> ReadinessNextStepsSnapshot:
+    root_param = quote(snapshot.selected_root, safe="")
+    items: list[ReadinessNextStepItem] = []
+
+    def add_item(
+        key: str,
+        title: str,
+        detail: str,
+        href: str,
+        *,
+        status: str = "review",
+        tone: str = "neutral",
+    ) -> None:
+        items.append(
+            ReadinessNextStepItem(
+                key=key,
+                title=title,
+                detail=detail,
+                href=href,
+                status=status,
+                tone=tone,
+            )
+        )
+
+    market_snapshot = snapshot.market_snapshot
+    if market_snapshot is None:
+        availability = getattr(snapshot, "market_availability", None)
+        detail = (
+            getattr(availability, "detail", None)
+            or "Prices and charts stay hidden until a traceable feed is available for this environment."
+        )
+        add_item(
+            "market_data_truth",
+            "Market data is hidden",
+            str(detail),
+            f"/api/v1/health/product-readiness?root={root_param}",
+            status="blocked",
+            tone="warning",
+        )
+    else:
+        market_status = str(market_snapshot.status or "unknown").lower()
+        if market_status in {"fresh", "live"}:
+            add_item(
+                "market_data_truth",
+                "Market data is traceable",
+                "Current price and charts are visible with a truthful feed status.",
+                f"/api/v1/health/product-readiness?root={root_param}",
+                status="ready",
+                tone="positive",
+            )
+        else:
+            detail = market_snapshot.status_detail or "Review product-readiness before accepting this evidence."
+            add_item(
+                "market_data_truth",
+                "Market data needs review",
+                f"{market_status}: {detail}",
+                f"/api/v1/health/product-readiness?root={root_param}",
+                status="review",
+                tone="warning",
+            )
+
+    if telegram_delivery_ready:
+        add_item(
+            "telegram_mode",
+            "Telegram delivery is configured",
+            "Keep preview evidence attached and confirm the chosen mode in release notes.",
+            f"/api/v1/notifications/telegram/preview?root={root_param}",
+            status="ready",
+            tone="positive",
+        )
+    else:
+        add_item(
+            "telegram_mode",
+            "Telegram remains preview-only",
+            "Preview evidence is available; enable delivery only by explicit operator decision.",
+            f"/api/v1/notifications/telegram/preview?root={root_param}",
+            status="review",
+            tone="neutral",
+        )
+
+    if snapshot.review_bundle.review_due_items > 0:
+        add_item(
+            "daily_review",
+            "Daily queue still needs review",
+            f"{snapshot.review_bundle.review_due_items} watchlist item(s) need review before final notes are prepared.",
+            f"/workspace?root={root_param}",
+            status="open",
+            tone="warning",
+        )
+    else:
+        add_item(
+            "daily_review",
+            "Daily queue is reviewed",
+            "Today's Operating Queue has no overdue review items.",
+            f"/workspace?root={root_param}",
+            status="ready",
+            tone="positive",
+        )
+
+    if delivery_activity:
+        add_item(
+            "delivery_reason_trails",
+            "Delivery reason trails exist",
+            "Recent delivery activity can be reviewed with send, skip, suppress, or dry-run reasons.",
+            f"/workspace/delivery-history?root={root_param}",
+            status="ready",
+            tone="positive",
+        )
+    else:
+        add_item(
+            "delivery_reason_trails",
+            "Delivery reason trails are empty",
+            "Archive preview, dry-run, skip, or suppression evidence before acceptance review.",
+            f"/workspace/delivery-history?root={root_param}",
+            status="review",
+            tone="neutral",
+        )
+
+    open_items = sum(1 for item in items if item.status != "ready")
+    ready_items = len(items) - open_items
+    next_step = (
+        "Close the open readiness items, then update release notes with evidence paths."
+        if open_items
+        else "Review evidence paths in release notes before any private-beta decision."
+    )
+    return ReadinessNextStepsSnapshot(
+        open_items=open_items,
+        ready_items=ready_items,
+        items=items,
+        next_step=next_step,
+        signals_only=True,
     )
 
 
@@ -96,7 +316,8 @@ def build_watchlist_workbench(snapshot: WorkspaceSnapshot) -> WatchlistWorkbench
 def build_morning_brief(snapshot: WorkspaceSnapshot, *, telegram_delivery_ready: bool) -> MorningBriefSnapshot:
     market_snapshot = snapshot.market_snapshot
     market_status = market_snapshot.status if market_snapshot is not None else "hidden"
-    market_detail = None
+    availability = getattr(snapshot, "market_availability", None)
+    market_detail = getattr(availability, "detail", None) if market_snapshot is None else None
     last_price = None
     price_unit = None
     if market_snapshot is not None:

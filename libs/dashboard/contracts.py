@@ -225,6 +225,17 @@ class AttentionInboxItem(BaseModel):
     href: str
 
 
+class MarketFreshnessAlert(BaseModel):
+    key: str
+    root_code: str
+    status: str
+    title: str
+    detail: str
+    href: str
+    tone: str = "warning"
+    signals_only: bool = True
+
+
 class MorningBriefItem(BaseModel):
     title: str
     detail: str
@@ -259,6 +270,23 @@ class WatchlistWorkbenchSnapshot(BaseModel):
     first_due_signal_id: str | None = None
     first_due_focus_reason: str | None = None
     next_step: str = "No watchlist items are queued yet."
+    signals_only: bool = True
+
+
+class ReadinessNextStepItem(BaseModel):
+    key: str
+    title: str
+    detail: str
+    href: str
+    status: str = "review"
+    tone: str = "neutral"
+
+
+class ReadinessNextStepsSnapshot(BaseModel):
+    open_items: int = Field(default=0, ge=0)
+    ready_items: int = Field(default=0, ge=0)
+    items: list[ReadinessNextStepItem] = Field(default_factory=list)
+    next_step: str = "Review readiness evidence before any private-beta decision."
     signals_only: bool = True
 
 
@@ -486,6 +514,9 @@ class InstrumentChartSeries(BaseModel):
     low_price: float
     change_abs: float
     change_pct: float
+    signal_id: str | None = None
+    signal_horizon: str | None = None
+    signal_summary: str | None = None
     overlays: list[InstrumentChartOverlay] = Field(default_factory=list)
 
 
@@ -506,6 +537,18 @@ class InstrumentMarketSnapshot(BaseModel):
     monthly: InstrumentChartSeries
 
 
+class MarketAvailabilitySnapshot(BaseModel):
+    status: str = "hidden"
+    reason_code: str = "no_traceable_snapshot"
+    detail: str
+    checked_at: datetime
+    session_type: SessionType | None = None
+    session_start_at: datetime | None = None
+    session_end_at: datetime | None = None
+    rule_set: str | None = None
+    missing_timeframes: list[str] = Field(default_factory=list)
+
+
 class WorkspaceSnapshot(BaseModel):
     generated_at: datetime
     selected_root: str
@@ -513,6 +556,7 @@ class WorkspaceSnapshot(BaseModel):
     roots: list[RootSeriesSummary] = Field(default_factory=list)
     pulses: list[WorkspaceRootPulse] = Field(default_factory=list)
     market_snapshot: InstrumentMarketSnapshot | None = None
+    market_availability: MarketAvailabilitySnapshot | None = None
     signal_lane: list[FinalSignalCard] = Field(default_factory=list)
     focus_signal: FinalSignalDetail | None = None
     root_details: RootDeepDive | None = None
@@ -525,8 +569,10 @@ class WorkspaceSnapshot(BaseModel):
     workspace_mode: str = "scan"
     watchlist: list[WatchlistEntry] = Field(default_factory=list)
     attention_inbox: list[AttentionInboxItem] = Field(default_factory=list)
+    market_freshness_alerts: list[MarketFreshnessAlert] = Field(default_factory=list)
     morning_brief: MorningBriefSnapshot = Field(default_factory=MorningBriefSnapshot)
     watchlist_workbench: WatchlistWorkbenchSnapshot = Field(default_factory=WatchlistWorkbenchSnapshot)
+    readiness_next_steps: ReadinessNextStepsSnapshot = Field(default_factory=ReadinessNextStepsSnapshot)
     comparison: HorizonComparisonSnapshot | None = None
     action_items: list[WorkspaceActionItem] = Field(default_factory=list)
     delivery_windows: list[NotificationDeliveryWindow] = Field(default_factory=list)
@@ -555,6 +601,7 @@ class WorkspaceSignalSnapshot(BaseModel):
     roots: list[RootSeriesSummary] = Field(default_factory=list)
     root_details: RootDeepDive | None = None
     market_snapshot: InstrumentMarketSnapshot | None = None
+    market_availability: MarketAvailabilitySnapshot | None = None
     related_signals: list[FinalSignalCard] = Field(default_factory=list)
     evaluation: EvaluationSummary
     control_panel: RuntimeControlPanel

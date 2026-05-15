@@ -9,6 +9,7 @@ from libs.dashboard.contracts import (
     AttentionInboxItem,
     DashboardKpi,
     MarketDataFeedStatus,
+    MarketAvailabilitySnapshot,
     ModelRoleAssignment,
     DashboardQualityPair,
     DashboardSnapshot,
@@ -43,7 +44,7 @@ from libs.dashboard.contracts import (
     WorkspaceRootPulse,
     WorkspaceSnapshot,
 )
-from libs.domain.contracts import EvaluationSummary, FinalSignalCard, FinalSignalDetail, JournalEntryKind, SignalStatus
+from libs.domain.contracts import EvaluationSummary, FinalSignalCard, FinalSignalDetail, JournalEntryKind, SessionType, SignalStatus
 from libs.domain.repository import SqlAlchemyContractMasterRepository
 from libs.domain.service import ContractMasterService, get_contract_master_service
 from libs.evaluation.service import EvaluationService
@@ -57,6 +58,12 @@ from libs.utils.db import get_session_factory
 
 
 class DashboardService:
+    MARKET_TIMEFRAME_HORIZONS: dict[str, tuple[str, ...]] = {
+        "1D": ("H1S", "H3S"),
+        "1W": ("H2W",),
+        "1M": ("H4W",),
+    }
+
     def __init__(
         self,
         repository: SqlAlchemyContractMasterRepository,
@@ -182,11 +189,16 @@ class DashboardService:
             evaluation=evaluation,
             active_signals=signal_lane,
         )
-        market_snapshot = self._build_instrument_market_snapshot(
+        market_signal = self._resolve_market_signal_for_root(
+            root=selected_root,
+            root_details=root_details,
+            preferred=focus_signal,
+        )
+        market_snapshot, market_availability = self._build_instrument_market_state(
             root_details=root_details,
             control_panel=control_panel,
             generated_at=generated_at,
-            signal=focus_signal,
+            signal=market_signal,
         )
         pulses = self._build_pulses(
             roots=roots,
@@ -211,6 +223,7 @@ class DashboardService:
             roots=roots,
             pulses=pulses,
             market_snapshot=market_snapshot,
+            market_availability=market_availability,
             signal_lane=signal_lane,
             focus_signal=focus_signal,
             root_details=root_details,
@@ -262,7 +275,7 @@ class DashboardService:
             root_details=root_details,
             admin_health=admin_health,
         )
-        market_snapshot = self._build_instrument_market_snapshot(
+        market_snapshot, market_availability = self._build_instrument_market_state(
             root_details=root_details,
             control_panel=control_panel,
             generated_at=generated_at,
@@ -274,6 +287,7 @@ class DashboardService:
             roots=roots,
             root_details=root_details,
             market_snapshot=market_snapshot,
+            market_availability=market_availability,
             related_signals=related_signals,
             evaluation=evaluation,
             control_panel=control_panel,
@@ -452,12 +466,49 @@ class DashboardService:
             root_details=root_details,
             admin_health=self.observability_service.admin_health(),
         )
+        market_signal = self._resolve_market_signal_for_root(
+            root=root_details.root.root_code,
+            root_details=root_details,
+            preferred=None,
+        )
         return self._build_instrument_market_snapshot(
             root_details=root_details,
             control_panel=control_panel,
             generated_at=generated_at,
-            signal=None,
+            signal=market_signal,
         )
+
+    def _resolve_market_signal_for_root(
+        self,
+        *,
+        root: str,
+        root_details,
+        preferred: FinalSignalCard | FinalSignalDetail | None,
+    ) -> FinalSignalCard | FinalSignalDetail | None:
+        if preferred is not None and preferred.direction_final.value != "no_edge":
+            return preferred
+        if root_details is None:
+            return preferred
+
+        active_signals = self._list_signals(
+            root=root,
+            status=SignalStatus.ACTIVE,
+            limit=12,
+            seed_root_details=root_details,
+        )
+        directional = [item for item in active_signals if item.direction_final.value != "no_edge"]
+        if not directional:
+            fallback = self._select_market_signal(root_details=root_details, signal=None)
+            if fallback is not None and fallback.direction_final.value != "no_edge":
+                return fallback
+            return preferred
+
+        directional.sort(
+            key=lambda item: (item.priority_score, item.confidence_final, item.generated_at),
+            reverse=True,
+        )
+        selected = directional[0]
+        return self.signal_service.get_signal(selected.signal_id) or selected
 
     def _select_market_signal(
         self,
@@ -726,7 +777,7 @@ class DashboardService:
 
         return (
             "snapshot",
-            "Healthy reference data is available, but live broker feeds are not fully active.",
+            "MOEX live charts are available; broker and shadow feeds are not fully active.",
         )
 
     def _build_watchlist(self, *, profile_id: str = "default") -> list[WatchlistEntry]:
@@ -1462,8 +1513,29 @@ class DashboardService:
         generated_at: datetime,
         signal: FinalSignalCard | FinalSignalDetail | None,
     ) -> InstrumentMarketSnapshot | None:
+        snapshot, _availability = self._build_instrument_market_state(
+            root_details=root_details,
+            control_panel=control_panel,
+            generated_at=generated_at,
+            signal=signal,
+        )
+        return snapshot
+
+    def _build_instrument_market_state(
+        self,
+        *,
+        root_details,
+        control_panel,
+        generated_at: datetime,
+        signal: FinalSignalCard | FinalSignalDetail | None,
+    ) -> tuple[InstrumentMarketSnapshot | None, MarketAvailabilitySnapshot | None]:
         if root_details is None:
-            return None
+            return None, MarketAvailabilitySnapshot(
+                status="hidden",
+                reason_code="no_root_details",
+                detail="No selected root details are available, so market charts stay hidden.",
+                checked_at=generated_at,
+            )
 
         effective_signal = self._select_market_signal(root_details=root_details, signal=signal)
         live_snapshot = self.market_data_service.get_market_snapshot(
@@ -1477,7 +1549,12 @@ class DashboardService:
             now=generated_at,
         )
         if live_snapshot is None:
-            return None
+            return None, self._build_market_availability(
+                root_details=root_details,
+                generated_at=generated_at,
+                reason_code="no_traceable_snapshot",
+                detail="No traceable quote plus candle snapshot was returned by the configured market-data providers.",
+            )
 
         daily = self._build_chart_series_from_bars(
             label="1D",
@@ -1497,16 +1574,41 @@ class DashboardService:
             max_points=6,
             label_kind="date",
         )
-        if daily is None or weekly is None or monthly is None:
-            return None
-        overlays = self._build_market_overlays(
-            signal=effective_signal,
-            current_price=live_snapshot.quote.current_price,
-            reference_series=daily,
+        missing_timeframes = [
+            label
+            for label, series in (("1D", daily), ("1W", weekly), ("1M", monthly))
+            if series is None
+        ]
+        if missing_timeframes:
+            return None, self._build_market_availability(
+                root_details=root_details,
+                generated_at=generated_at,
+                reason_code=self._market_missing_timeframes_reason_code(
+                    root_details=root_details,
+                    missing_timeframes=missing_timeframes,
+                ),
+                detail=(
+                    "Provider returned a live quote, but did not return traceable candle bars for "
+                    f"{', '.join(missing_timeframes)}. Charts stay hidden instead of using approximate data."
+                ),
+                missing_timeframes=missing_timeframes,
+            )
+        signals_by_horizon = self._market_signals_by_horizon(
+            root_details=root_details,
+            preferred=effective_signal,
         )
-        daily = self._with_chart_overlays(daily, overlays=overlays)
-        weekly = self._with_chart_overlays(weekly, overlays=overlays)
-        monthly = self._with_chart_overlays(monthly, overlays=overlays)
+        daily = self._with_timeframe_market_overlays(
+            daily,
+            signal=self._select_timeframe_market_signal(label="1D", signals_by_horizon=signals_by_horizon),
+        )
+        weekly = self._with_timeframe_market_overlays(
+            weekly,
+            signal=self._select_timeframe_market_signal(label="1W", signals_by_horizon=signals_by_horizon),
+        )
+        monthly = self._with_timeframe_market_overlays(
+            monthly,
+            signal=self._select_timeframe_market_signal(label="1M", signals_by_horizon=signals_by_horizon),
+        )
         return InstrumentMarketSnapshot(
             root_code=root_details.root.root_code,
             contract=root_details.continuous_series.active_contract,
@@ -1530,6 +1632,51 @@ class DashboardService:
             daily=daily,
             weekly=weekly,
             monthly=monthly,
+        ), None
+
+    def _market_missing_timeframes_reason_code(self, *, root_details, missing_timeframes: list[str]) -> str:
+        session_type = getattr(getattr(root_details, "session", None), "session_type", None)
+        if session_type == SessionType.HALTED:
+            return "outside_exchange_session"
+        if session_type == SessionType.CLEARING:
+            return "clearing_window"
+        if session_type == SessionType.WEEKEND:
+            return "weekend_session_no_candles"
+        if "1D" in missing_timeframes:
+            return "intraday_candles_unavailable"
+        return "missing_candles"
+
+    def _build_market_availability(
+        self,
+        *,
+        root_details,
+        generated_at: datetime,
+        reason_code: str,
+        detail: str,
+        missing_timeframes: list[str] | None = None,
+    ) -> MarketAvailabilitySnapshot:
+        session = getattr(root_details, "session", None)
+        session_type = getattr(session, "session_type", None)
+        if session_type == SessionType.HALTED and "outside" not in detail.lower():
+            detail = (
+                "The selected root is outside the local MOEX/FORTS trading window; "
+                "charts stay hidden until a traceable session snapshot is available."
+            )
+        elif session_type == SessionType.CLEARING and "clearing" not in detail.lower():
+            detail = (
+                "The selected root is in a local clearing window; charts stay hidden until "
+                "a traceable post-clearing candle snapshot is available."
+            )
+        return MarketAvailabilitySnapshot(
+            status="hidden",
+            reason_code=reason_code,
+            detail=detail,
+            checked_at=generated_at,
+            session_type=session_type,
+            session_start_at=getattr(session, "session_start_at", None),
+            session_end_at=getattr(session, "session_end_at", None),
+            rule_set=getattr(session, "effective_rule_set", None),
+            missing_timeframes=list(missing_timeframes or []),
         )
 
     def _build_synthetic_instrument_market_snapshot(
@@ -1602,14 +1749,22 @@ class DashboardService:
             lookback_step=timedelta(days=5),
             amplitude_scale=1.08,
         )
-        overlays = self._build_market_overlays(
-            signal=active_signal,
-            current_price=current_price,
-            reference_series=daily,
+        signals_by_horizon = self._market_signals_by_horizon(
+            root_details=root_details,
+            preferred=active_signal,
         )
-        daily = self._with_chart_overlays(daily, overlays=overlays)
-        weekly = self._with_chart_overlays(weekly, overlays=overlays)
-        monthly = self._with_chart_overlays(monthly, overlays=overlays)
+        daily = self._with_timeframe_market_overlays(
+            daily,
+            signal=self._select_timeframe_market_signal(label="1D", signals_by_horizon=signals_by_horizon),
+        )
+        weekly = self._with_timeframe_market_overlays(
+            weekly,
+            signal=self._select_timeframe_market_signal(label="1W", signals_by_horizon=signals_by_horizon),
+        )
+        monthly = self._with_timeframe_market_overlays(
+            monthly,
+            signal=self._select_timeframe_market_signal(label="1M", signals_by_horizon=signals_by_horizon),
+        )
 
         price_source = f"{root_details.root.primary_provider} snapshot proxy"
         status = "fresh"
@@ -1696,6 +1851,81 @@ class DashboardService:
             return series
         return series.model_copy(update={"overlays": overlays})
 
+    def _with_timeframe_market_overlays(
+        self,
+        series: InstrumentChartSeries,
+        *,
+        signal: FinalSignalCard | FinalSignalDetail | None,
+    ) -> InstrumentChartSeries:
+        overlays = self._build_market_overlays(
+            signal=signal,
+            current_price=series.current_price,
+            reference_series=series,
+        )
+        return series.model_copy(
+            update={
+                "overlays": overlays,
+                "signal_id": signal.signal_id if signal is not None and overlays else None,
+                "signal_horizon": signal.horizon.value if signal is not None and overlays else None,
+                "signal_summary": signal.summary if signal is not None and overlays else None,
+            }
+        )
+
+    def _market_signals_by_horizon(
+        self,
+        *,
+        root_details,
+        preferred: FinalSignalCard | FinalSignalDetail | None,
+    ) -> dict[str, FinalSignalCard | FinalSignalDetail]:
+        candidates: list[FinalSignalCard | FinalSignalDetail] = []
+        if preferred is not None:
+            candidates.append(preferred)
+        candidates.extend(root_details.active_signals)
+        candidates.extend(
+            self._list_signals(
+                root=root_details.root.root_code,
+                status=SignalStatus.ACTIVE,
+                limit=20,
+                seed_root_details=root_details,
+            )
+        )
+
+        unique: dict[str, FinalSignalCard | FinalSignalDetail] = {}
+        for candidate in candidates:
+            if candidate.signal_id in unique:
+                continue
+            detailed = self.signal_service.get_signal(candidate.signal_id)
+            unique[candidate.signal_id] = detailed or candidate
+
+        directional = [
+            item
+            for item in unique.values()
+            if item.status == SignalStatus.ACTIVE and item.direction_final.value != "no_edge"
+        ]
+        directional.sort(
+            key=lambda item: (item.priority_score, item.confidence_final, item.generated_at),
+            reverse=True,
+        )
+
+        by_horizon: dict[str, FinalSignalCard | FinalSignalDetail] = {}
+        for candidate in directional:
+            horizon = candidate.horizon.value
+            if horizon not in by_horizon:
+                by_horizon[horizon] = candidate
+        return by_horizon
+
+    def _select_timeframe_market_signal(
+        self,
+        *,
+        label: str,
+        signals_by_horizon: dict[str, FinalSignalCard | FinalSignalDetail],
+    ) -> FinalSignalCard | FinalSignalDetail | None:
+        for horizon in self.MARKET_TIMEFRAME_HORIZONS.get(label, ()):
+            signal = signals_by_horizon.get(horizon)
+            if signal is not None:
+                return signal
+        return None
+
     def _build_market_overlays(
         self,
         *,
@@ -1710,11 +1940,14 @@ class DashboardService:
         ):
             return []
 
+        horizon = signal.horizon.value
+        horizon_scale = self._market_horizon_level_scale(horizon)
+        target_multiple = self._market_horizon_target_multiple(horizon)
         span = max(reference_series.high_price - reference_series.low_price, current_price * 0.006, 0.01)
         base_buffer = max(
             current_price * (0.004 + (1.0 - signal.confidence_final) * 0.012),
             span * 0.22,
-        )
+        ) * horizon_scale
         parsed_invalidation = None
         if isinstance(signal, FinalSignalDetail):
             parsed_invalidation = self._extract_price_level_from_texts(
@@ -1725,11 +1958,11 @@ class DashboardService:
         if signal.direction_final.value == "bullish":
             invalidation_value = parsed_invalidation if parsed_invalidation is not None else current_price - base_buffer
             risk_distance = max(abs(current_price - invalidation_value), base_buffer)
-            target_value = current_price + max(risk_distance * 1.8, span * 0.33)
+            target_value = current_price + max(risk_distance * target_multiple, span * 0.33 * horizon_scale)
         else:
             invalidation_value = parsed_invalidation if parsed_invalidation is not None else current_price + base_buffer
             risk_distance = max(abs(current_price - invalidation_value), base_buffer)
-            target_value = current_price - max(risk_distance * 1.8, span * 0.33)
+            target_value = current_price - max(risk_distance * target_multiple, span * 0.33 * horizon_scale)
 
         overlays = [
             InstrumentChartOverlay(key="entry", value=round(current_price, 2), tone="entry"),
@@ -1737,6 +1970,22 @@ class DashboardService:
             InstrumentChartOverlay(key="target", value=round(max(0.01, target_value), 2), tone="target"),
         ]
         return overlays
+
+    def _market_horizon_level_scale(self, horizon: str) -> float:
+        return {
+            "H1S": 0.82,
+            "H3S": 1.0,
+            "H2W": 1.35,
+            "H4W": 1.85,
+        }.get(horizon, 1.0)
+
+    def _market_horizon_target_multiple(self, horizon: str) -> float:
+        return {
+            "H1S": 1.45,
+            "H3S": 1.7,
+            "H2W": 2.05,
+            "H4W": 2.45,
+        }.get(horizon, 1.8)
 
     def _extract_price_level_from_texts(self, *, texts: list[str], anchor: float) -> float | None:
         if anchor <= 0:

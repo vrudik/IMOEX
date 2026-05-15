@@ -65,6 +65,30 @@ $dailyWorkflowEvidence = [ordered]@{
     next_step_matches_state = $false
     execution_language_clear = $false
   }
+  readiness_next_steps = [ordered]@{
+    present = $false
+    signals_only = $false
+    open_items = 0
+    ready_items = 0
+    item_count = 0
+    item_keys = @()
+    required_items_present = $false
+    counts_reconcile = $false
+    status_values_valid = $false
+    market_data_truth_matches_snapshot = $false
+    next_step = ""
+    guardrail_language_clear = $false
+  }
+}
+$marketFreshnessEvidence = [ordered]@{
+  present = $false
+  required = $false
+  alert_count = 0
+  keys = @()
+  statuses = @()
+  required_keys_present = $true
+  signals_only = $false
+  guardrail_language_clear = $false
 }
 
 function Add-Failure {
@@ -116,6 +140,7 @@ function Get-JsonPropertyValue {
 }
 
 $forbiddenExecutionLanguagePattern = "(?i)\b(order\s*-?\s*routing|autotrading|broker\s+execution)\b"
+$forbiddenReadinessLanguagePattern = "(?i)\b(pricing|private-beta\s+launch|production\s+deployment|order\s*-?\s*routing|autotrading|broker\s+execution)\b"
 $forbiddenExecutionFlagNames = @(
   "order_routing_authorized",
   "autotrading_authorized",
@@ -154,6 +179,43 @@ function Test-ForbiddenExecutionLanguage {
 
   foreach ($property in $Value.PSObject.Properties) {
     if (Test-ForbiddenExecutionLanguage -Value $property.Value) {
+      return $true
+    }
+  }
+  return $false
+}
+
+function Test-ForbiddenReadinessLanguage {
+  param([object]$Value)
+
+  if ($null -eq $Value) {
+    return $false
+  }
+  if ($Value -is [string]) {
+    return $Value -match $forbiddenReadinessLanguagePattern
+  }
+  if ($Value -is [ValueType]) {
+    return $false
+  }
+  if ($Value -is [System.Collections.IDictionary]) {
+    foreach ($entry in $Value.GetEnumerator()) {
+      if (Test-ForbiddenReadinessLanguage -Value $entry.Value) {
+        return $true
+      }
+    }
+    return $false
+  }
+  if ($Value -is [System.Collections.IEnumerable]) {
+    foreach ($item in $Value) {
+      if (Test-ForbiddenReadinessLanguage -Value $item) {
+        return $true
+      }
+    }
+    return $false
+  }
+
+  foreach ($property in $Value.PSObject.Properties) {
+    if (Test-ForbiddenReadinessLanguage -Value $property.Value) {
       return $true
     }
   }
@@ -555,6 +617,218 @@ if (-not [string]::IsNullOrWhiteSpace($workspaceSnapshotPath)) {
       }
     }
   }
+  if (-not ($workspaceSnapshot.PSObject.Properties.Name -contains "readiness_next_steps")) {
+    Add-Failure "workspace_snapshot_readiness_next_steps_missing" "Workspace snapshot JSON must include readiness_next_steps."
+  } else {
+    $readiness = $workspaceSnapshot.readiness_next_steps
+    if ($null -eq $readiness) {
+      Add-Failure "workspace_snapshot_readiness_next_steps_missing" "Workspace snapshot JSON must include readiness_next_steps."
+    } else {
+      $readinessProps = $readiness.PSObject.Properties.Name
+      $readinessSignalsOnly = ($readinessProps -contains "signals_only") -and [bool]$readiness.signals_only -eq $true
+      $readinessGuardrailLanguageClear = -not (Test-ForbiddenReadinessLanguage -Value $readiness)
+      $readinessNumericFieldsValid = $true
+      $readinessNumericValues = @{}
+      foreach ($fieldName in @("open_items", "ready_items")) {
+        $field = $readiness.PSObject.Properties[$fieldName]
+        if ($null -eq $field -or -not (Test-NonNegativeInteger $field.Value)) {
+          $readinessNumericFieldsValid = $false
+        } else {
+          $readinessNumericValues[$fieldName] = [int64]$field.Value
+        }
+      }
+
+      $readinessItemsProperty = $readiness.PSObject.Properties["items"]
+      $readinessItems = @()
+      $readinessItemsValid = $false
+      if ($null -ne $readinessItemsProperty -and $null -ne $readinessItemsProperty.Value -and $readinessItemsProperty.Value -is [System.Array]) {
+        $readinessItems = @($readinessItemsProperty.Value)
+        $readinessItemsValid = $true
+      }
+
+      $readinessItemKeys = @()
+      $readinessStatusValuesValid = $readinessItemsValid
+      foreach ($item in $readinessItems) {
+        $itemKey = [string](Get-JsonPropertyValue $item "key" "")
+        $itemStatus = [string](Get-JsonPropertyValue $item "status" "")
+        if (-not [string]::IsNullOrWhiteSpace($itemKey)) {
+          $readinessItemKeys += $itemKey
+        }
+        if (@("ready", "review", "open", "blocked") -notcontains $itemStatus) {
+          $readinessStatusValuesValid = $false
+        }
+      }
+
+      $requiredReadinessKeys = @("market_data_truth", "telegram_mode", "daily_review", "delivery_reason_trails")
+      $requiredReadinessPresent = $true
+      foreach ($requiredReadinessKey in $requiredReadinessKeys) {
+        if ($readinessItemKeys -notcontains $requiredReadinessKey) {
+          $requiredReadinessPresent = $false
+        }
+      }
+
+      $readinessCountsReconcile = $false
+      if ($readinessNumericFieldsValid -and $readinessItemsValid) {
+        $readinessCountsReconcile = ($readinessNumericValues["open_items"] + $readinessNumericValues["ready_items"]) -eq $readinessItems.Count
+      }
+
+      $marketDataTruthMatchesSnapshot = $false
+      $marketDataTruthItem = @($readinessItems | Where-Object { [string](Get-JsonPropertyValue $_ "key" "") -eq "market_data_truth" } | Select-Object -First 1)
+      if ($marketDataTruthItem.Count -gt 0) {
+        $marketSnapshotProperty = $workspaceSnapshot.PSObject.Properties["market_snapshot"]
+        $expectedMarketTruthStatus = "blocked"
+        if ($null -ne $marketSnapshotProperty -and $null -ne $marketSnapshotProperty.Value) {
+          $marketSnapshotStatus = [string](Get-JsonPropertyValue $marketSnapshotProperty.Value "status" "")
+          if (@("fresh", "live") -contains $marketSnapshotStatus) {
+            $expectedMarketTruthStatus = "ready"
+          } else {
+            $expectedMarketTruthStatus = "review"
+          }
+        }
+        $marketDataTruthMatchesSnapshot = [string](Get-JsonPropertyValue $marketDataTruthItem[0] "status" "") -eq $expectedMarketTruthStatus
+      }
+
+      $dailyWorkflowEvidence.readiness_next_steps = [ordered]@{
+        present = $true
+        signals_only = $readinessSignalsOnly
+        open_items = $(if ($readinessNumericFieldsValid) { $readinessNumericValues["open_items"] } else { 0 })
+        ready_items = $(if ($readinessNumericFieldsValid) { $readinessNumericValues["ready_items"] } else { 0 })
+        item_count = $readinessItems.Count
+        item_keys = $readinessItemKeys
+        required_items_present = $requiredReadinessPresent
+        counts_reconcile = $readinessCountsReconcile
+        status_values_valid = $readinessStatusValuesValid
+        market_data_truth_matches_snapshot = $marketDataTruthMatchesSnapshot
+        next_step = [string](Get-JsonPropertyValue $readiness "next_step" "")
+        guardrail_language_clear = $readinessGuardrailLanguageClear
+      }
+
+      if (-not $readinessSignalsOnly) {
+        Add-Failure "workspace_snapshot_readiness_next_steps_not_signals_only" "Readiness Next Steps must remain signals-only."
+      }
+      if (-not $readinessNumericFieldsValid) {
+        Add-Failure "workspace_snapshot_readiness_next_steps_counts_invalid" "Readiness Next Steps counts must be non-negative integers."
+      }
+      if (-not $readinessItemsValid -or $readinessItems.Count -eq 0) {
+        Add-Failure "workspace_snapshot_readiness_next_steps_items_missing" "Readiness Next Steps must include readiness items."
+      }
+      if (-not $requiredReadinessPresent) {
+        Add-Failure "workspace_snapshot_readiness_next_steps_required_items_missing" "Readiness Next Steps must include market-data truth, Telegram mode, daily review, and delivery reason-trail items."
+      }
+      if (-not $readinessStatusValuesValid) {
+        Add-Failure "workspace_snapshot_readiness_next_steps_status_invalid" "Readiness Next Steps item statuses must be ready, review, open, or blocked."
+      }
+      if (-not $readinessCountsReconcile) {
+        Add-Failure "workspace_snapshot_readiness_next_steps_counts_mismatch" "Readiness Next Steps open_items and ready_items must reconcile to the item count."
+      }
+      if (-not $marketDataTruthMatchesSnapshot) {
+        Add-Failure "workspace_snapshot_readiness_next_steps_market_truth_mismatch" "Readiness Next Steps market-data truth status must match the archived workspace market snapshot."
+      }
+      if (-not ($readinessProps -contains "next_step") -or [string]::IsNullOrWhiteSpace([string]$readiness.next_step)) {
+        Add-Failure "workspace_snapshot_readiness_next_steps_next_step_missing" "Readiness Next Steps must include an operator-readable next_step."
+      }
+      if (-not $readinessGuardrailLanguageClear) {
+        Add-Failure "workspace_snapshot_readiness_next_steps_guardrail_language" "Readiness Next Steps evidence must not authorize launch, pricing, order routing, autotrading, or broker execution."
+      }
+    }
+  }
+  $marketSnapshotProperty = $workspaceSnapshot.PSObject.Properties["market_snapshot"]
+  $workspaceMarketStatus = "hidden"
+  $marketFreshnessRequired = $false
+  $requiredMarketFreshnessKeys = @()
+  if ($null -eq $marketSnapshotProperty -or $null -eq $marketSnapshotProperty.Value) {
+    $marketFreshnessRequired = $true
+    $requiredMarketFreshnessKeys += "market_data_hidden"
+  } else {
+    $workspaceMarketStatus = [string](Get-JsonPropertyValue $marketSnapshotProperty.Value "status" "")
+    if (@("fresh", "live") -notcontains $workspaceMarketStatus) {
+      $marketFreshnessRequired = $true
+      $requiredMarketFreshnessKeys += "market_data_not_fresh"
+    }
+  }
+  $controlPanel = $workspaceSnapshot.PSObject.Properties["control_panel"]
+  $workspaceDataMode = ""
+  if ($null -ne $controlPanel -and $null -ne $controlPanel.Value) {
+    $workspaceDataMode = [string](Get-JsonPropertyValue $controlPanel.Value "data_mode" "")
+    if ($workspaceDataMode -eq "degraded_feed") {
+      $marketFreshnessRequired = $true
+      $requiredMarketFreshnessKeys += "runtime_data_mode_degraded"
+    }
+  }
+
+  if (-not ($workspaceSnapshot.PSObject.Properties.Name -contains "market_freshness_alerts")) {
+    Add-Failure "workspace_snapshot_market_freshness_alerts_missing" "Workspace snapshot JSON must include market_freshness_alerts."
+    $marketFreshnessEvidence.required = $marketFreshnessRequired
+    $marketFreshnessEvidence.required_keys_present = -not $marketFreshnessRequired
+  } else {
+    $alertsProperty = $workspaceSnapshot.PSObject.Properties["market_freshness_alerts"]
+    $alertItems = @()
+    $alertsValid = $false
+    if ($null -ne $alertsProperty -and $null -ne $alertsProperty.Value -and $alertsProperty.Value -is [System.Array]) {
+      $alertItems = @($alertsProperty.Value)
+      $alertsValid = $true
+    }
+
+    $alertKeys = @()
+    $alertStatuses = @()
+    $alertsSignalsOnly = $alertsValid
+    foreach ($alert in $alertItems) {
+      $alertKey = [string](Get-JsonPropertyValue $alert "key" "")
+      $alertStatus = [string](Get-JsonPropertyValue $alert "status" "")
+      if (-not [string]::IsNullOrWhiteSpace($alertKey)) {
+        $alertKeys += $alertKey
+      }
+      if (-not [string]::IsNullOrWhiteSpace($alertStatus)) {
+        $alertStatuses += $alertStatus
+      }
+      if (-not [bool](Get-JsonPropertyValue $alert "signals_only" $false)) {
+        $alertsSignalsOnly = $false
+      }
+      foreach ($fieldName in @("key", "root_code", "status", "title", "detail", "href")) {
+        if ([string]::IsNullOrWhiteSpace([string](Get-JsonPropertyValue $alert $fieldName ""))) {
+          Add-Failure "workspace_snapshot_market_freshness_alert_incomplete" "Market freshness alert entries must include key, root_code, status, title, detail, and href."
+          break
+        }
+      }
+    }
+
+    $requiredAlertKeysPresent = $true
+    foreach ($requiredAlertKey in $requiredMarketFreshnessKeys) {
+      if ($alertKeys -notcontains $requiredAlertKey) {
+        $requiredAlertKeysPresent = $false
+      }
+    }
+    $alertsGuardrailLanguageClear = -not (Test-ForbiddenReadinessLanguage -Value $alertItems)
+
+    $marketFreshnessEvidence = [ordered]@{
+      present = $alertsValid
+      required = $marketFreshnessRequired
+      alert_count = $alertItems.Count
+      keys = $alertKeys
+      statuses = $alertStatuses
+      required_keys_present = $requiredAlertKeysPresent
+      signals_only = $alertsSignalsOnly
+      guardrail_language_clear = $alertsGuardrailLanguageClear
+      market_status = $workspaceMarketStatus
+      data_mode = $workspaceDataMode
+    }
+
+    if (-not $alertsValid) {
+      Add-Failure "workspace_snapshot_market_freshness_alerts_invalid" "Workspace snapshot market_freshness_alerts must be a JSON array."
+    }
+    if ($marketFreshnessRequired -and $alertItems.Count -eq 0) {
+      Add-Failure "workspace_snapshot_market_freshness_alerts_required" "Hidden, stale, or degraded workspace market data must include a market freshness alert."
+    }
+    if ($marketFreshnessRequired -and -not $requiredAlertKeysPresent) {
+      Add-Failure "workspace_snapshot_market_freshness_alerts_required_keys_missing" "Market freshness alerts must match hidden, stale, or degraded workspace market-data state."
+    }
+    if (-not $alertsSignalsOnly) {
+      Add-Failure "workspace_snapshot_market_freshness_alerts_not_signals_only" "Market freshness alerts must remain signals-only."
+    }
+    if (-not $alertsGuardrailLanguageClear) {
+      Add-Failure "workspace_snapshot_market_freshness_alerts_guardrail_language" "Market freshness alerts must not authorize launch, pricing, order routing, autotrading, or broker execution."
+    }
+  }
   Add-ForbiddenExecutionFlagFailures "workspace_snapshot_forbidden_execution_flag" "Workspace snapshot JSON" $workspaceSnapshot
 }
 
@@ -624,6 +898,8 @@ if (-not [string]::IsNullOrWhiteSpace($browserSmokePath)) {
     "workspace_opened",
     "workspace_morning_brief_visible",
     "workspace_watchlist_workbench_visible",
+    "workspace_readiness_next_steps_visible",
+    "workspace_market_freshness_alerts_visible",
     "runtime_admin_key_save_clear",
     "runtime_prompt_diff",
     "runtime_prompt_draft_saved",
@@ -884,6 +1160,8 @@ if (-not [string]::IsNullOrWhiteSpace($releaseNotesPath)) {
     "Workspace trust ribbon checked",
     "Morning Command Brief checked",
     "Today's Operating Queue checked",
+    "Readiness Next Steps checked",
+    "Market freshness alerts checked",
     "Current price and day/week/month charts checked",
     "Root switch checked",
     "Signal detail checked",
@@ -1005,6 +1283,7 @@ $payload = [ordered]@{
   allow_draft = [bool]$AllowDraft
   status = $validationStatus
   daily_workflow_evidence = $dailyWorkflowEvidence
+  market_freshness_alerts = $marketFreshnessEvidence
   failures = $failureItems
   warnings = $warningItems
 }

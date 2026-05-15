@@ -66,6 +66,7 @@ from apps.api.routes.dashboard_market import (
     market_level_record,
     market_overlay_style,
     market_status_tone,
+    render_market_fullscreen_page,
     render_market_snapshot,
     render_market_unavailable_snapshot,
 )
@@ -83,13 +84,16 @@ from apps.api.routes.dashboard_visuals import render_horizon_pulse, render_metri
 from apps.api.routes.dashboard_watchlist import render_watchlist
 from apps.api.routes.dashboard_workspace import (
     render_attention_inbox,
+    render_market_freshness_alerts,
     render_morning_brief,
     render_root_pulse_card,
     render_workspace_signal_tile,
 )
 import apps.api.routes.dashboard_workspace_data as dashboard_workspace_data
 from apps.api.routes.dashboard_workspace_data import (
+    build_market_freshness_alerts,
     build_morning_brief,
+    build_readiness_next_steps,
     build_signal_workspace_snapshot,
     build_watchlist_workbench,
 )
@@ -177,6 +181,9 @@ def test_dashboard_market_renderer_keeps_price_and_chart_contract() -> None:
         label="1W",
         points=points,
         overlays=overlays,
+        signal_id="SIG-H2W",
+        signal_horizon="H2W",
+        signal_summary="Medium horizon fixture",
         current_price=106.0,
         open_price=100.0,
         high_price=108.0,
@@ -202,20 +209,71 @@ def test_dashboard_market_renderer_keeps_price_and_chart_contract() -> None:
     )
 
     html = render_market_snapshot(snapshot, language="ru", signal_id="SIG<market>")
-    unavailable = render_market_unavailable_snapshot(language="ru", root_code="Si", signal_id="SIG<market>")
+    unavailable = render_market_unavailable_snapshot(
+        language="ru",
+        root_code="Si",
+        signal_id="SIG<market>",
+        availability=SimpleNamespace(
+            reason_code="intraday_candles_unavailable",
+            detail="Provider returned quote but no 1D candles.",
+            session_type="main",
+            session_start_at=None,
+            session_end_at=None,
+            missing_timeframes=["1D"],
+        ),
+    )
+    fullscreen = render_market_fullscreen_page(
+        snapshot,
+        roots=[SimpleNamespace(root_code="Si", base_asset="USD/RUB")],
+        selected_root="Si",
+        language="ru",
+    )
 
     assert 'data-market-panel data-market-root-code="Si" data-market-signal-id="SIG&lt;market&gt;"' in html
+    assert 'data-market-fullscreen-link target="_blank" rel="noopener" href="/workspace/market?root=Si"' in html
+    assert html.count('data-market-fullscreen-link') == 1
+    assert 'data-market-fullscreen-action' in html
     assert 'data-market-current-price' in html
     assert 'data-market-chart-card data-market-timeframe="1W"' in html
+    assert 'data-market-idea-corridor' in html
+    assert 'data-market-idea-change-line' in html
+    assert 'data-market-level-strip data-market-level-state="ready"' in html
+    assert 'data-market-signal-horizon="H2W"' in html
+    assert 'data-market-overlay-label' not in html
     assert "\u041d\u0435\u0434\u0435\u043b\u044f \u00b7 1W" in html
+    assert "\u041a\u043e\u0440\u0438\u0434\u043e\u0440 \u0438\u0434\u0435\u0438 H2W" in html
+    assert "\u0421\u043c\u0435\u043d\u0430 \u0438\u0434\u0435\u0438" in html
     assert "106.00 RUB" in html
     assert 'data-market-distance-bar' in html
     assert "\u0413\u0440\u0430\u0444\u0438\u043a\u0438 \u0441\u043a\u0440\u044b\u0442\u044b" in unavailable
+    assert 'data-market-unavailable-reason="intraday_candles_unavailable"' in unavailable
+    assert 'data-market-unavailable-detail' in unavailable
+    assert "1D" in unavailable
+    assert 'data-market-fullscreen-link target="_blank" rel="noopener" href="/workspace/market?root=Si"' in unavailable
+    assert unavailable.count('data-market-fullscreen-link') == 1
+    assert 'data-market-fullscreen-action' in unavailable
+    assert 'data-market-fullscreen' in fullscreen
+    assert 'data-market-idea-corridor' in fullscreen
+    assert 'data-market-idea-change-line' in fullscreen
+    assert 'data-market-level-strip data-market-level-state="ready"' in fullscreen
+    assert 'data-market-signal-horizon="H2W"' in fullscreen
+    assert 'data-market-overlay-label' not in fullscreen
+    assert 'data-large-market-chart data-large-market-variant="candles"' in fullscreen
+    assert 'data-large-market-chart data-large-market-variant="line"' in fullscreen
+    assert 'data-large-market-chart data-large-market-variant="levels"' in fullscreen
+    assert 'data-market-level-map' in fullscreen
+    assert 'data-market-level-map-summary' in fullscreen
+    assert 'data-market-level-map-line data-level-key="price"' in fullscreen
+    assert 'data-large-market-table' in fullscreen
+    assert 'height: clamp(360px, 42vh, 560px)' in fullscreen
+    assert "\u041a\u0440\u0443\u043f\u043d\u044b\u0435 \u0433\u0440\u0430\u0444\u0438\u043a\u0438" in fullscreen
+    assert "\u041a\u043e\u0440\u0438\u0434\u043e\u0440 \u0438\u0434\u0435\u0438" in fullscreen
 
 
 def test_dashboard_route_keeps_market_rendering_outside_route_module() -> None:
     source = Path("apps/api/routes/dashboard.py").read_text(encoding="utf-8")
 
+    assert "render_market_fullscreen_page as _render_market_fullscreen_page" in source
     assert "render_market_snapshot as _render_market_snapshot" in source
     assert "_legacy_render_market_snapshot" not in source
     assert "_legacy_render_market_chart_card" not in source
@@ -727,6 +785,69 @@ def test_dashboard_morning_brief_renders_operator_ritual_without_execution_langu
     assert "trade now" not in html.lower()
 
 
+def test_dashboard_market_freshness_alerts_render_feed_risk_without_execution_language() -> None:
+    alert = SimpleNamespace(
+        key="market_data_not_fresh",
+        root_code="Si",
+        status="degraded",
+        title="Feed <degraded>",
+        detail="degraded: Provider <stale>.",
+        href="/api/v1/health/product-readiness?root=Si",
+        tone="warning",
+        signals_only=True,
+    )
+
+    html = render_market_freshness_alerts([alert], language="en")
+    empty_html = render_market_freshness_alerts([], language="en")
+
+    assert 'data-market-freshness-alerts' in html
+    assert 'data-market-freshness-key="market_data_not_fresh"' in html
+    assert 'data-market-freshness-status="degraded"' in html
+    assert "Feed &lt;degraded&gt;" in html
+    assert "Provider &lt;stale&gt;." in html
+    assert "signals-only" in html
+    lowered = html.lower()
+    assert "autotrading" not in lowered
+    assert "order routing" not in lowered
+    assert "broker execution" not in lowered
+    assert "pricing" not in lowered
+    assert "private-beta launch" not in lowered
+    assert empty_html == ""
+
+
+def test_dashboard_market_freshness_alert_builder_flags_degraded_selected_root() -> None:
+    snapshot = SimpleNamespace(
+        selected_root="Si/M6",
+        market_snapshot=SimpleNamespace(status="degraded", status_detail="Provider stale."),
+        control_panel=SimpleNamespace(data_mode="degraded_feed", data_mode_detail="Primary feed unavailable."),
+    )
+
+    alerts = build_market_freshness_alerts(snapshot)
+
+    assert [item.key for item in alerts] == ["market_data_not_fresh", "runtime_data_mode_degraded"]
+    assert all(item.root_code == "Si/M6" for item in alerts)
+    assert all(item.signals_only is True for item in alerts)
+    assert alerts[0].status == "degraded"
+    assert alerts[0].href.endswith("root=Si%2FM6")
+    assert alerts[1].href.endswith("root=Si%2FM6")
+
+
+def test_dashboard_readiness_next_steps_normalizes_market_status_case() -> None:
+    snapshot = SimpleNamespace(
+        selected_root="Si",
+        market_snapshot=SimpleNamespace(status="LIVE", status_detail="Traceable feed."),
+        review_bundle=SimpleNamespace(review_due_items=0),
+    )
+
+    readiness = build_readiness_next_steps(snapshot, telegram_delivery_ready=True, delivery_activity=[object()])
+
+    market_item = next(item for item in readiness.items if item.key == "market_data_truth")
+    assert market_item.status == "ready"
+    assert market_item.tone == "positive"
+    assert readiness.open_items == 0
+    assert readiness.ready_items == 4
+
+
 def test_dashboard_morning_brief_builder_returns_api_contract() -> None:
     attention = SimpleNamespace(
         title="Signal one",
@@ -772,11 +893,15 @@ def test_dashboard_route_keeps_workspace_lane_rendering_outside_route_module() -
     source = Path("apps/api/routes/dashboard.py").read_text(encoding="utf-8")
 
     assert "render_attention_inbox as _render_attention_inbox" in source
+    assert "render_market_freshness_alerts as _render_market_freshness_alerts" in source
     assert "render_morning_brief as _render_morning_brief" in source
+    assert "render_readiness_next_steps as _render_readiness_next_steps" in source
     assert "render_root_pulse_card as _render_root_pulse_card" in source
     assert "render_workspace_signal_tile as _render_workspace_signal_tile" in source
     assert "def _render_attention_inbox" not in source
+    assert "def _render_market_freshness_alerts" not in source
     assert "def _render_morning_brief" not in source
+    assert "def _render_readiness_next_steps" not in source
     assert "def _render_root_pulse_card" not in source
     assert "def _render_workspace_signal_tile" not in source
 
