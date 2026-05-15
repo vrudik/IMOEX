@@ -10,6 +10,8 @@ This document defines how the IMOEX app can be driven to a product-ready and sel
 4. QA and Release Lead
 5. UI/UX Lead
 
+The canonical prompt text for these roles lives in `docs/autonomous_delivery_role_prompts.md`. The automation scenario should reference that file and run those five role prompts before selecting or implementing each tranche.
+
 The app remains a signals-only decision-support product. The operating model optimizes for:
 
 - truthful data over cosmetic completeness

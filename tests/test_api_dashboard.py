@@ -1,9 +1,29 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime, timedelta
 
 from fastapi.testclient import TestClient
 from libs.utils.config import settings
+
+
+SUPPORTED_CONTRACT_EXPIRIES: dict[str, tuple[tuple[str, date], ...]] = {
+    "Si": (("SiM6", date(2026, 6, 18)), ("SiU6", date(2026, 9, 17))),
+    "BR": (("BRK6", date(2026, 5, 4)), ("BRM6", date(2026, 6, 1))),
+    "MXI": (("MXM6", date(2026, 6, 18)), ("MXU6", date(2026, 9, 17))),
+}
+
+
+def _expected_supported_contracts(root_code: str, trading_day: date) -> tuple[str, str, date]:
+    eligible = [
+        (contract_code, expiry_date)
+        for contract_code, expiry_date in SUPPORTED_CONTRACT_EXPIRIES[root_code]
+        if expiry_date >= trading_day
+    ]
+    assert eligible, f"No supported contract remains eligible for {root_code} on {trading_day}"
+    active_contract, expiry_date = eligible[0]
+    next_contract = eligible[1][0] if len(eligible) > 1 else active_contract
+    return active_contract, next_contract, expiry_date
 
 
 def test_dashboard_snapshot_returns_delivery_payload(client: TestClient) -> None:
@@ -26,6 +46,7 @@ def test_dashboard_snapshot_returns_delivery_payload(client: TestClient) -> None
     assert payload["control_panel"]["llm_product"] == "ChatGPT"
     assert payload["control_panel"]["data_mode"] in {"live", "snapshot", "degraded_feed"}
     assert payload["control_panel"]["data_mode_detail"]
+    assert "live broker feeds" not in payload["control_panel"]["data_mode_detail"]
     assert payload["control_panel"]["reference_sync"]["source"]
     assert payload["control_panel"]["reference_sync"]["status"] in {"fresh", "stale", "fallback"}
     assert payload["control_panel"]["model_roles"]
@@ -51,6 +72,59 @@ def test_workspace_snapshot_returns_user_facing_payload(client: TestClient) -> N
     assert {"open", "high", "low", "close"} <= set(payload["market_snapshot"]["daily"]["points"][0])
     assert payload["market_snapshot"]["daily"]["overlays"]
     assert {item["key"] for item in payload["market_snapshot"]["daily"]["overlays"]} >= {"entry", "invalidation", "target"}
+    assert payload["market_snapshot"]["daily"]["signal_horizon"] in {"H1S", "H3S"}
+    assert payload["market_snapshot"]["weekly"]["signal_horizon"] == "H2W"
+    assert payload["market_snapshot"]["monthly"]["signal_horizon"] == "H4W"
+    level_sets = {
+        tuple((item["key"], item["value"]) for item in payload["market_snapshot"][timeframe]["overlays"])
+        for timeframe in ("daily", "weekly", "monthly")
+    }
+    assert len(level_sets) == 3
+    assert payload["attention_inbox"]
+    assert payload["morning_brief"]["signals_only"] is True
+    assert payload["morning_brief"]["market_status"] in {"fresh", "aging", "stale", "degraded", "hidden", "unknown"}
+    assert payload["morning_brief"]["top_attention"]
+    assert payload["morning_brief"]["top_attention"][0]["href"].startswith("/workspace")
+    assert payload["morning_brief"]["telegram_status"] in {"ready", "preview"}
+    assert isinstance(payload["market_freshness_alerts"], list)
+    alert_text = json.dumps(payload["market_freshness_alerts"]).lower()
+    assert "autotrading" not in alert_text
+    assert "order routing" not in alert_text
+    assert "order-routing" not in alert_text
+    assert "pricing" not in alert_text
+    assert "private-beta launch" not in alert_text
+    assert payload["watchlist_workbench"]["signals_only"] is True
+    assert payload["watchlist_workbench"]["total_items"] == len(payload["watchlist"])
+    assert payload["watchlist_workbench"]["review_due_items"] >= 0
+    assert payload["watchlist_workbench"]["reviewed_today_items"] >= 0
+    assert isinstance(payload["watchlist_workbench"]["watched_roots"], list)
+    assert payload["watchlist_workbench"]["next_step"]
+    readiness = payload["readiness_next_steps"]
+    assert readiness["signals_only"] is True
+    assert readiness["items"]
+    assert readiness["open_items"] + readiness["ready_items"] == len(readiness["items"])
+    assert readiness["next_step"]
+    assert {item["key"] for item in readiness["items"]} >= {
+        "market_data_truth",
+        "telegram_mode",
+        "daily_review",
+        "delivery_reason_trails",
+    }
+    assert all(item["status"] in {"ready", "review", "open", "blocked"} for item in readiness["items"])
+    assert all(item["href"].startswith(("/workspace", "/api/v1/")) for item in readiness["items"])
+    readiness_text = json.dumps(readiness).lower()
+    assert "autotrading" not in readiness_text
+    assert "order routing" not in readiness_text
+    assert "order-routing" not in readiness_text
+    assert "pricing" not in readiness_text
+    assert "launch" not in readiness_text
+    top_attention = payload["attention_inbox"][0]
+    assert top_attention["root_code"]
+    assert top_attention["href"].startswith("/workspace")
+    assert top_attention["reason"]
+    assert top_attention["what_changed"]
+    assert top_attention["next_step"]
+    assert top_attention["market_status"] in {"fresh", "aging", "stale", "degraded", "hidden", "unknown"}
     assert payload["focus_signal"]["root"] == "Si"
     assert payload["focus_signal"]["workflow_state"] == "watching"
     assert payload["trust_ribbon"]["items"]
@@ -77,18 +151,13 @@ def test_workspace_snapshot_returns_user_facing_payload(client: TestClient) -> N
 
 
 def test_workspace_snapshot_uses_current_supported_contract_expiry_dates(client: TestClient) -> None:
-    expected_contracts = {
-        "Si": ("SiM6", "SiU6", date(2026, 6, 18)),
-        "BR": ("BRK6", "BRM6", date(2026, 5, 4)),
-        "MXI": ("MXM6", "MXU6", date(2026, 6, 18)),
-    }
-
-    for root_code, (active_contract, next_contract, expiry_date) in expected_contracts.items():
+    for root_code in SUPPORTED_CONTRACT_EXPIRIES:
         response = client.get("/api/v1/workspace", params={"root": root_code})
 
         assert response.status_code == 200
         payload = response.json()
         trading_day = date.fromisoformat(payload["root_details"]["session"]["trading_day"])
+        active_contract, next_contract, expiry_date = _expected_supported_contracts(root_code, trading_day)
 
         assert payload["root_details"]["continuous_series"]["active_contract"] == active_contract
         assert payload["root_details"]["continuous_series"]["next_contract"] == next_contract
@@ -144,6 +213,22 @@ def test_workspace_page_renders_user_journey_html(client: TestClient) -> None:
     assert "Модели и источники данных" not in response.text
     assert "workflow-button" in response.text
     assert "Trust ribbon" in response.text
+    assert 'data-operator-onboarding' in response.text
+    assert 'data-morning-brief' in response.text
+    assert "\u0423\u0442\u0440\u0435\u043d\u043d\u0438\u0439 \u0431\u0440\u0438\u0444" in response.text
+    assert 'data-readiness-next-steps' in response.text
+    assert 'data-readiness-gap' in response.text
+    assert "\u0427\u0442\u043e \u0435\u0449\u0451 \u0437\u0430\u043a\u0440\u044b\u0442\u044c" in response.text
+    assert "\u0427\u0435\u0441\u0442\u043d\u043e\u0441\u0442\u044c market data" in response.text
+    assert 'data-operator-onboarding-collapse' in response.text
+    assert 'data-operator-onboarding-dismiss' in response.text
+    assert 'data-attention-inbox' in response.text
+    assert 'data-attention-card' in response.text
+    assert 'imoex_operator_onboarding_hidden' in response.text
+    assert 'imoex_operator_onboarding_collapsed' in response.text
+    assert "\u0422\u0440\u0435\u0431\u0443\u0435\u0442 \u0432\u043d\u0438\u043c\u0430\u043d\u0438\u044f" in response.text
+    assert "\u041a\u0430\u043a \u0447\u0438\u0442\u0430\u0442\u044c workspace" in response.text
+    assert "\u0413\u043b\u043e\u0441\u0441\u0430\u0440\u0438\u0439 \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u0430" in response.text
     assert "\u0422\u0435\u043a\u0443\u0449\u0430\u044f \u0446\u0435\u043d\u0430 \u0438 \u0433\u0440\u0430\u0444\u0438\u043a\u0438" in response.text
     assert "\u041f\u043e\u0441\u043b\u0435\u0434\u043d\u044f\u044f \u0446\u0435\u043d\u0430" in response.text
     assert "\u0414\u043d\u0435\u0432\u043d\u043e\u0439 \u043c\u0430\u043a\u0441\u0438\u043c\u0443\u043c" in response.text
@@ -160,8 +245,27 @@ def test_workspace_page_renders_user_journey_html(client: TestClient) -> None:
     assert 'data-signal-preview-popover' in response.text
     assert 'data-pin-signal-preview' in response.text
     assert 'data-signal-level-chip' in response.text
+    assert 'data-watchlist-review' in response.text
+    assert 'id="watchlist-action-status"' in response.text
+    assert 'data-watchlist-filter-review' in response.text
+    assert 'data-watchlist-filter-root' in response.text
+    assert 'data-watchlist-filter-linked' in response.text
+    assert 'data-watchlist-bulk-review' in response.text
+    assert 'data-watchlist-bulk-remove' in response.text
+    assert 'data-watchlist-remove' in response.text
+    assert 'runWatchlistAction' in response.text
+    assert 'visibleWatchlistItems' in response.text
+    assert 'applyWatchlistFilters' in response.text
+    assert '/api/v1/workspace/watchlist/' in response.text
+    assert 'data-journal-tag-picker' in response.text
+    assert 'name="tags" value="data issue"' in response.text
     assert 'data-surface-state-strip="workspace"' in response.text
     assert 'data-market-panel' in response.text
+    assert 'data-market-fullscreen-link target="_blank" rel="noopener" href="/workspace/market?root=Si"' in response.text
+    assert 'data-market-fullscreen-action' in response.text
+    assert 'data-market-idea-corridor' in response.text
+    assert 'data-market-idea-change-line' in response.text
+    assert 'data-market-level-strip' in response.text
     assert 'data-market-current-line' in response.text
     assert 'data-market-current-hit' in response.text
     assert 'data-market-distance-bar' in response.text
@@ -201,6 +305,10 @@ def test_workspace_page_renders_user_journey_html(client: TestClient) -> None:
     assert "buildCompareRegimeDriftNote" in response.text
     assert "compare-regime-note" in response.text
     assert "setCompareChartLevelFocus" in response.text
+    assert "Watchlist review" in response.text
+    assert "Recent outcomes" in response.text
+    assert "Suggested tags" in response.text
+    assert "Next review actions" in response.text
     assert 'data-tooltip="' in response.text
     assert '"tooltip_shift_intro"' in response.text
     assert "compare-delta-note" in response.text
@@ -209,6 +317,51 @@ def test_workspace_page_renders_user_journey_html(client: TestClient) -> None:
     assert "What changed since last cycle?" in response.text
     assert 'id="workspace-journal-form"' in response.text
     assert 'id="workspace-data"' in response.text
+
+
+def test_workspace_market_page_renders_large_chart_variants(client: TestClient) -> None:
+    response = client.get("/workspace/market", params={"root": "Si"})
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert 'lang="ru"' in response.text
+    assert 'data-market-fullscreen' in response.text
+    assert 'class="utility-shell"' not in response.text
+    assert 'data-language-select' not in response.text
+    assert 'data-hint-box' not in response.text
+    assert 'data-market-root-strip' in response.text
+    assert 'href="/workspace?root=Si"' in response.text
+    assert 'data-market-idea-corridor' in response.text
+    assert 'data-market-idea-change-line' in response.text
+    assert 'data-market-level-strip' in response.text
+    assert 'data-large-market-chart data-large-market-variant="candles"' in response.text
+    assert 'data-large-market-chart data-large-market-variant="line"' in response.text
+    assert 'data-large-market-chart data-large-market-variant="levels"' in response.text
+    assert 'data-market-level-map' in response.text
+    assert 'data-market-level-map-summary' in response.text
+    assert 'data-market-level-map-line data-level-key="price"' in response.text
+    assert 'data-large-market-table' in response.text
+    assert 'data-market-large-timeframe="1D"' in response.text
+    assert 'data-market-large-timeframe="1W"' in response.text
+    assert 'data-market-large-timeframe="1M"' in response.text
+    assert "\u041a\u0440\u0443\u043f\u043d\u044b\u0435 \u0433\u0440\u0430\u0444\u0438\u043a\u0438" in response.text
+    assert "\u0421\u0432\u0435\u0447\u0438" in response.text
+    assert "\u041b\u0438\u043d\u0438\u044f" in response.text
+    assert "\u0423\u0440\u043e\u0432\u043d\u0438" in response.text
+    assert "\u041a\u043e\u0440\u0438\u0434\u043e\u0440 \u0438\u0434\u0435\u0438" in response.text
+    assert "\u0421\u043c\u0435\u043d\u0430 \u0438\u0434\u0435\u0438" in response.text
+
+
+def test_workspace_market_page_uses_directional_root_levels_for_other_instruments(client: TestClient) -> None:
+    response = client.get("/workspace/market", params={"root": "BR"})
+
+    assert response.status_code == 200
+    assert 'data-market-fullscreen' in response.text
+    assert "BR" in response.text
+    assert 'data-market-idea-corridor' in response.text
+    assert 'data-market-idea-change-line' in response.text
+    assert 'data-market-level-strip data-market-level-state="ready"' in response.text
+    assert "\u0421\u043c\u0435\u043d\u0430 \u0438\u0434\u0435\u0438" in response.text
 
 
 def test_workspace_council_page_renders_explainer_html(client: TestClient) -> None:
@@ -227,8 +380,17 @@ def test_workspace_council_page_renders_explainer_html(client: TestClient) -> No
     assert "Скептик" in response.text
     assert "Арбитр" in response.text
     assert "control-summary-grid" in response.text
+    assert 'data-council-runtime-summary' in response.text
+    assert 'data-council-runtime-link' in response.text
+    assert 'href="/workspace/runtime?root=Si"' in response.text
+    assert "Role routing" not in response.text
+    assert "Market-data feeds" not in response.text
     assert "\u041a\u0430\u0440\u0442\u0430 \u0440\u0430\u0437\u043d\u043e\u0433\u043b\u0430\u0441\u0438\u0439" in response.text
     assert "\u041a\u043e\u043d\u0442\u0440\u0444\u0430\u043a\u0442\u0438\u0447\u0435\u0441\u043a\u0438\u0435 \u043f\u043e\u0434\u0441\u043a\u0430\u0437\u043a\u0438" in response.text
+    assert "\u0427\u0442\u043e \u043f\u0435\u0440\u0435\u0432\u043e\u0434\u0438\u0442 \u0441\u0446\u0435\u043d\u0430\u0440\u0438\u0439 \u0432 no-trade" in response.text
+    assert "\u041f\u043e\u0440\u043e\u0433 \u043e\u0442\u043c\u0435\u043d\u044b:" in response.text
+    assert "\u0423\u0441\u0438\u043b\u0435\u043d\u0438\u0435 conviction:" in response.text
+    assert "?????" not in response.text
     assert 'data-surface-state-strip="council"' in response.text
     assert 'data-council-prompt-card' in response.text
     assert 'data-council-prompt-preview' in response.text
@@ -254,6 +416,9 @@ def test_workspace_signal_snapshot_returns_detail_payload(client: TestClient) ->
     assert {"open", "high", "low", "close"} <= set(payload["market_snapshot"]["daily"]["points"][0])
     assert payload["market_snapshot"]["daily"]["overlays"]
     assert {item["key"] for item in payload["market_snapshot"]["daily"]["overlays"]} >= {"entry", "invalidation", "target"}
+    assert payload["market_snapshot"]["daily"]["signal_horizon"] in {"H1S", "H3S"}
+    assert payload["market_snapshot"]["weekly"]["signal_horizon"] == "H2W"
+    assert payload["market_snapshot"]["monthly"]["signal_horizon"] == "H4W"
     assert payload["signal_diff"]["summary"]
     assert payload["confidence_decomposition"]["factors"]
     assert payload["decision_log"]
@@ -313,6 +478,8 @@ def test_workspace_signal_page_renders_detail_html(client: TestClient) -> None:
     assert 'data-root-switch' in response.text
     assert 'data-market-panel' in response.text
     assert 'data-market-signal-id' in response.text
+    assert "__imoexMarketLiveRefreshStop" in response.text
+    assert "marketLiveRefreshTimer" in response.text
     assert "workflow-button" in response.text
     assert 'id="signal-journal-form"' in response.text
     assert 'id="signal-page-data"' in response.text
@@ -332,12 +499,66 @@ def test_workspace_watchlist_compare_and_signal_detail_endpoints(client: TestCli
     assert watchlist
     assert watchlist[0]["root_code"] == "Si"
     assert watchlist[0]["note"] == "Morning priority"
+    assert watchlist[0]["priority_rank"] == 1
+    assert watchlist[0]["focus_reason"] == "Morning priority"
+    assert watchlist[0]["review_state"] == "reviewed_today"
+    assert watchlist[0]["last_reviewed_at"]
 
     get_watch = client.get("/api/v1/workspace/watchlist")
     assert get_watch.status_code == 200
     watch_items = get_watch.json()
     assert watch_items
+    assert watch_items[0]["priority_rank"] == 1
+    assert watch_items[0]["focus_reason"] == "Morning priority"
     watch_key = watch_items[0]["watch_key"]
+
+    create_root_watch = client.post(
+        "/api/v1/workspace/watchlist",
+        json={"root_code": "BR", "note": "Root follow-up"},
+    )
+    assert create_root_watch.status_code == 200
+    root_watch_items = create_root_watch.json()
+    root_watch_key = next(item["watch_key"] for item in root_watch_items if item["signal_id"] is None)
+
+    signal_linked_filter = client.get("/api/v1/workspace/watchlist", params={"linked": "signal"})
+    assert signal_linked_filter.status_code == 200
+    assert signal_linked_filter.json()
+    assert all(item["signal_id"] for item in signal_linked_filter.json())
+
+    root_level_filter = client.get("/api/v1/workspace/watchlist", params={"linked": "root"})
+    assert root_level_filter.status_code == 200
+    assert root_level_filter.json()
+    assert all(item["signal_id"] is None for item in root_level_filter.json())
+
+    root_filter = client.get("/api/v1/workspace/watchlist", params={"root": "BR"})
+    assert root_filter.status_code == 200
+    assert root_filter.json()
+    assert {item["root_code"] for item in root_filter.json()} == {"BR"}
+
+    reviewed_filter = client.get("/api/v1/workspace/watchlist", params={"review_state": "reviewed_today"})
+    assert reviewed_filter.status_code == 200
+    assert reviewed_filter.json()
+    assert all(item["review_state"] == "reviewed_today" for item in reviewed_filter.json())
+
+    workspace_after_watch = client.get("/api/v1/workspace", params={"root": "Si"})
+    assert workspace_after_watch.status_code == 200
+    review_bundle = workspace_after_watch.json()["review_bundle"]
+    assert review_bundle["watchlist_items"] >= 2
+    assert review_bundle["reviewed_today_items"] >= 2
+    assert "Si" in review_bundle["watched_root_codes"]
+    assert review_bundle["tag_suggestions"]
+    assert review_bundle["next_review_actions"]
+
+    due_filter = client.get("/api/v1/workspace/watchlist", params={"review_state": "review_due"})
+    assert due_filter.status_code == 200
+    assert due_filter.json() == []
+
+    review_watch = client.post(f"/api/v1/workspace/watchlist/{watch_key}/review")
+    assert review_watch.status_code == 200
+    reviewed_items = review_watch.json()
+    assert reviewed_items[0]["watch_key"] == watch_key
+    assert reviewed_items[0]["review_state"] == "reviewed_today"
+    assert reviewed_items[0]["last_reviewed_at"]
 
     compare = client.get("/api/v1/workspace/compare", params={"root": "Si"})
     assert compare.status_code == 200
@@ -355,6 +576,9 @@ def test_workspace_watchlist_compare_and_signal_detail_endpoints(client: TestCli
     assert market_payload["monthly"]["points"]
     assert market_payload["daily"]["overlays"]
     assert {item["key"] for item in market_payload["daily"]["overlays"]} >= {"entry", "invalidation", "target"}
+    assert market_payload["daily"]["signal_horizon"] in {"H1S", "H3S"}
+    assert market_payload["weekly"]["signal_horizon"] == "H2W"
+    assert market_payload["monthly"]["signal_horizon"] == "H4W"
 
     diff = client.get(f"/api/v1/workspace/signals/{signal_id}/diff")
     assert diff.status_code == 200
@@ -371,7 +595,10 @@ def test_workspace_watchlist_compare_and_signal_detail_endpoints(client: TestCli
 
     delete_watch = client.delete(f"/api/v1/workspace/watchlist/{watch_key}")
     assert delete_watch.status_code == 200
-    assert delete_watch.json() == []
+    assert delete_watch.json()
+    delete_root_watch = client.delete(f"/api/v1/workspace/watchlist/{root_watch_key}")
+    assert delete_root_watch.status_code == 200
+    assert delete_root_watch.json() == []
 
 
 def test_workspace_snapshot_omits_market_snapshot_when_live_data_is_unavailable(
@@ -385,15 +612,58 @@ def test_workspace_snapshot_omits_market_snapshot_when_live_data_is_unavailable(
     assert selected_pulse["current_price"] is None
     assert selected_pulse["price_change_pct"] is None
     assert payload["market_snapshot"] is None
+    assert payload["market_availability"]["status"] == "hidden"
+    assert payload["market_availability"]["reason_code"] == "no_traceable_snapshot"
+    assert "No traceable quote plus candle snapshot" in payload["market_availability"]["detail"]
+    market_readiness = next(
+        item for item in payload["readiness_next_steps"]["items"] if item["key"] == "market_data_truth"
+    )
+    assert market_readiness["status"] == "blocked"
+    assert market_readiness["tone"] == "warning"
+    assert "No traceable quote plus candle snapshot" in market_readiness["detail"]
+    hidden_alert = next(item for item in payload["market_freshness_alerts"] if item["key"] == "market_data_hidden")
+    assert hidden_alert["signals_only"] is True
+    assert hidden_alert["status"] == "hidden"
+    assert "No traceable quote plus candle snapshot" in hidden_alert["detail"]
+    assert hidden_alert["href"].startswith("/api/v1/health/product-readiness")
 
     signal_id = payload["focus_signal"]["signal_id"]
     signal_snapshot = client_without_market_data.get(f"/api/v1/workspace/signals/{signal_id}")
     assert signal_snapshot.status_code == 200
     assert signal_snapshot.json()["market_snapshot"] is None
+    assert signal_snapshot.json()["market_availability"]["status"] == "hidden"
 
     market_preview = client_without_market_data.get("/api/v1/workspace/market-preview", params={"root": "Si"})
     assert market_preview.status_code == 200
     assert market_preview.json() is None
+
+
+def test_workspace_snapshot_surfaces_degraded_market_freshness_alert(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    from libs.dashboard.service import DashboardService
+
+    original_build_workspace_snapshot = DashboardService.build_workspace_snapshot
+
+    def build_degraded_workspace_snapshot(self, *args, **kwargs):
+        snapshot = original_build_workspace_snapshot(self, *args, **kwargs)
+        if snapshot.market_snapshot is not None:
+            snapshot.market_snapshot.status = "degraded"
+            snapshot.market_snapshot.status_detail = "Forced degraded status for alert coverage."
+        return snapshot
+
+    monkeypatch.setattr(DashboardService, "build_workspace_snapshot", build_degraded_workspace_snapshot)
+
+    response = client.get("/api/v1/workspace", params={"root": "Si"})
+
+    assert response.status_code == 200
+    alerts = response.json()["market_freshness_alerts"]
+    degraded_alert = next(item for item in alerts if item["key"] == "market_data_not_fresh")
+    assert degraded_alert["signals_only"] is True
+    assert degraded_alert["status"] == "degraded"
+    assert degraded_alert["tone"] == "warning"
+    assert "Forced degraded status for alert coverage." in degraded_alert["detail"]
 
 
 def test_workspace_page_renders_market_unavailable_panel_when_live_data_is_unavailable(
@@ -403,6 +673,12 @@ def test_workspace_page_renders_market_unavailable_panel_when_live_data_is_unava
 
     assert workspace.status_code == 200
     assert 'data-market-panel' in workspace.text
+    assert 'data-market-unavailable-reason="no_traceable_snapshot"' in workspace.text
+    assert 'data-market-unavailable-detail' in workspace.text
+    assert 'data-market-fullscreen-link target="_blank" rel="noopener" href="/workspace/market?root=Si"' in workspace.text
+    assert 'data-market-fullscreen-action' in workspace.text
+    assert 'data-market-freshness-alerts' in workspace.text
+    assert 'data-market-freshness-key="market_data_hidden"' in workspace.text
     assert 'data-surface-state-strip="workspace"' in workspace.text
     assert "\u0413\u0440\u0430\u0444\u0438\u043a\u0438 \u0441\u043a\u0440\u044b\u0442\u044b" in workspace.text
 
@@ -410,8 +686,17 @@ def test_workspace_page_renders_market_unavailable_panel_when_live_data_is_unava
     signal_page = client_without_market_data.get(f"/workspace/signals/{signal_id}")
     assert signal_page.status_code == 200
     assert 'data-market-panel' in signal_page.text
+    assert 'data-market-unavailable-reason="no_traceable_snapshot"' in signal_page.text
     assert 'data-surface-state-strip="signal"' in signal_page.text
     assert "\u0413\u0440\u0430\u0444\u0438\u043a\u0438 \u0441\u043a\u0440\u044b\u0442\u044b" in signal_page.text
+
+    market_page = client_without_market_data.get("/workspace/market", params={"root": "Si"})
+    assert market_page.status_code == 200
+    assert 'data-market-fullscreen-empty' in market_page.text
+    assert 'data-market-unavailable-reason="no_traceable_snapshot"' in market_page.text
+    assert 'data-market-unavailable-detail' in market_page.text
+    assert "\u0413\u0440\u0430\u0444\u0438\u043a\u0438 \u0441\u043a\u0440\u044b\u0442\u044b" in market_page.text
+    assert 'data-large-market-chart' not in market_page.text
 
 
 def test_council_and_runtime_pages_render_surface_state_strip(client_without_market_data: TestClient) -> None:
@@ -667,6 +952,15 @@ def test_runtime_control_page_renders_html(client: TestClient) -> None:
     assert "Политика актуальности" in response.text
     assert "Журнал изменений" in response.text
     assert 'data-surface-state-strip="runtime"' in response.text
+    assert 'id="runtime-admin-key"' in response.text
+    assert 'data-runtime-admin-key-form' in response.text
+    assert 'data-runtime-admin-key-input' in response.text
+    assert 'data-runtime-admin-key-clear' in response.text
+    assert 'data-runtime-admin-key-state' in response.text
+    assert 'imoex_admin_key' in response.text
+    assert 'X-IMOEX-Admin-Key' in response.text
+    assert "__imoexMarketLiveRefreshStop" in response.text
+    assert "document.write" not in response.text
     assert "role_key" in response.text
     assert 'id="runtime-control-data"' in response.text
     assert 'data-runtime-policy-form' in response.text
@@ -687,6 +981,12 @@ def test_runtime_control_page_renders_html(client: TestClient) -> None:
     assert 'data-runtime-prompt-dismiss' in response.text
     assert 'data-runtime-prompt-version-state' in response.text
     assert 'data-runtime-prompt-release-note' in response.text
+
+
+def test_favicon_does_not_pollute_browser_console(client: TestClient) -> None:
+    response = client.get("/favicon.ico")
+
+    assert response.status_code == 204
 
 
 def test_risky_editable_prompt_change_requires_approval(client: TestClient) -> None:
@@ -903,9 +1203,11 @@ def test_workspace_journal_snapshot_returns_filtered_entries(client: TestClient)
             "title": "Opening thesis",
             "note": "Signal still aligned with the main setup.",
             "author": "test",
+            "tags": ["great context", "data issue"],
         },
     )
     assert create_response.status_code == 200
+    assert create_response.json()["tags"] == ["great context", "data issue"]
 
     response = client.get("/api/v1/workspace/journal", params={"root": "Si", "kind": "thesis"})
 
@@ -917,6 +1219,20 @@ def test_workspace_journal_snapshot_returns_filtered_entries(client: TestClient)
     assert "decision_summary" in payload["decision_log"][0]
     assert payload["entries"]
     assert payload["entries"][0]["entry"]["title"] == "Opening thesis"
+    assert payload["entries"][0]["entry"]["tags"] == ["great context", "data issue"]
+    assert payload["tag_counts"]
+    assert payload["tag_counts"][0]["tag"] in {"data issue", "great context"}
+
+    tag_response = client.get("/api/v1/workspace/journal", params={"root": "Si", "tag": "data issue"})
+    assert tag_response.status_code == 200
+    tag_payload = tag_response.json()
+    assert tag_payload["selected_tag"] == "data issue"
+    assert tag_payload["entries"]
+    assert all("data issue" in item["entry"]["tags"] for item in tag_payload["entries"])
+
+    missing_tag_response = client.get("/api/v1/workspace/journal", params={"root": "Si", "tag": "missing tag"})
+    assert missing_tag_response.status_code == 200
+    assert missing_tag_response.json()["entries"] == []
 
 
 def _legacy_workspace_journal_page_renders_html(client: TestClient) -> None:
@@ -929,10 +1245,11 @@ def _legacy_workspace_journal_page_renders_html(client: TestClient) -> None:
             "title": "Main risk",
             "note": "Roll share is rising faster than expected.",
             "author": "test",
+            "tags": ["late", "data issue"],
         },
     )
 
-    response = client.get("/workspace/journal", params={"root": "Si"})
+    response = client.get("/workspace/journal", params={"root": "Si", "tag": "data issue"})
 
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
@@ -964,6 +1281,10 @@ def test_workspace_journal_page_renders_html(client: TestClient) -> None:
     assert "\u041f\u0430\u043c\u044f\u0442\u044c \u0442\u043e\u0440\u0433\u043e\u0432\u043e\u0439 \u0441\u0438\u0441\u0442\u0435\u043c\u044b" in response.text
     assert "\u0416\u0443\u0440\u043d\u0430\u043b \u0440\u0435\u0448\u0435\u043d\u0438\u0439" in response.text
     assert "\u041b\u0435\u043d\u0442\u0430 \u0436\u0443\u0440\u043d\u0430\u043b\u0430" in response.text
+    assert 'data-journal-tag-filters' in response.text
+    assert 'data-journal-tag-drilldown' in response.text
+    assert "data issue" in response.text
+    assert "Tag quality drill-down" in response.text
     assert 'id="journal-workspace-data"' in response.text
 
 
@@ -1308,7 +1629,9 @@ def test_workspace_delivery_activity_export_supports_csv_and_jsonl(client: TestC
     assert csv_response.status_code == 200
     assert "text/csv" in csv_response.headers["content-type"]
     assert "activity_id,action,event_kind" in csv_response.text
+    assert "reason_label" in csv_response.text
     assert '"digest"' in csv_response.text
+    assert "Sent because delivery was allowed and Telegram accepted the message." in csv_response.text
 
     jsonl_response = client.get(
         "/api/v1/workspace/delivery/activity/export",
@@ -1317,6 +1640,7 @@ def test_workspace_delivery_activity_export_supports_csv_and_jsonl(client: TestC
     assert jsonl_response.status_code == 200
     assert "application/x-ndjson" in jsonl_response.headers["content-type"]
     assert '"event_kind": "digest"' in jsonl_response.text
+    assert '"reason_label": "Sent because delivery was allowed and Telegram accepted the message."' in jsonl_response.text
 
 
 def test_dashboard_can_be_disabled_by_feature_flag(client: TestClient, monkeypatch) -> None:

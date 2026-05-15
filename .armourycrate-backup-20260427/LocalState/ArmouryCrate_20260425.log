@@ -1,0 +1,94 @@
+2026-04-25 14:45:40.629; System; Armoury Crate; 15464; 3] ----------------------------------------------------------------------------------------------------
+2026-04-25 14:45:40.629; System; Armoury Crate; 15464; 3] [4/25/2026 2:45:40 PM]
+2026-04-25 14:45:40.629; System; Armoury Crate; 15464; 3] Armoury Crate Version : 6.4.12.0
+2026-04-25 14:45:40.629; System; Armoury Crate; 15464; 3] OS Version Build : 26200
+2026-04-25 14:45:40.629; System; Armoury Crate; 15464; 3] ----------------------------------------------------------------------------------------------------
+2026-04-25 14:45:41.360; Error; UwpDebugOptions; 15464; 2] (709043444)Failed to read ExceptionList.txt: Could not load file or assembly 'C:\Users\vrudi\AppData\Local\Packages\B9ECED6F.ArmouryCrate_qmba6cd70vzyy\LocalState\ExceptionList.txt'. The system cannot find the file specified.
+2026-04-25 14:45:41.360; Info; UwpAppConfiguration; 15464; 2] (709043445)DebugProductLineEnabled: False, DebugProductLine: Unknown, DebugBrandLineEnabled: False, DebugBrandLine: Unknown, DebugFeatureSetEnabled: False, DebugFeatureSet: Any, DebugLogEnabled: False, DebugLogLevel: Info, IgnoreOnePackageFlow: False, IgnoredPlugins: 
+2026-04-25 14:45:41.632; Warning; ThemeManager; 15464; 2] (709043716)Can not find target theme - 
+2026-04-25 14:45:41.703; Info; ROGID; 15464; 2] (709043786)[ROGID.ROGIDService.SSO]SSO Module Init Status : True
+2026-04-25 14:45:41.717; Info; DeviceInformationService; 15464; 2] (709043800)FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE
+2026-04-25 14:45:41.755; Info; CoreServiceManager; 15464; 2] (709043839)Start FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE spend 40 ms
+2026-04-25 14:45:41.848; Info; ConnectionHandler(Service); 15464; 7] (709043932)Final version: 1.1
+2026-04-25 14:45:41.912; Info; ConnectionHandler(Service); 15464; 7] (709043996)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-25 14:45:41.912; Info; ConnectionHandler(Service); 15464; 7] (709043996)connected for peer: Service
+2026-04-25 14:45:41.921; Info; AsusDeviceManager; 15464; 6] (709044005)MessageType:Device,DeviceType:Notebook,DeviceName:G713QE,DeviceId:, Attributes: (CheckBoxEnable:1)  (DependentAppStatus:0)  (DeviceCount:1)  (DeviceGUID:3F49AD29-52D9-46A5-A608-203D54E7D12A)  (DeviceIndex:0)  (DisplayName:G713QE)  (FirstPluginNeedUpdate:0)  (InfoIconEnable:0)  (LightingMode:SUPPORTAURA)  (LinkToDeviceEnable:0)  (LocalFrameworkVersion:4.2.4.8)  (LocalHtmlVersion:0)  (LocalMainSDKVersion:2.01.52)  (LocalSDKVersion:0)  (NeedRestart:false)  (PIDMode:0)  (PartNumber_90:90NR05F2-M01710)  (ProductLine:ROG_Laptop)  (ServerFrameworkVersion:4.2.4.13)  (ServerHtmlVersion:0)  (ServerMainSDKVersion:2.01.56)  (ServerSDKVersion:0)  (SupportCreator:true) 
+2026-04-25 14:45:42.042; Info; ConnectionHandler(UserSession); 15464; 11] (709044126)Final version: 1.1
+2026-04-25 14:45:42.060; Info; ConnectionHandler(UserSession); 15464; 11] (709044144)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-25 14:45:42.060; Info; CoreServiceManager; 15464; 2] (709044144)Start ArmouryCrate.Console.Uwp.Core.Services.CoreStreamService spend 305 ms
+2026-04-25 14:45:42.060; Info; ConnectionHandler(UserSession); 15464; 11] (709044144)connected for peer: UserSession
+2026-04-25 14:45:42.060; Info; CoreServiceManager; 15464; 2] (709044144)Start ArmouryCrate.Console.Uwp.Core.Services.SettingsService spend 0 ms
+2026-04-25 14:45:42.060; Info; CoreServiceManager; 15464; 2] (709044144)Start ArmouryCrate.Console.Uwp.Core.Services.VisualService spend 0 ms
+2026-04-25 14:45:42.060; Info; CoreServiceManager; 15464; 2] (709044144)Start ArmouryCrate.Console.Uwp.Core.Services.ROGIDService spend 0 ms
+2026-04-25 14:45:42.061; Info; CoreServiceManager; 15464; 2] (709044145)Start ArmouryCrate.Console.Uwp.Core.Services.DataCollectionService spend 1 ms
+2026-04-25 14:45:42.061; Info; CoreServiceManager; 15464; 2] (709044145)Start ArmouryCrate.Console.Uwp.Core.Services.PromotionService spend 0 ms
+2026-04-25 14:45:42.061; Info; CoreServiceManager; 15464; 2] (709044145)Start ArmouryCrate.Console.Uwp.Core.Services.PrivacyPolicyService spend 0 ms
+2026-04-25 14:45:42.065; Info; CoreServiceManager; 15464; 2] (709044148)Start ArmouryCrate.Console.Uwp.Core.Services.BackgroundTaskService spend 3 ms
+2026-04-25 14:45:42.065; Info; CoreServiceManager; 15464; 2] (709044149)Get theme from previous recrod => ROG
+2026-04-25 14:45:42.065; Info; CoreServiceManager; 15464; 2] (709044149)GetTheme... ROG
+2026-04-25 14:45:42.065; Info; App; 15464; 2] (709044149)DeveloperMode:NotSet
+2026-04-25 14:45:42.068; Info; App; 15464; 2] (709044152)IsAdmin:True
+2026-04-25 14:45:42.071; Info; AppProfiler; 15464; 13] (709044155)Tag Begin - State:CoreInit
+2026-04-25 14:45:42.079; Info; CoreInitializationState; 15464; 13] (709044163)CheckBackgroundUpdate begin
+2026-04-25 14:45:42.080; Info; CoreInitializationState; 15464; 13] (709044164)Current Version: 6.4.12.0 ACPreviousVersion: 6.3.9.0
+2026-04-25 14:45:42.080; Info; CoreInitializationState; 15464; 13] (709044164)Sleep for background update
+2026-04-25 14:45:42.088; Error; PluginManager; 15464; 12] (709044172)number:0438803c-04e8-4b58-a0c4-9bdcfd19d1e9 is not found
+2026-04-25 14:45:42.088; Warning; CoreStreamService; 15464; 12] (709044172)receiver is not found or stopping or stopped
+2026-04-25 14:45:42.092; Error; PluginManager; 15464; 12] (709044176)number:0438803c-04e8-4b58-a0c4-9bdcfd19d1e9 is not found
+2026-04-25 14:45:42.092; Warning; CoreStreamService; 15464; 12] (709044176)receiver is not found or stopping or stopped
+2026-04-25 14:45:42.278; Error; PluginManager; 15464; 16] (709044362)number:aaaf3325-0c47-4fcb-8975-c52bbc5a4a7a is not found
+2026-04-25 14:45:42.278; Warning; CoreStreamService; 15464; 16] (709044362)receiver is not found or stopping or stopped
+2026-04-25 14:45:45.095; Info; CoreInitializationState; 15464; 13] (709047179)isBackgroundUpdateStarted: True
+2026-04-25 14:45:45.095; Info; CoreInitializationState; 15464; 13] (709047179)Background update started 
+2026-04-25 14:45:45.095; Info; CoreInitializationState; 15464; 13] (709047179)IsSupportLocalUpdateWithACSetup: True
+2026-04-25 14:45:45.095; Info; CoreInitializationState; 15464; 13] (709047179)Background LocalUpdate with ACSetup
+2026-04-25 14:45:45.096; Info; ACSetupConnectionService; 15464; 13] (709047181)Connect to ACSetup
+2026-04-25 14:45:45.099; Warning; ACSetupConnectionService; 15464; 15] (709047183)acSetupPortFile error: The system cannot find the file specified. (Exception from HRESULT: 0x80070002)
+2026-04-25 14:45:45.099; Warning; ACSetupConnectionService; 15464; 17] (709047184)Try to connect ACSetup on port23210
+2026-04-25 14:45:45.117; Error; ACSetupConnectionService; 15464; 10] (709047201)Connect ACSetup Fail acSetupPort: 23210
+2026-04-25 14:45:48.130; Warning; ACSetupConnectionService; 15464; 15] (709050214)acSetupPortFile error: The system cannot find the file specified. (Exception from HRESULT: 0x80070002)
+2026-04-25 14:45:48.130; Warning; ACSetupConnectionService; 15464; 15] (709050214)Try to connect ACSetup on port23210
+2026-04-25 14:45:48.134; Error; ACSetupConnectionService; 15464; 10] (709050218)Connect ACSetup Fail acSetupPort: 23210
+2026-04-25 14:45:51.148; Warning; ACSetupConnectionService; 15464; 15] (709053231)acSetupPortFile error: The system cannot find the file specified. (Exception from HRESULT: 0x80070002)
+2026-04-25 14:45:51.148; Warning; ACSetupConnectionService; 15464; 15] (709053231)Try to connect ACSetup on port23210
+2026-04-25 14:45:51.150; Error; ACSetupConnectionService; 15464; 10] (709053234)Connect ACSetup Fail acSetupPort: 23210
+2026-04-25 21:01:51.908; System; Armoury Crate; 21168; 3] ----------------------------------------------------------------------------------------------------
+2026-04-25 21:01:51.908; System; Armoury Crate; 21168; 3] [4/25/2026 9:01:51 PM]
+2026-04-25 21:01:51.908; System; Armoury Crate; 21168; 3] Armoury Crate Version : 6.4.12.0
+2026-04-25 21:01:51.908; System; Armoury Crate; 21168; 3] OS Version Build : 26200
+2026-04-25 21:01:51.908; System; Armoury Crate; 21168; 3] ----------------------------------------------------------------------------------------------------
+2026-04-25 21:01:52.304; Error; UwpDebugOptions; 21168; 2] (134195)Failed to read ExceptionList.txt: Could not load file or assembly 'C:\Users\vrudi\AppData\Local\Packages\B9ECED6F.ArmouryCrate_qmba6cd70vzyy\LocalState\ExceptionList.txt'. The system cannot find the file specified.
+2026-04-25 21:01:52.304; Info; UwpAppConfiguration; 21168; 2] (134196)DebugProductLineEnabled: False, DebugProductLine: Unknown, DebugBrandLineEnabled: False, DebugBrandLine: Unknown, DebugFeatureSetEnabled: False, DebugFeatureSet: Any, DebugLogEnabled: False, DebugLogLevel: Info, IgnoreOnePackageFlow: False, IgnoredPlugins: 
+2026-04-25 21:01:52.334; Warning; ThemeManager; 21168; 2] (134225)Can not find target theme - 
+2026-04-25 21:01:52.341; Info; ROGID; 21168; 2] (134233)[ROGID.ROGIDService.SSO]SSO Module Init Status : True
+2026-04-25 21:01:52.343; Info; DeviceInformationService; 21168; 2] (134234)FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE
+2026-04-25 21:01:52.343; Info; CoreServiceManager; 21168; 2] (134235)Start FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE spend 1 ms
+2026-04-25 21:01:52.363; Info; ConnectionHandler(Service); 21168; 8] (134254)Final version: 1.1
+2026-04-25 21:01:52.386; Info; ConnectionHandler(Service); 21168; 8] (134279)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-25 21:01:52.386; Info; ConnectionHandler(Service); 21168; 8] (134279)connected for peer: Service
+2026-04-25 21:01:52.390; Info; AsusDeviceManager; 21168; 6] (134282)MessageType:Device,DeviceType:Notebook,DeviceName:G713QE,DeviceId:, Attributes: (CheckBoxEnable:1)  (DependentAppStatus:0)  (DeviceCount:1)  (DeviceGUID:3F49AD29-52D9-46A5-A608-203D54E7D12A)  (DeviceIndex:0)  (DisplayName:G713QE)  (FirstPluginNeedUpdate:0)  (InfoIconEnable:0)  (LightingMode:SUPPORTAURA)  (LinkToDeviceEnable:0)  (LocalFrameworkVersion:4.2.4.8)  (LocalHtmlVersion:0)  (LocalMainSDKVersion:2.01.52)  (LocalSDKVersion:0)  (NeedRestart:false)  (PIDMode:0)  (PartNumber_90:90NR05F2-M01710)  (ProductLine:ROG_Laptop)  (ServerFrameworkVersion:4.2.4.13)  (ServerHtmlVersion:0)  (ServerMainSDKVersion:2.01.56)  (ServerSDKVersion:0)  (SupportCreator:true) 
+2026-04-25 21:01:52.403; Info; ConnectionHandler(UserSession); 21168; 12] (134295)Final version: 1.1
+2026-04-25 21:01:52.414; Info; ConnectionHandler(UserSession); 21168; 12] (134306)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-25 21:01:52.414; Info; CoreServiceManager; 21168; 2] (134306)Start ArmouryCrate.Console.Uwp.Core.Services.CoreStreamService spend 71 ms
+2026-04-25 21:01:52.414; Info; CoreServiceManager; 21168; 2] (134306)Start ArmouryCrate.Console.Uwp.Core.Services.SettingsService spend 0 ms
+2026-04-25 21:01:52.414; Info; ConnectionHandler(UserSession); 21168; 12] (134306)connected for peer: UserSession
+2026-04-25 21:01:52.414; Info; CoreServiceManager; 21168; 2] (134306)Start ArmouryCrate.Console.Uwp.Core.Services.VisualService spend 0 ms
+2026-04-25 21:01:52.414; Info; CoreServiceManager; 21168; 2] (134306)Start ArmouryCrate.Console.Uwp.Core.Services.ROGIDService spend 0 ms
+2026-04-25 21:01:52.414; Info; CoreServiceManager; 21168; 2] (134306)Start ArmouryCrate.Console.Uwp.Core.Services.DataCollectionService spend 0 ms
+2026-04-25 21:01:52.414; Info; CoreServiceManager; 21168; 2] (134306)Start ArmouryCrate.Console.Uwp.Core.Services.PromotionService spend 0 ms
+2026-04-25 21:01:52.414; Info; CoreServiceManager; 21168; 2] (134306)Start ArmouryCrate.Console.Uwp.Core.Services.PrivacyPolicyService spend 0 ms
+2026-04-25 21:01:52.414; Info; CoreServiceManager; 21168; 2] (134307)Start ArmouryCrate.Console.Uwp.Core.Services.BackgroundTaskService spend 1 ms
+2026-04-25 21:01:52.414; Info; CoreServiceManager; 21168; 2] (134307)Get theme from previous recrod => ROG
+2026-04-25 21:01:52.414; Info; CoreServiceManager; 21168; 2] (134307)GetTheme... ROG
+2026-04-25 21:01:52.414; Info; App; 21168; 2] (134307)DeveloperMode:NotSet
+2026-04-25 21:01:52.415; Error; PluginManager; 21168; 11] (134307)number:0438803c-04e8-4b58-a0c4-9bdcfd19d1e9 is not found
+2026-04-25 21:01:52.415; Warning; CoreStreamService; 21168; 11] (134307)receiver is not found or stopping or stopped
+2026-04-25 21:01:52.415; Info; App; 21168; 2] (134308)IsAdmin:True
+2026-04-25 21:01:52.416; Info; AppProfiler; 21168; 15] (134308)Tag Begin - State:CoreInit
+2026-04-25 21:01:52.416; Error; PluginManager; 21168; 11] (134309)number:0438803c-04e8-4b58-a0c4-9bdcfd19d1e9 is not found
+2026-04-25 21:01:52.416; Warning; CoreStreamService; 21168; 11] (134309)receiver is not found or stopping or stopped
+2026-04-25 21:01:52.444; Info; CoreInitializationState; 21168; 15] (134336)CheckBackgroundUpdate begin
+2026-04-25 21:01:52.444; Info; CoreInitializationState; 21168; 15] (134336)Current Version: 6.4.12.0 ACPreviousVersion: 6.3.9.0
+2026-04-25 21:01:52.444; Info; CoreInitializationState; 21168; 15] (134336)Sleep for background update
+2026-04-25 21:01:52.718; Error; PluginManager; 21168; 16] (134609)number:aaaf3325-0c47-4fcb-8975-c52bbc5a4a7a is not found
+2026-04-25 21:01:52.718; Warning; CoreStreamService; 21168; 16] (134609)receiver is not found or stopping or stopped

@@ -25,6 +25,9 @@ dev = [
   "pytest-asyncio>=0.23.7",
   "ruff>=0.5.0",
 ]
+browser = [
+  "playwright>=1.47.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["apps*", "libs*"]

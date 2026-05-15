@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import json
+from datetime import UTC, datetime
+
 from fastapi.testclient import TestClient
+
+from libs.utils.config import settings
 
 
 def test_health_sources_contains_moex_and_database(client: TestClient) -> None:
@@ -117,8 +122,18 @@ def test_product_readiness_health_gate_covers_operator_surfaces(client: TestClie
     assert checks["review_loop_surface"]["status"] == "ok"
     assert checks["runtime_control_surface"]["status"] == "ok"
     assert checks["runtime_prompt_governance"]["status"] == "ok"
+    assert checks["admin_runtime_security"]["status"] == "ok"
+    assert checks["admin_runtime_security"]["severity"] == "advisory"
+    assert checks["admin_health_surface"]["status"] == "ok"
+    assert checks["backup_freshness"]["status"] in {"ok", "warning"}
+    assert checks["scheduler_health"]["status"] in {"ok", "warning"}
+    assert checks["delivery_readiness"]["status"] in {"ok", "warning"}
+    assert checks["migration_status"]["status"] in {"ok", "warning"}
+    assert checks["market_data_policy"]["status"] == "ok"
     assert checks["market_data_truth"]["status"] == "ok"
     assert checks["market_data_truth"]["metrics"]["market_visible"] is True
+    assert checks["market_data_policy"]["metrics"]["market_visible"] is True
+    assert checks["market_data_policy"]["metrics"]["live_required"] is False
     assert checks["runtime_prompt_governance"]["metrics"]["rendered_prompts"] >= 6
 
 
@@ -138,3 +153,121 @@ def test_product_readiness_health_gate_warns_when_market_data_is_hidden(
     assert checks["runtime_prompt_governance"]["status"] == "ok"
     assert checks["market_data_truth"]["status"] == "warning"
     assert checks["market_data_truth"]["metrics"]["market_visible"] is False
+    assert checks["market_data_policy"]["status"] == "warning"
+    assert checks["market_data_policy"]["metrics"]["market_visible"] is False
+
+
+def test_product_readiness_health_gate_blocks_when_live_market_data_is_required(
+    client_without_market_data: TestClient,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "product_readiness_require_live_market_data", True)
+
+    response = client_without_market_data.get("/api/v1/health/product-readiness", params={"root": "Si"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    checks = {item["key"]: item for item in payload["checks"]}
+
+    assert payload["release_gate"] == "fail"
+    assert payload["status"] == "not_ok"
+    assert checks["market_data_policy"]["severity"] == "required"
+    assert checks["market_data_policy"]["status"] == "not_ok"
+    assert checks["market_data_policy"]["metrics"]["live_required"] is True
+    assert checks["market_data_policy"]["metrics"]["market_visible"] is False
+
+
+def test_product_readiness_health_gate_requires_restore_evidence_for_production(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "app_environment", "production")
+    monkeypatch.setattr(settings, "admin_api_key", "prod-test-key")
+    monkeypatch.setattr(settings, "market_data_live_enabled", True)
+    monkeypatch.setattr(settings, "product_readiness_restore_evidence_path", None)
+
+    response = client.get("/api/v1/health/product-readiness", params={"root": "Si"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    checks = {item["key"]: item for item in payload["checks"]}
+
+    assert payload["release_gate"] == "fail"
+    assert payload["status"] == "not_ok"
+    assert checks["admin_runtime_security"]["status"] == "ok"
+    assert checks["admin_runtime_security"]["severity"] == "required"
+    assert checks["market_data_policy"]["status"] == "ok"
+    assert checks["market_data_policy"]["severity"] == "required"
+    assert checks["restore_drill_evidence"]["status"] == "not_ok"
+    assert checks["restore_drill_evidence"]["severity"] == "required"
+    assert checks["restore_drill_evidence"]["metrics"]["required"] is True
+
+
+def test_product_readiness_health_gate_accepts_fresh_restore_evidence_for_production(
+    client: TestClient,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    evidence_path = tmp_path / "restore-evidence.json"
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "generated_at": datetime.now(UTC).isoformat(),
+                "root": "Si",
+                "integrity_check": "ok",
+                "roots": 1,
+                "final_signals": 3,
+                "release_gate": "pass",
+                "admin_status": "ok",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "app_environment", "production")
+    monkeypatch.setattr(settings, "admin_api_key", "prod-test-key")
+    monkeypatch.setattr(settings, "market_data_live_enabled", True)
+    monkeypatch.setattr(settings, "product_readiness_restore_evidence_path", evidence_path.as_posix())
+
+    response = client.get("/api/v1/health/product-readiness", params={"root": "Si"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    checks = {item["key"]: item for item in payload["checks"]}
+
+    assert payload["release_gate"] == "pass"
+    assert checks["restore_drill_evidence"]["status"] == "ok"
+    assert checks["restore_drill_evidence"]["severity"] == "required"
+    assert checks["restore_drill_evidence"]["metrics"]["path"] == str(evidence_path)
+    assert checks["restore_drill_evidence"]["metrics"]["release_gate"] == "pass"
+
+
+def test_product_readiness_health_gate_blocks_when_required_market_data_is_degraded(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    from libs.dashboard.service import DashboardService
+
+    original_build_workspace_snapshot = DashboardService.build_workspace_snapshot
+
+    def build_degraded_workspace_snapshot(self, *args, **kwargs):
+        snapshot = original_build_workspace_snapshot(self, *args, **kwargs)
+        if snapshot.market_snapshot is not None:
+            snapshot.market_snapshot.status = "degraded"
+            snapshot.market_snapshot.status_detail = "Forced degraded status for readiness policy."
+        return snapshot
+
+    monkeypatch.setattr(DashboardService, "build_workspace_snapshot", build_degraded_workspace_snapshot)
+    monkeypatch.setattr(settings, "product_readiness_require_live_market_data", True)
+    monkeypatch.setattr(settings, "market_data_live_enabled", True)
+
+    response = client.get("/api/v1/health/product-readiness", params={"root": "Si"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    checks = {item["key"]: item for item in payload["checks"]}
+
+    assert payload["release_gate"] == "fail"
+    assert checks["market_data_truth"]["status"] == "warning"
+    assert checks["market_data_policy"]["severity"] == "required"
+    assert checks["market_data_policy"]["status"] == "not_ok"
+    assert checks["market_data_policy"]["metrics"]["market_status"] == "degraded"

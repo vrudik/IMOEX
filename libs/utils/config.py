@@ -38,6 +38,12 @@ class Settings(BaseSettings):
 
     database_url: str = _default_database_url()
     backups_dir: str = _default_backups_dir()
+    app_environment: str = "local"
+    admin_api_key: str | None = None
+    admin_api_key_header: str = "X-IMOEX-Admin-Key"
+    admin_api_key_required_environments: str = "prod,production,staging"
+    postgres_pg_dump_path: str = "pg_dump"
+    postgres_pg_restore_path: str = "pg_restore"
     tbank_token: str | None = None
     tbank_account_id: str | None = None
     tbank_use_sandbox: bool = True
@@ -66,6 +72,10 @@ class Settings(BaseSettings):
     market_data_live_enabled: bool = True
     market_data_http_timeout_seconds: float = 2.5
     market_data_cache_ttl_seconds: int = 45
+    product_readiness_require_live_market_data: bool = False
+    product_readiness_require_restore_evidence: bool = False
+    product_readiness_restore_evidence_path: str | None = None
+    product_readiness_restore_evidence_max_age_hours: int = 72
     moex_reference_auto_sync_enabled: bool = True
     moex_reference_auto_sync_interval_hours: int = 12
     moex_reference_retry_cooldown_minutes: int = 30

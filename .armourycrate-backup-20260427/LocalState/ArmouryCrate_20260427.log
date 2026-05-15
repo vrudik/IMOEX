@@ -1,0 +1,341 @@
+2026-04-27 09:47:07.822; System; Armoury Crate; 38948; 3] ----------------------------------------------------------------------------------------------------
+2026-04-27 09:47:07.822; System; Armoury Crate; 38948; 3] [4/27/2026 9:47:07 AM]
+2026-04-27 09:47:07.822; System; Armoury Crate; 38948; 3] Armoury Crate Version : 6.4.12.0
+2026-04-27 09:47:07.822; System; Armoury Crate; 38948; 3] OS Version Build : 26200
+2026-04-27 09:47:07.822; System; Armoury Crate; 38948; 3] ----------------------------------------------------------------------------------------------------
+2026-04-27 09:47:08.226; Error; UwpDebugOptions; 38948; 2] (81009891)Failed to read ExceptionList.txt: Could not load file or assembly 'C:\Users\vrudi\AppData\Local\Packages\B9ECED6F.ArmouryCrate_qmba6cd70vzyy\LocalState\ExceptionList.txt'. The system cannot find the file specified.
+2026-04-27 09:47:08.227; Info; UwpAppConfiguration; 38948; 2] (81009892)DebugProductLineEnabled: False, DebugProductLine: Unknown, DebugBrandLineEnabled: False, DebugBrandLine: Unknown, DebugFeatureSetEnabled: False, DebugFeatureSet: Any, DebugLogEnabled: False, DebugLogLevel: Info, IgnoreOnePackageFlow: False, IgnoredPlugins: 
+2026-04-27 09:47:08.298; Warning; ThemeManager; 38948; 2] (81009968)Can not find target theme - 
+2026-04-27 09:47:08.312; Info; ROGID; 38948; 2] (81009978)[ROGID.ROGIDService.SSO]SSO Module Init Status : True
+2026-04-27 09:47:08.312; Info; DeviceInformationService; 38948; 2] (81009980)FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE
+2026-04-27 09:47:08.312; Info; CoreServiceManager; 38948; 2] (81009980)Start FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE spend 1 ms
+2026-04-27 09:47:08.336; Info; ConnectionHandler(Service); 38948; 9] (81010001)Final version: 1.1
+2026-04-27 09:47:08.353; Info; ConnectionHandler(Service); 38948; 9] (81010022)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-27 09:47:08.353; Info; ConnectionHandler(Service); 38948; 9] (81010022)connected for peer: Service
+2026-04-27 09:47:08.361; Info; AsusDeviceManager; 38948; 11] (81010027)MessageType:Device,DeviceType:Notebook,DeviceName:G713QE,DeviceId:, Attributes: (CheckBoxEnable:1)  (DependentAppStatus:0)  (DeviceCount:1)  (DeviceGUID:3F49AD29-52D9-46A5-A608-203D54E7D12A)  (DeviceIndex:0)  (DisplayName:G713QE)  (FirstPluginNeedUpdate:0)  (InfoIconEnable:0)  (LightingMode:SUPPORTAURA)  (LinkToDeviceEnable:0)  (LocalFrameworkVersion:4.2.4.8)  (LocalHtmlVersion:0)  (LocalMainSDKVersion:2.01.52)  (LocalSDKVersion:0)  (NeedRestart:false)  (PIDMode:0)  (PartNumber_90:90NR05F2-M01710)  (ProductLine:ROG_Laptop)  (ServerFrameworkVersion:4.2.4.13)  (ServerHtmlVersion:0)  (ServerMainSDKVersion:2.01.56)  (ServerSDKVersion:0)  (SupportCreator:true) 
+2026-04-27 09:47:08.464; Info; ConnectionHandler(UserSession); 38948; 12] (81010135)Final version: 1.1
+2026-04-27 09:47:08.478; Info; ConnectionHandler(UserSession); 38948; 12] (81010145)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-27 09:47:08.478; Info; CoreServiceManager; 38948; 2] (81010145)Start ArmouryCrate.Console.Uwp.Core.Services.CoreStreamService spend 165 ms
+2026-04-27 09:47:08.478; Info; ConnectionHandler(UserSession); 38948; 12] (81010145)connected for peer: UserSession
+2026-04-27 09:47:08.478; Info; CoreServiceManager; 38948; 2] (81010145)Start ArmouryCrate.Console.Uwp.Core.Services.SettingsService spend 0 ms
+2026-04-27 09:47:08.478; Info; CoreServiceManager; 38948; 2] (81010145)Start ArmouryCrate.Console.Uwp.Core.Services.VisualService spend 0 ms
+2026-04-27 09:47:08.478; Info; CoreServiceManager; 38948; 2] (81010145)Start ArmouryCrate.Console.Uwp.Core.Services.ROGIDService spend 0 ms
+2026-04-27 09:47:08.478; Info; CoreServiceManager; 38948; 2] (81010145)Start ArmouryCrate.Console.Uwp.Core.Services.DataCollectionService spend 0 ms
+2026-04-27 09:47:08.478; Info; CoreServiceManager; 38948; 2] (81010145)Start ArmouryCrate.Console.Uwp.Core.Services.PromotionService spend 0 ms
+2026-04-27 09:47:08.478; Info; CoreServiceManager; 38948; 2] (81010145)Start ArmouryCrate.Console.Uwp.Core.Services.PrivacyPolicyService spend 0 ms
+2026-04-27 09:47:08.478; Info; CoreServiceManager; 38948; 2] (81010145)Start ArmouryCrate.Console.Uwp.Core.Services.BackgroundTaskService spend 0 ms
+2026-04-27 09:47:08.478; Info; CoreServiceManager; 38948; 2] (81010146)Get theme from previous recrod => ROG
+2026-04-27 09:47:08.478; Info; CoreServiceManager; 38948; 2] (81010146)GetTheme... ROG
+2026-04-27 09:47:08.478; Info; App; 38948; 2] (81010146)DeveloperMode:NotSet
+2026-04-27 09:47:08.478; Info; App; 38948; 2] (81010146)IsAdmin:True
+2026-04-27 09:47:08.478; Info; AppProfiler; 38948; 14] (81010147)Tag Begin - State:CoreInit
+2026-04-27 09:47:08.486; Error; PluginManager; 38948; 13] (81010151)number:0438803c-04e8-4b58-a0c4-9bdcfd19d1e9 is not found
+2026-04-27 09:47:08.486; Warning; CoreStreamService; 38948; 13] (81010151)receiver is not found or stopping or stopped
+2026-04-27 09:47:08.486; Error; PluginManager; 38948; 13] (81010155)number:0438803c-04e8-4b58-a0c4-9bdcfd19d1e9 is not found
+2026-04-27 09:47:08.486; Warning; CoreStreamService; 38948; 13] (81010155)receiver is not found or stopping or stopped
+2026-04-27 09:47:08.496; Info; CoreInitializationState; 38948; 14] (81010163)CheckBackgroundUpdate begin
+2026-04-27 09:47:08.496; Info; CoreInitializationState; 38948; 14] (81010163)Current Version: 6.4.12.0 ACPreviousVersion: 6.3.9.0
+2026-04-27 09:47:08.496; Info; CoreInitializationState; 38948; 14] (81010163)Sleep for background update
+2026-04-27 09:47:08.568; Error; PluginManager; 38948; 8] (81010233)number:aaaf3325-0c47-4fcb-8975-c52bbc5a4a7a is not found
+2026-04-27 09:47:08.568; Warning; CoreStreamService; 38948; 8] (81010233)receiver is not found or stopping or stopped
+2026-04-27 09:47:11.506; Info; CoreInitializationState; 38948; 14] (81013170)isBackgroundUpdateStarted: True
+2026-04-27 09:47:11.506; Info; CoreInitializationState; 38948; 14] (81013171)Background update started 
+2026-04-27 09:47:11.506; Info; CoreInitializationState; 38948; 14] (81013171)IsSupportLocalUpdateWithACSetup: True
+2026-04-27 09:47:11.506; Info; CoreInitializationState; 38948; 14] (81013171)Background LocalUpdate with ACSetup
+2026-04-27 09:47:11.506; Info; ACSetupConnectionService; 38948; 14] (81013171)Connect to ACSetup
+2026-04-27 09:47:11.506; Warning; ACSetupConnectionService; 38948; 5] (81013173)acSetupPortFile error: The system cannot find the file specified. (Exception from HRESULT: 0x80070002)
+2026-04-27 09:47:11.506; Warning; ACSetupConnectionService; 38948; 3] (81013173)Try to connect ACSetup on port23210
+2026-04-27 09:47:11.527; Error; ACSetupConnectionService; 38948; 15] (81013194)Connect ACSetup Fail acSetupPort: 23210
+2026-04-27 09:47:14.533; Warning; ACSetupConnectionService; 38948; 5] (81016199)acSetupPortFile error: The system cannot find the file specified. (Exception from HRESULT: 0x80070002)
+2026-04-27 09:47:14.533; Warning; ACSetupConnectionService; 38948; 5] (81016199)Try to connect ACSetup on port23210
+2026-04-27 09:47:14.533; Error; ACSetupConnectionService; 38948; 15] (81016201)Connect ACSetup Fail acSetupPort: 23210
+2026-04-27 09:47:17.546; Warning; ACSetupConnectionService; 38948; 5] (81019212)acSetupPortFile error: The system cannot find the file specified. (Exception from HRESULT: 0x80070002)
+2026-04-27 09:47:17.546; Warning; ACSetupConnectionService; 38948; 5] (81019212)Try to connect ACSetup on port23210
+2026-04-27 09:47:17.546; Error; ACSetupConnectionService; 38948; 15] (81019214)Connect ACSetup Fail acSetupPort: 23210
+2026-04-27 09:47:18.697; Error; PluginManager; 38948; 8] (81020362)number:aaaf3325-0c47-4fcb-8975-c52bbc5a4a7a is not found
+2026-04-27 09:47:18.697; Warning; CoreStreamService; 38948; 8] (81020362)receiver is not found or stopping or stopped
+2026-04-27 09:47:20.553; Warning; ACSetupConnectionService; 38948; 5] (81022218)acSetupPortFile error: The system cannot find the file specified. (Exception from HRESULT: 0x80070002)
+2026-04-27 09:47:20.553; Warning; ACSetupConnectionService; 38948; 5] (81022219)Try to connect ACSetup on port23210
+2026-04-27 09:47:20.553; Error; ACSetupConnectionService; 38948; 15] (81022220)Connect ACSetup Fail acSetupPort: 23210
+2026-04-27 09:47:22.333; Error; PluginManager; 38948; 8] (81023998)number:aaaf3325-0c47-4fcb-8975-c52bbc5a4a7a is not found
+2026-04-27 09:47:22.333; Warning; CoreStreamService; 38948; 8] (81023998)receiver is not found or stopping or stopped
+2026-04-27 09:47:23.554; Error; ACSetupConnectionService; 38948; 15] (81025219)it does not connect to ACSetup
+2026-04-27 09:47:23.554; Info; ACSetupConnectionService; 38948; 15] (81025219)CloseACSetup
+2026-04-27 09:47:23.560; Info; CoreInitializationState; 38948; 15] (81025225)Init with Service:S_OK
+2026-04-27 09:47:23.560; Info; CoreInitializationState; 38948; 15] (81025225)Update FeatureSet: 15 to localSettings
+2026-04-27 09:47:23.563; Info; CoreInitializationState; 38948; 15] (81025229)Init with UserSession:S_OK
+2026-04-27 09:47:23.563; Info; AppProfiler; 38948; 15] (81025229)Tag End - State:CoreInit
+2026-04-27 09:47:23.563; Info; AppProfiler; 38948; 15] (81025229)Tag Begin - State:ComposeAdmins
+2026-04-27 09:47:23.563; Info; AppProfiler; 38948; 15] (81025229)Tag Begin - Plugin:Core
+2026-04-27 09:47:23.622; Info; AppProfiler; 38948; 15] (81025287)Tag End - Plugin:Core
+2026-04-27 09:47:23.622; Info; PluginManager; 38948; 15] (81025292)(ArmouryCrate.Console.Uwp.Core)GetUnsupportedIdsAsync: from Core
+2026-04-27 09:47:23.628; Info; PluginManager; 38948; 15] (81025292)Filter View:AnnouncementPage by ProductLine
+2026-04-27 09:47:23.629; Info; AppProfiler; 38948; 15] (81025294)Tag End - State:ComposeAdmins
+2026-04-27 09:47:23.629; Info; AppProfiler; 38948; 15] (81025294)Tag Begin - State:Installation
+2026-04-27 09:47:23.629; Info; InstallationState; 38948; 15] (81025294)NeedInstall start
+2026-04-27 09:47:23.629; Info; InstallationState; 38948; 15] (81025294)LocalInstallStarted: False
+2026-04-27 09:47:23.629; Info; InstallationState; 38948; 15] (81025294)previousVer: 6.1.13.0
+2026-04-27 09:47:23.629; Info; InstallationState; 38948; 15] (81025297)CheckACSserviceAvailable() == true
+2026-04-27 09:47:23.629; Info; AppProfiler; 38948; 15] (81025297)Tag End - State:Installation
+2026-04-27 09:47:23.629; Info; AppProfiler; 38948; 15] (81025297)Tag Begin - State:Diagnosis
+2026-04-27 09:47:23.629; Info; AppProfiler; 38948; 15] (81025299)Tag End - State:Diagnosis
+2026-04-27 09:47:23.629; Info; AppProfiler; 38948; 15] (81025299)Tag Begin - State:Update
+2026-04-27 09:47:23.636; Info; UpdateState; 38948; 15] (81025306)ForceLocalUpdate: True
+2026-04-27 09:47:24.520; Error; PluginManager; 38948; 8] (81026185)number:aaaf3325-0c47-4fcb-8975-c52bbc5a4a7a is not found
+2026-04-27 09:47:24.520; Warning; CoreStreamService; 38948; 8] (81026185)receiver is not found or stopping or stopped
+2026-04-27 09:47:25.522; Info; UpdateState; 38948; 15] (81027188)ACS LocalUpdate success
+2026-04-27 09:47:25.522; Info; ACSetupConnectionService; 38948; 15] (81027188)Connect to ACSetup
+2026-04-27 09:47:25.523; Warning; ACSetupConnectionService; 38948; 5] (81027189)acSetupPortFile error: The system cannot find the file specified. (Exception from HRESULT: 0x80070002)
+2026-04-27 09:47:25.523; Warning; ACSetupConnectionService; 38948; 5] (81027189)Try to connect ACSetup on port23210
+2026-04-27 09:47:25.524; Error; ACSetupConnectionService; 38948; 15] (81027191)Connect ACSetup Fail acSetupPort: 23210
+2026-04-27 09:47:26.058; Error; PluginManager; 38948; 8] (81027726)number:aaaf3325-0c47-4fcb-8975-c52bbc5a4a7a is not found
+2026-04-27 09:47:26.058; Warning; CoreStreamService; 38948; 8] (81027726)receiver is not found or stopping or stopped
+2026-04-27 09:47:28.537; Warning; ACSetupConnectionService; 38948; 5] (81030202)Try to connect ACSetup on port23210
+2026-04-27 09:47:28.539; Error; ACSetupConnectionService; 38948; 15] (81030204)Connect ACSetup Fail acSetupPort: 23210
+2026-04-27 09:47:31.544; Warning; ACSetupConnectionService; 38948; 5] (81033210)Try to connect ACSetup on port23210
+2026-04-27 09:47:31.544; Error; ACSetupConnectionService; 38948; 15] (81033212)Connect ACSetup Fail acSetupPort: 23210
+2026-04-27 09:47:34.544; Warning; ACSetupConnectionService; 38948; 5] (81036210)Try to connect ACSetup on port23210
+2026-04-27 09:47:34.544; Error; ACSetupConnectionService; 38948; 15] (81036212)Connect ACSetup Fail acSetupPort: 23210
+2026-04-27 09:47:51.843; System; Armoury Crate; 47160; 3] ----------------------------------------------------------------------------------------------------
+2026-04-27 09:47:51.843; System; Armoury Crate; 47160; 3] [4/27/2026 9:47:51 AM]
+2026-04-27 09:47:51.843; System; Armoury Crate; 47160; 3] Armoury Crate Version : 6.4.12.0
+2026-04-27 09:47:51.843; System; Armoury Crate; 47160; 3] OS Version Build : 26200
+2026-04-27 09:47:51.843; System; Armoury Crate; 47160; 3] ----------------------------------------------------------------------------------------------------
+2026-04-27 09:47:52.228; Error; UwpDebugOptions; 47160; 2] (1818)Failed to read ExceptionList.txt: Could not load file or assembly 'C:\Users\vrudi\AppData\Local\Packages\B9ECED6F.ArmouryCrate_qmba6cd70vzyy\LocalState\ExceptionList.txt'. The system cannot find the file specified.
+2026-04-27 09:47:52.228; Info; UwpAppConfiguration; 47160; 2] (1818)DebugProductLineEnabled: False, DebugProductLine: Unknown, DebugBrandLineEnabled: False, DebugBrandLine: Unknown, DebugFeatureSetEnabled: False, DebugFeatureSet: Any, DebugLogEnabled: False, DebugLogLevel: Info, IgnoreOnePackageFlow: False, IgnoredPlugins: 
+2026-04-27 09:47:52.262; Warning; ThemeManager; 47160; 2] (1850)Can not find target theme - 
+2026-04-27 09:47:52.269; Info; ROGID; 47160; 2] (1857)[ROGID.ROGIDService.SSO]SSO Module Init Status : True
+2026-04-27 09:47:52.270; Info; DeviceInformationService; 47160; 2] (1859)FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE
+2026-04-27 09:47:52.270; Info; CoreServiceManager; 47160; 2] (1859)Start FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE spend 1 ms
+2026-04-27 09:47:52.295; Info; ConnectionHandler(Service); 47160; 9] (1883)Final version: 1.1
+2026-04-27 09:47:52.311; Info; ConnectionHandler(Service); 47160; 9] (1904)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-27 09:47:52.311; Info; ConnectionHandler(Service); 47160; 9] (1904)connected for peer: Service
+2026-04-27 09:47:52.319; Info; AsusDeviceManager; 47160; 6] (1908)MessageType:Device,DeviceType:Notebook,DeviceName:G713QE,DeviceId:, Attributes: (CheckBoxEnable:1)  (DependentAppStatus:0)  (DeviceCount:1)  (DeviceGUID:3F49AD29-52D9-46A5-A608-203D54E7D12A)  (DeviceIndex:0)  (DisplayName:G713QE)  (FirstPluginNeedUpdate:0)  (InfoIconEnable:0)  (LightingMode:SUPPORTAURA)  (LinkToDeviceEnable:0)  (LocalFrameworkVersion:4.2.4.8)  (LocalHtmlVersion:0)  (LocalMainSDKVersion:2.01.52)  (LocalSDKVersion:0)  (NeedRestart:false)  (PIDMode:0)  (PartNumber_90:90NR05F2-M01710)  (ProductLine:ROG_Laptop)  (ServerFrameworkVersion:4.2.4.13)  (ServerHtmlVersion:0)  (ServerMainSDKVersion:2.01.56)  (ServerSDKVersion:0)  (SupportCreator:true) 
+2026-04-27 09:47:52.325; Info; ConnectionHandler(UserSession); 47160; 12] (1918)Final version: 1.1
+2026-04-27 09:47:52.339; Info; ConnectionHandler(UserSession); 47160; 12] (1928)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-27 09:47:52.339; Info; CoreServiceManager; 47160; 2] (1928)Start ArmouryCrate.Console.Uwp.Core.Services.CoreStreamService spend 69 ms
+2026-04-27 09:47:52.339; Info; ConnectionHandler(UserSession); 47160; 12] (1928)connected for peer: UserSession
+2026-04-27 09:47:52.339; Info; CoreServiceManager; 47160; 2] (1928)Start ArmouryCrate.Console.Uwp.Core.Services.SettingsService spend 0 ms
+2026-04-27 09:47:52.339; Info; CoreServiceManager; 47160; 2] (1928)Start ArmouryCrate.Console.Uwp.Core.Services.VisualService spend 0 ms
+2026-04-27 09:47:52.339; Info; CoreServiceManager; 47160; 2] (1928)Start ArmouryCrate.Console.Uwp.Core.Services.ROGIDService spend 0 ms
+2026-04-27 09:47:52.339; Info; CoreServiceManager; 47160; 2] (1928)Start ArmouryCrate.Console.Uwp.Core.Services.DataCollectionService spend 0 ms
+2026-04-27 09:47:52.339; Info; CoreServiceManager; 47160; 2] (1928)Start ArmouryCrate.Console.Uwp.Core.Services.PromotionService spend 0 ms
+2026-04-27 09:47:52.339; Info; CoreServiceManager; 47160; 2] (1928)Start ArmouryCrate.Console.Uwp.Core.Services.PrivacyPolicyService spend 0 ms
+2026-04-27 09:47:52.339; Info; CoreServiceManager; 47160; 2] (1929)Start ArmouryCrate.Console.Uwp.Core.Services.BackgroundTaskService spend 1 ms
+2026-04-27 09:47:52.339; Info; CoreServiceManager; 47160; 2] (1929)Get theme from previous recrod => ROG
+2026-04-27 09:47:52.339; Info; CoreServiceManager; 47160; 2] (1929)GetTheme... ROG
+2026-04-27 09:47:52.339; Info; App; 47160; 2] (1929)DeveloperMode:NotSet
+2026-04-27 09:47:52.339; Error; PluginManager; 47160; 13] (1930)number:0438803c-04e8-4b58-a0c4-9bdcfd19d1e9 is not found
+2026-04-27 09:47:52.339; Warning; CoreStreamService; 47160; 13] (1930)receiver is not found or stopping or stopped
+2026-04-27 09:47:52.339; Info; App; 47160; 2] (1930)IsAdmin:True
+2026-04-27 09:47:52.339; Info; AppProfiler; 47160; 15] (1930)Tag Begin - State:CoreInit
+2026-04-27 09:47:52.345; Error; PluginManager; 47160; 13] (1933)number:0438803c-04e8-4b58-a0c4-9bdcfd19d1e9 is not found
+2026-04-27 09:47:52.345; Warning; CoreStreamService; 47160; 13] (1933)receiver is not found or stopping or stopped
+2026-04-27 09:47:52.360; Info; CoreInitializationState; 47160; 15] (1948)CheckBackgroundUpdate begin
+2026-04-27 09:47:52.360; Info; CoreInitializationState; 47160; 15] (1948)Current Version: 6.4.12.0 ACPreviousVersion: 6.3.9.0
+2026-04-27 09:47:52.360; Info; CoreInitializationState; 47160; 15] (1948)Sleep for background update
+2026-04-27 09:47:52.826; Error; PluginManager; 47160; 11] (2415)number:aaaf3325-0c47-4fcb-8975-c52bbc5a4a7a is not found
+2026-04-27 09:47:52.826; Warning; CoreStreamService; 47160; 11] (2416)receiver is not found or stopping or stopped
+2026-04-27 09:47:55.366; Info; CoreInitializationState; 47160; 15] (4955)isBackgroundUpdateStarted: True
+2026-04-27 09:47:55.366; Info; CoreInitializationState; 47160; 15] (4955)Background update started 
+2026-04-27 09:47:55.366; Info; CoreInitializationState; 47160; 15] (4955)IsSupportLocalUpdateWithACSetup: True
+2026-04-27 09:47:55.366; Info; CoreInitializationState; 47160; 15] (4955)Background LocalUpdate with ACSetup
+2026-04-27 09:47:55.366; Info; ACSetupConnectionService; 47160; 15] (4955)Connect to ACSetup
+2026-04-27 09:47:55.372; Warning; ACSetupConnectionService; 47160; 5] (4960)Try to connect ACSetup on port23210
+2026-04-27 09:47:55.373; Error; ACSetupConnectionService; 47160; 14] (4962)Connect ACSetup Fail acSetupPort: 23210
+2026-04-27 09:47:58.382; Warning; ACSetupConnectionService; 47160; 5] (7970)Try to connect ACSetup on port23210
+2026-04-27 09:47:58.384; Error; ACSetupConnectionService; 47160; 14] (7971)Connect ACSetup Fail acSetupPort: 23210
+2026-04-27 09:48:00.845; Warning; ConnectionHandler(UserSession); 47160; 12] (10434)failed to receive header
+2026-04-27 09:48:00.845; Info; ConnectionHandler(UserSession); 47160; 12] (10434)disconnected for peer: UserSession
+2026-04-27 09:48:00.858; Warning; ConnectionHandler(Service); 47160; 9] (10446)failed to receive header
+2026-04-27 09:48:00.858; Info; ConnectionHandler(Service); 47160; 9] (10446)disconnected for peer: Service
+2026-04-27 09:48:01.386; Warning; ACSetupConnectionService; 47160; 5] (10975)Try to connect ACSetup on port23210
+2026-04-27 09:48:01.386; Error; ACSetupConnectionService; 47160; 3] (10976)Connect ACSetup Fail acSetupPort: 23210
+2026-04-27 09:48:04.390; Warning; ACSetupConnectionService; 47160; 5] (13978)Try to connect ACSetup on port23210
+2026-04-27 09:48:04.392; Error; ACSetupConnectionService; 47160; 3] (13980)Connect ACSetup Fail acSetupPort: 23210
+2026-04-27 09:48:04.632; Info; ConnectionHandler(Service); 47160; 3] (14224)Final version: 1.1
+2026-04-27 09:48:04.743; Info; ConnectionHandler(Service); 47160; 3] (14335)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-27 09:48:04.743; Info; ConnectionHandler(Service); 47160; 3] (14335)connected for peer: Service
+2026-04-27 09:48:04.756; Info; ConnectionHandler(UserSession); 47160; 16] (14346)Final version: 1.1
+2026-04-27 09:48:04.772; Info; ConnectionHandler(UserSession); 47160; 16] (14362)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-27 09:48:04.772; Info; ConnectionHandler(UserSession); 47160; 16] (14362)connected for peer: UserSession
+2026-04-27 09:48:05.266; Error; PluginManager; 47160; 11] (14856)number:aaaf3325-0c47-4fcb-8975-c52bbc5a4a7a is not found
+2026-04-27 09:48:05.266; Warning; CoreStreamService; 47160; 11] (14856)receiver is not found or stopping or stopped
+2026-04-27 09:48:07.401; Error; ACSetupConnectionService; 47160; 14] (16988)it does not connect to ACSetup
+2026-04-27 09:48:07.401; Info; ACSetupConnectionService; 47160; 14] (16989)CloseACSetup
+2026-04-27 09:48:09.939; Error; PluginManager; 47160; 6] (19527)number:96a0b670-086f-4378-9c3e-b7666bc2e8b0 is not found
+2026-04-27 09:48:09.939; Warning; CoreStreamService; 47160; 6] (19527)receiver is not found or stopping or stopped
+2026-04-27 09:48:10.003; Error; PluginManager; 47160; 15] (19591)number:6ad2878e-6f59-4f34-bee4-3f5a994a006d is not found
+2026-04-27 09:48:10.003; Warning; CoreStreamService; 47160; 15] (19591)receiver is not found or stopping or stopped
+2026-04-27 09:48:10.575; Error; PluginManager; 47160; 11] (20164)number:aaaf3325-0c47-4fcb-8975-c52bbc5a4a7a is not found
+2026-04-27 09:48:10.575; Warning; CoreStreamService; 47160; 11] (20164)receiver is not found or stopping or stopped
+2026-04-27 09:48:10.583; Error; PluginManager; 47160; 19] (20171)number:4dc2157a-9687-45eb-982e-e5328e617509 is not found
+2026-04-27 09:48:10.583; Warning; CoreStreamService; 47160; 19] (20171)receiver is not found or stopping or stopped
+2026-04-27 09:48:10.719; Error; PluginManager; 47160; 20] (20307)number:467227bf-4b16-462a-8abb-9ba331ee45db is not found
+2026-04-27 09:48:10.719; Warning; CoreStreamService; 47160; 20] (20307)receiver is not found or stopping or stopped
+2026-04-27 09:48:10.720; Error; PluginManager; 47160; 21] (20308)number:d22b890b-e516-4151-9943-abf087c47073 is not found
+2026-04-27 09:48:10.720; Warning; CoreStreamService; 47160; 21] (20308)receiver is not found or stopping or stopped
+2026-04-27 09:48:10.721; Error; PluginManager; 47160; 22] (20308)number:371226a5-0a24-4aec-8060-a19b3878a3d5 is not found
+2026-04-27 09:48:10.721; Warning; CoreStreamService; 47160; 22] (20309)receiver is not found or stopping or stopped
+2026-04-27 09:48:10.721; Error; PluginManager; 47160; 21] (20309)number:d22b890b-e516-4151-9943-abf087c47073 is not found
+2026-04-27 09:48:10.721; Warning; CoreStreamService; 47160; 21] (20309)receiver is not found or stopping or stopped
+2026-04-27 09:48:10.722; Error; PluginManager; 47160; 15] (20310)number:6ad2878e-6f59-4f34-bee4-3f5a994a006d is not found
+2026-04-27 09:48:10.722; Warning; CoreStreamService; 47160; 15] (20310)receiver is not found or stopping or stopped
+2026-04-27 09:48:10.733; Info; CoreInitializationState; 47160; 14] (20321)Init with Service:S_OK
+2026-04-27 09:48:10.733; Info; CoreInitializationState; 47160; 14] (20321)Update FeatureSet: 15 to localSettings
+2026-04-27 09:48:10.734; Error; PluginManager; 47160; 20] (20322)number:467227bf-4b16-462a-8abb-9ba331ee45db is not found
+2026-04-27 09:48:10.734; Warning; CoreStreamService; 47160; 20] (20322)receiver is not found or stopping or stopped
+2026-04-27 09:48:10.739; Info; CoreInitializationState; 47160; 14] (20327)Init with UserSession:S_OK
+2026-04-27 09:48:10.739; Info; AppProfiler; 47160; 14] (20327)Tag End - State:CoreInit
+2026-04-27 09:48:10.739; Info; AppProfiler; 47160; 14] (20327)Tag Begin - State:ComposeAdmins
+2026-04-27 09:48:10.739; Info; AppProfiler; 47160; 14] (20327)Tag Begin - Plugin:Core
+2026-04-27 09:48:10.814; Error; PluginManager; 47160; 22] (20402)number:371226a5-0a24-4aec-8060-a19b3878a3d5 is not found
+2026-04-27 09:48:10.814; Warning; CoreStreamService; 47160; 22] (20402)receiver is not found or stopping or stopped
+2026-04-27 09:48:10.821; Info; AppProfiler; 47160; 14] (20409)Tag End - Plugin:Core
+2026-04-27 09:48:10.840; Error; PluginManager; 47160; 15] (20428)number:6ad2878e-6f59-4f34-bee4-3f5a994a006d is not found
+2026-04-27 09:48:10.840; Warning; CoreStreamService; 47160; 15] (20428)receiver is not found or stopping or stopped
+2026-04-27 09:48:10.845; Info; PluginManager; 47160; 14] (20434)(ArmouryCrate.Console.Uwp.Core)GetUnsupportedIdsAsync: from Core
+2026-04-27 09:48:10.845; Info; PluginManager; 47160; 14] (20435)Filter View:AnnouncementPage by ProductLine
+2026-04-27 09:48:10.845; Info; AppProfiler; 47160; 14] (20435)Tag End - State:ComposeAdmins
+2026-04-27 09:48:10.845; Info; AppProfiler; 47160; 14] (20435)Tag Begin - State:Installation
+2026-04-27 09:48:10.845; Info; InstallationState; 47160; 14] (20435)NeedInstall start
+2026-04-27 09:48:10.845; Info; InstallationState; 47160; 14] (20435)LocalInstallStarted: False
+2026-04-27 09:48:10.845; Info; InstallationState; 47160; 14] (20435)previousVer: 6.1.13.0
+2026-04-27 09:48:10.852; Info; InstallationState; 47160; 14] (20440)CheckACSserviceAvailable() == true
+2026-04-27 09:48:10.852; Info; AppProfiler; 47160; 14] (20440)Tag End - State:Installation
+2026-04-27 09:48:10.852; Info; AppProfiler; 47160; 14] (20440)Tag Begin - State:Diagnosis
+2026-04-27 09:48:10.856; Info; AppProfiler; 47160; 14] (20444)Tag End - State:Diagnosis
+2026-04-27 09:48:10.856; Info; AppProfiler; 47160; 14] (20444)Tag Begin - State:Update
+2026-04-27 09:48:10.861; Info; UpdateState; 47160; 14] (20449)ForceLocalUpdate: True
+2026-04-27 09:48:11.239; Error; PluginManager; 47160; 19] (20829)number:4dc2157a-9687-45eb-982e-e5328e617509 is not found
+2026-04-27 09:48:11.239; Warning; CoreStreamService; 47160; 19] (20829)receiver is not found or stopping or stopped
+2026-04-27 09:48:11.239; Error; PluginManager; 47160; 15] (20831)number:6ad2878e-6f59-4f34-bee4-3f5a994a006d is not found
+2026-04-27 09:48:11.239; Warning; CoreStreamService; 47160; 15] (20831)receiver is not found or stopping or stopped
+2026-04-27 09:48:11.267; Info; UpdateState; 47160; 14] (20858)ACS LocalUpdate success
+2026-04-27 09:48:11.267; Info; ACSetupConnectionService; 47160; 14] (20858)Connect to ACSetup
+2026-04-27 09:48:11.273; Warning; ACSetupConnectionService; 47160; 5] (20860)Try to connect ACSetup on port23210
+2026-04-27 09:48:11.274; Error; ACSetupConnectionService; 47160; 14] (20863)Connect ACSetup Fail acSetupPort: 23210
+2026-04-27 09:48:11.461; Error; PluginManager; 47160; 19] (21050)number:4dc2157a-9687-45eb-982e-e5328e617509 is not found
+2026-04-27 09:48:11.461; Warning; CoreStreamService; 47160; 19] (21050)receiver is not found or stopping or stopped
+2026-04-27 09:48:11.461; Error; PluginManager; 47160; 15] (21051)number:6ad2878e-6f59-4f34-bee4-3f5a994a006d is not found
+2026-04-27 09:48:11.461; Warning; CoreStreamService; 47160; 15] (21051)receiver is not found or stopping or stopped
+2026-04-27 09:48:11.626; Error; PluginManager; 47160; 19] (21213)number:4dc2157a-9687-45eb-982e-e5328e617509 is not found
+2026-04-27 09:48:11.626; Warning; CoreStreamService; 47160; 19] (21213)receiver is not found or stopping or stopped
+2026-04-27 09:48:11.627; Error; PluginManager; 47160; 15] (21215)number:6ad2878e-6f59-4f34-bee4-3f5a994a006d is not found
+2026-04-27 09:48:11.627; Warning; CoreStreamService; 47160; 15] (21215)receiver is not found or stopping or stopped
+2026-04-27 09:48:11.887; Error; PluginManager; 47160; 19] (21476)number:4dc2157a-9687-45eb-982e-e5328e617509 is not found
+2026-04-27 09:48:11.887; Warning; CoreStreamService; 47160; 19] (21476)receiver is not found or stopping or stopped
+2026-04-27 09:48:11.889; Error; PluginManager; 47160; 15] (21478)number:6ad2878e-6f59-4f34-bee4-3f5a994a006d is not found
+2026-04-27 09:48:11.889; Warning; CoreStreamService; 47160; 15] (21478)receiver is not found or stopping or stopped
+2026-04-27 09:48:12.338; Error; PluginManager; 47160; 11] (21926)number:aaaf3325-0c47-4fcb-8975-c52bbc5a4a7a is not found
+2026-04-27 09:48:12.338; Warning; CoreStreamService; 47160; 11] (21927)receiver is not found or stopping or stopped
+2026-04-27 09:48:13.926; Error; PluginManager; 47160; 23] (23514)number:e7d986da-d5db-45f4-9d7a-47ee736f55e3 is not found
+2026-04-27 09:48:13.926; Warning; CoreStreamService; 47160; 23] (23514)receiver is not found or stopping or stopped
+2026-04-27 09:48:13.930; Error; PluginManager; 47160; 19] (23518)number:4dc2157a-9687-45eb-982e-e5328e617509 is not found
+2026-04-27 09:48:13.930; Warning; CoreStreamService; 47160; 19] (23518)receiver is not found or stopping or stopped
+2026-04-27 09:48:13.932; Error; PluginManager; 47160; 23] (23520)number:e7d986da-d5db-45f4-9d7a-47ee736f55e3 is not found
+2026-04-27 09:48:13.932; Warning; CoreStreamService; 47160; 23] (23520)receiver is not found or stopping or stopped
+2026-04-27 09:48:13.936; Error; PluginManager; 47160; 19] (23524)number:4dc2157a-9687-45eb-982e-e5328e617509 is not found
+2026-04-27 09:48:13.936; Warning; CoreStreamService; 47160; 19] (23524)receiver is not found or stopping or stopped
+2026-04-27 09:48:13.963; Error; PluginManager; 47160; 23] (23552)number:e7d986da-d5db-45f4-9d7a-47ee736f55e3 is not found
+2026-04-27 09:48:13.963; Warning; CoreStreamService; 47160; 23] (23552)receiver is not found or stopping or stopped
+2026-04-27 09:48:13.970; Error; PluginManager; 47160; 19] (23558)number:4dc2157a-9687-45eb-982e-e5328e617509 is not found
+2026-04-27 09:48:13.970; Warning; CoreStreamService; 47160; 19] (23558)receiver is not found or stopping or stopped
+2026-04-27 09:48:13.997; Error; PluginManager; 47160; 23] (23585)number:e7d986da-d5db-45f4-9d7a-47ee736f55e3 is not found
+2026-04-27 09:48:13.997; Warning; CoreStreamService; 47160; 23] (23585)receiver is not found or stopping or stopped
+2026-04-27 09:48:14.001; Error; PluginManager; 47160; 19] (23589)number:4dc2157a-9687-45eb-982e-e5328e617509 is not found
+2026-04-27 09:48:14.001; Warning; CoreStreamService; 47160; 19] (23589)receiver is not found or stopping or stopped
+2026-04-27 09:48:14.028; Error; PluginManager; 47160; 23] (23616)number:e7d986da-d5db-45f4-9d7a-47ee736f55e3 is not found
+2026-04-27 09:48:14.028; Warning; CoreStreamService; 47160; 23] (23616)receiver is not found or stopping or stopped
+2026-04-27 09:48:14.035; Error; PluginManager; 47160; 19] (23623)number:4dc2157a-9687-45eb-982e-e5328e617509 is not found
+2026-04-27 09:48:14.035; Warning; CoreStreamService; 47160; 19] (23623)receiver is not found or stopping or stopped
+2026-04-27 09:48:14.279; Warning; ACSetupConnectionService; 47160; 5] (23867)Try to connect ACSetup on port23210
+2026-04-27 09:48:14.281; Error; ACSetupConnectionService; 47160; 14] (23869)Connect ACSetup Fail acSetupPort: 23210
+2026-04-27 09:48:17.289; Warning; ACSetupConnectionService; 47160; 5] (26877)Try to connect ACSetup on port23210
+2026-04-27 09:48:17.291; Error; ACSetupConnectionService; 47160; 14] (26879)Connect ACSetup Fail acSetupPort: 23210
+2026-04-27 09:48:20.300; Warning; ACSetupConnectionService; 47160; 5] (29888)Try to connect ACSetup on port23210
+2026-04-27 09:48:20.302; Error; ACSetupConnectionService; 47160; 14] (29890)Connect ACSetup Fail acSetupPort: 23210
+2026-04-27 09:48:23.306; Error; ACSetupConnectionService; 47160; 24] (32894)it does not connect to ACSetup
+2026-04-27 09:48:23.431; Info; OnePackageDialog; 47160; 2] (33022)OnePackageDialog() startView: ACSetupUpdateFail
+2026-04-27 09:48:31.895; Info; ConnectionHandler(Service); 47160; 12] (41483)send keep alive packet, SN: 0
+2026-04-27 09:48:31.895; Info; ConnectionHandler(Service); 47160; 3] (41483)received keep alive packet, SN: 0
+2026-04-27 09:48:34.034; Info; ConnectionHandler(UserSession); 47160; 16] (43622)received keep alive packet, SN: 0
+2026-04-27 09:48:34.053; Info; ConnectionHandler(UserSession); 47160; 8] (43641)send keep alive packet, SN: 0
+2026-04-27 09:48:39.769; Error; PluginManager; 47160; 23] (49361)number:e7d986da-d5db-45f4-9d7a-47ee736f55e3 is not found
+2026-04-27 09:48:39.769; Warning; CoreStreamService; 47160; 23] (49361)receiver is not found or stopping or stopped
+2026-04-27 09:48:39.776; Error; PluginManager; 47160; 19] (49365)number:4dc2157a-9687-45eb-982e-e5328e617509 is not found
+2026-04-27 09:48:39.776; Warning; CoreStreamService; 47160; 19] (49365)receiver is not found or stopping or stopped
+2026-04-27 09:48:39.798; Error; PluginManager; 47160; 23] (49389)number:e7d986da-d5db-45f4-9d7a-47ee736f55e3 is not found
+2026-04-27 09:48:39.798; Warning; CoreStreamService; 47160; 23] (49389)receiver is not found or stopping or stopped
+2026-04-27 09:48:39.805; Error; PluginManager; 47160; 19] (49393)number:4dc2157a-9687-45eb-982e-e5328e617509 is not found
+2026-04-27 09:48:39.805; Warning; CoreStreamService; 47160; 19] (49393)receiver is not found or stopping or stopped
+2026-04-27 09:48:51.899; Info; ConnectionHandler(Service); 47160; 12] (61487)send keep alive packet, SN: 1
+2026-04-27 09:48:51.899; Info; ConnectionHandler(Service); 47160; 3] (61487)received keep alive packet, SN: 1
+2026-04-27 09:48:59.807; Info; ConnectionHandler(UserSession); 47160; 8] (69395)send keep alive packet, SN: 1
+2026-04-27 09:48:59.807; Info; ConnectionHandler(UserSession); 47160; 16] (69395)received keep alive packet, SN: 1
+2026-04-27 09:49:11.910; Info; ConnectionHandler(Service); 47160; 12] (81498)send keep alive packet, SN: 2
+2026-04-27 09:49:11.910; Info; ConnectionHandler(Service); 47160; 3] (81498)received keep alive packet, SN: 2
+2026-04-27 09:49:15.712; Error; PluginManager; 47160; 11] (85300)number:aaaf3325-0c47-4fcb-8975-c52bbc5a4a7a is not found
+2026-04-27 09:49:15.712; Warning; CoreStreamService; 47160; 11] (85300)receiver is not found or stopping or stopped
+2026-04-27 09:49:20.269; Info; ACSetupConnectionService; 47160; 25] (89857)CloseACSetup
+2026-04-27 09:49:20.269; Info; UpdateState; 47160; 25] (89857)LocalUpdate result: True
+2026-04-27 09:49:20.270; Info; AppProfiler; 47160; 25] (89858)Tag End - State:Update
+2026-04-27 09:49:20.270; Info; AppProfiler; 47160; 25] (89858)Tag Begin - State:PluginInit
+2026-04-27 09:49:20.270; Info; PluginInitializationState; 47160; 25] (89858)CheckServiceAvailable
+2026-04-27 09:49:20.275; Info; PluginInitializationState; 47160; 26] (89863)GetRLSStatus: True
+2026-04-27 09:49:20.275; Info; PluginInitializationState; 47160; 26] (89863)serviceAvailable: True
+2026-04-27 09:49:20.560; Info; PluginManager; 47160; 26] (90151)Version mismatch, from 6.3.9.0 to 6.4.12.0, reset cache
+2026-04-27 09:49:20.560; Info; ACStorePlugin; 47160; 25] (90151)Compose ACStorePlugin begin
+2026-04-27 09:49:20.560; Info; AiSuitePlugin; 47160; 24] (90151)Compose AiSuitePlugin begin
+2026-04-27 09:49:20.560; Info; AppProfiler; 47160; 25] (90151)Tag Begin - Plugin:ACStorePlugin
+2026-04-27 09:49:20.560; Info; AppProfiler; 47160; 24] (90151)Tag Begin - Plugin:AiSuitePlugin
+2026-04-27 09:49:20.560; Info; AuraPlugin; 47160; 4] (90151)Compose AuraPlugin begin
+2026-04-27 09:49:20.560; Info; AppProfiler; 47160; 4] (90151)Tag Begin - Plugin:AuraPlugin
+2026-04-27 09:49:20.560; Info; CustomHotkey; 47160; 14] (90151)Compose CustomHotkey begin
+2026-04-27 09:49:20.560; Info; DenoiseAIPlugin; 47160; 27] (90151)Compose DenoiseAIPlugin begin
+2026-04-27 09:49:20.560; Info; AppProfiler; 47160; 14] (90151)Tag Begin - Plugin:CustomHotkey
+2026-04-27 09:49:20.560; Info; AppProfiler; 47160; 27] (90151)Tag Begin - Plugin:DenoiseAIPlugin
+2026-04-27 09:49:20.560; Info; DevicePlugin; 47160; 9] (90151)Compose DevicePlugin begin
+2026-04-27 09:49:20.560; Info; AppProfiler; 47160; 9] (90151)Tag Begin - Plugin:DevicePlugin
+2026-04-27 09:49:20.560; Info; FeaturedPlugin; 47160; 28] (90151)Compose FeaturedPlugin begin
+2026-04-27 09:49:20.560; Info; AppProfiler; 47160; 28] (90151)Tag Begin - Plugin:FeaturedPlugin
+2026-04-27 09:49:20.560; Info; FeedbackHubPlugin; 47160; 29] (90151)Compose FeedbackHubPlugin begin
+2026-04-27 09:49:20.560; Info; AppProfiler; 47160; 29] (90151)Tag Begin - Plugin:FeedbackHubPlugin
+2026-04-27 09:49:20.560; Info; GameFirstPlugin; 47160; 30] (90152)Compose GameFirstPlugin begin
+2026-04-27 09:49:20.560; Info; AppProfiler; 47160; 30] (90152)Tag Begin - Plugin:GameFirstPlugin
+2026-04-27 09:49:20.560; Info; GameLibraryPlugin; 47160; 31] (90152)Compose GameLibraryPlugin begin
+2026-04-27 09:49:20.560; Info; AppProfiler; 47160; 31] (90152)Tag Begin - Plugin:GameLibraryPlugin
+2026-04-27 09:49:20.772; Info; GameVisual; 47160; 35] (90360)Compose GameVisual begin
+2026-04-27 09:49:20.772; Info; TBGraphicControl; 47160; 26] (90360)Compose TBGraphicControl begin
+2026-04-27 09:49:20.772; Info; AppProfiler; 47160; 35] (90360)Tag Begin - Plugin:GameVisual
+2026-04-27 09:49:20.772; Info; AppProfiler; 47160; 26] (90360)Tag Begin - Plugin:TBGraphicControl
+2026-04-27 09:49:20.772; Info; Macros; 47160; 32] (90360)Compose Macros begin
+2026-04-27 09:49:20.772; Info; AppProfiler; 47160; 32] (90360)Tag Begin - Plugin:Macros
+2026-04-27 09:49:20.772; Info; GPUSwitch; 47160; 33] (90360)Compose GPUSwitch begin
+2026-04-27 09:49:20.772; Info; AppProfiler; 47160; 33] (90360)Tag Begin - Plugin:GPUSwitch
+2026-04-27 09:49:20.772; Info; GridPlugin; 47160; 34] (90360)Compose GridPlugin begin
+2026-04-27 09:49:20.772; Info; AppProfiler; 47160; 34] (90360)Tag Begin - Plugin:GridPlugin
+2026-04-27 09:49:20.772; Info; GPUMode; 47160; 36] (90360)Compose GPUMode begin
+2026-04-27 09:49:20.772; Info; AppProfiler; 47160; 36] (90360)Tag Begin - Plugin:GPUMode
+2026-04-27 09:49:20.772; Info; MonitorPlugin; 47160; 37] (90360)Compose MonitorPlugin begin
+2026-04-27 09:49:20.772; Info; AppProfiler; 47160; 37] (90360)Tag Begin - Plugin:MonitorPlugin
+2026-04-27 09:49:20.772; Info; Multiwheel; 47160; 38] (90360)Compose Multiwheel begin
+2026-04-27 09:49:20.772; Info; AppProfiler; 47160; 38] (90360)Tag Begin - Plugin:Multiwheel
+2026-04-27 09:49:20.772; Info; OpenPlatformPlugin; 47160; 39] (90360)Compose OpenPlatformPlugin begin
+2026-04-27 09:49:20.772; Info; AppProfiler; 47160; 39] (90360)Tag Begin - Plugin:OpenPlatformPlugin
+2026-04-27 09:49:20.772; Info; RedemptionPlugin; 47160; 40] (90360)Compose RedemptionPlugin begin
+2026-04-27 09:49:20.772; Info; AppProfiler; 47160; 40] (90360)Tag Begin - Plugin:RedemptionPlugin
+2026-04-27 09:49:20.772; Info; ScenarioProfile; 47160; 41] (90360)Compose ScenarioProfile begin
+2026-04-27 09:49:20.772; Info; AppProfiler; 47160; 41] (90360)Tag Begin - Plugin:ScenarioProfile
+2026-04-27 09:49:20.773; Info; SoulKeyPlugin; 47160; 42] (90361)Compose SoulKeyPlugin begin
+2026-04-27 09:49:20.773; Info; AppProfiler; 47160; 42] (90361)Tag Begin - Plugin:SoulKeyPlugin
+2026-04-27 09:49:20.773; Info; SystemFeature; 47160; 43] (90361)Compose SystemFeature begin
+2026-04-27 09:49:20.773; Info; AppProfiler; 47160; 43] (90361)Tag Begin - Plugin:SystemFeature
+2026-04-27 09:49:20.773; Info; ThrottlePlugin; 47160; 44] (90361)Compose ThrottlePlugin begin
+2026-04-27 09:49:20.773; Info; AppProfiler; 47160; 44] (90361)Tag Begin - Plugin:ThrottlePlugin
+2026-04-27 09:49:20.773; Info; ToolsPlugin; 47160; 45] (90361)Compose ToolsPlugin begin
+2026-04-27 09:49:20.773; Info; AppProfiler; 47160; 45] (90361)Tag Begin - Plugin:ToolsPlugin
+2026-04-27 09:49:20.773; Info; UpdateCenter; 47160; 46] (90361)Compose UpdateCenter begin
+2026-04-27 09:49:20.773; Info; AppProfiler; 47160; 46] (90361)Tag Begin - Plugin:UpdateCenter
+2026-04-27 09:49:20.773; Info; UserCenterPlugin; 47160; 47] (90361)Compose UserCenterPlugin begin
+2026-04-27 09:49:20.773; Info; AppProfiler; 47160; 47] (90361)Tag Begin - Plugin:UserCenterPlugin

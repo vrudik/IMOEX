@@ -1,0 +1,89 @@
+{
+  "ControlItemList": [
+    {
+      "AppTag": "SystemFeature_TouchPad",
+      "AppType": "Service_App",
+      "AppUID": "{e7d986da-d5db-45f4-9d7a-47ee736f55e3}",
+      "IsControlItemEnable": true,
+      "Mode": "1",
+      "ModeKey": "1",
+      "Name": ""
+    },
+    {
+      "AppTag": "AURA_Sync",
+      "AppType": "Service_App",
+      "AppUID": "{6AD2878E-6F59-4F34-BEE4-3F5A994A006D}",
+      "IsControlItemEnable": true,
+      "Mode": "0",
+      "ModeKey": "0",
+      "Name": ""
+    },
+    {
+      "AppTag": "Operating_Mode_AC",
+      "AppType": "Service_App",
+      "AppUID": "{467227BF-4B16-462A-8ABB-9BA331EE45DB}",
+      "IsControlItemEnable": true,
+      "Mode": "2",
+      "ModeKey": "2",
+      "Name": ""
+    },
+    {
+      "AppTag": "Operating_Mode_DC",
+      "AppType": "Service_App",
+      "AppUID": "{467227BF-4B16-462A-8ABB-9BA331EE45DB}",
+      "IsControlItemEnable": true,
+      "Mode": "1",
+      "ModeKey": "1",
+      "Name": ""
+    },
+    {
+      "AppTag": "AURA_Brightness",
+      "AppType": "Service_App",
+      "AppUID": "{6AD2878E-6F59-4F34-BEE4-3F5A994A006D}",
+      "IsControlItemEnable": true,
+      "Mode": "3",
+      "ModeKey": "3",
+      "Name": ""
+    },
+    {
+      "AppTag": "GameVisual",
+      "AppType": "Service_App",
+      "AppUID": "{0438803c-04e8-4b58-a0c4-9bdcfd19d1e9}",
+      "IsControlItemEnable": true,
+      "Mode": "-2147483648",
+      "ModeKey": "-2147483648",
+      "Name": ""
+    },
+    {
+      "AppTag": "System_Volume",
+      "AppType": "System_Function",
+      "AppUID": "System_Volume",
+      "IsControlItemEnable": true,
+      "Mode": "100",
+      "ModeKey": "100",
+      "Name": ""
+    },
+    {
+      "AppTag": "System_Volume_isMute",
+      "AppType": "System_Function",
+      "AppUID": "System_Volume_isMute",
+      "IsControlItemEnable": true,
+      "Mode": "True",
+      "ModeKey": "True",
+      "Name": ""
+    },
+    {
+      "AppTag": "SystemFeature_WinKey",
+      "AppType": "Service_App",
+      "AppUID": "{e7d986da-d5db-45f4-9d7a-47ee736f55e3}",
+      "IsControlItemEnable": true,
+      "Mode": "0",
+      "ModeKey": "0",
+      "Name": ""
+    }
+  ],
+  "IconPath": "",
+  "LinkedAppList": [],
+  "ProfileName": "",
+  "ProfileTag": ""
+}

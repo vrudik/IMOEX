@@ -1,0 +1,570 @@
+2026-04-22 04:40:20.406; System; Armoury Crate; 35296; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 04:40:20.406; System; Armoury Crate; 35296; 2] [4/22/2026 4:40:20 AM]
+2026-04-22 04:40:20.406; System; Armoury Crate; 35296; 2] Armoury Crate Version : 6.4.12.0
+2026-04-22 04:40:20.406; System; Armoury Crate; 35296; 2] OS Version Build : 26200
+2026-04-22 04:40:20.406; System; Armoury Crate; 35296; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 04:40:22.013; Error; UwpDebugOptions; 35296; 1] (1616)Failed to read ExceptionList.txt: Could not load file or assembly 'C:\Users\vrudi\AppData\Local\Packages\B9ECED6F.ArmouryCrate_qmba6cd70vzyy\LocalState\ExceptionList.txt'. The system cannot find the file specified.
+2026-04-22 04:40:22.014; Info; UwpAppConfiguration; 35296; 1] (1618)DebugProductLineEnabled: False, DebugProductLine: Unknown, DebugBrandLineEnabled: False, DebugBrandLine: Unknown, DebugFeatureSetEnabled: False, DebugFeatureSet: Any, DebugLogEnabled: False, DebugLogLevel: Info, IgnoreOnePackageFlow: False, IgnoredPlugins: 
+2026-04-22 04:40:22.100; Info; DeviceInformationService; 35296; 1] (1703)FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE
+2026-04-22 04:40:22.108; Info; CoreServiceManager; 35296; 1] (1711)Start FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE spend 16 ms
+2026-04-22 04:40:22.158; Info; ConnectionHandler(Service); 35296; 3] (1762)Final version: 1.1
+2026-04-22 04:40:22.246; Info; ConnectionHandler(Service); 35296; 3] (1851)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 04:40:22.246; Info; ConnectionHandler(Service); 35296; 3] (1851)connected for peer: Service
+2026-04-22 04:40:22.258; Info; AsusDeviceManager; 35296; 6] (1862)MessageType:Device,DeviceType:Notebook,DeviceName:G713QE,DeviceId:, Attributes: (CheckBoxEnable:1)  (DependentAppStatus:0)  (DeviceCount:1)  (DeviceGUID:3F49AD29-52D9-46A5-A608-203D54E7D12A)  (DeviceIndex:0)  (DisplayName:G713QE)  (FirstPluginNeedUpdate:0)  (InfoIconEnable:0)  (LightingMode:SUPPORTAURA)  (LinkToDeviceEnable:0)  (LocalFrameworkVersion:4.2.4.8)  (LocalHtmlVersion:0)  (LocalMainSDKVersion:2.01.52)  (LocalSDKVersion:0)  (NeedRestart:false)  (PIDMode:0)  (PartNumber_90:90NR05F2-M01710)  (ProductLine:ROG_Laptop)  (ServerFrameworkVersion:4.2.4.13)  (ServerHtmlVersion:0)  (ServerMainSDKVersion:2.01.56)  (ServerSDKVersion:0)  (SupportCreator:true) 
+2026-04-22 04:40:32.267; Warning; ConnectionHandler(UserSession); 35296; 7] (11871)failed on SendVersion
+2026-04-22 04:40:32.267; Warning; ConnectionHandler(UserSession); 35296; 7] (11871)failed to handshake for connection
+2026-04-22 04:40:32.269; Info; CoreServiceManager; 35296; 1] (11873)Start ArmouryCrate.Console.Uwp.Core.Services.CoreStreamService spend 10161 ms
+2026-04-22 04:40:32.269; Info; CoreServiceManager; 35296; 1] (11873)Start ArmouryCrate.Console.Uwp.Core.Services.SettingsService spend 1 ms
+2026-04-22 04:40:32.269; Info; CoreServiceManager; 35296; 1] (11873)Start ArmouryCrate.Console.Uwp.Core.Services.VisualService spend 0 ms
+2026-04-22 04:40:32.269; Info; CoreServiceManager; 35296; 1] (11873)Start ArmouryCrate.Console.Uwp.Core.Services.ROGIDService spend 0 ms
+2026-04-22 04:40:32.269; Info; CoreServiceManager; 35296; 1] (11873)Start ArmouryCrate.Console.Uwp.Core.Services.DataCollectionService spend 0 ms
+2026-04-22 04:40:32.269; Info; CoreServiceManager; 35296; 1] (11873)Start ArmouryCrate.Console.Uwp.Core.Services.PromotionService spend 0 ms
+2026-04-22 04:40:32.271; Info; CoreServiceManager; 35296; 1] (11875)Start ArmouryCrate.Console.Uwp.Core.Services.PrivacyPolicyService spend 2 ms
+2026-04-22 04:40:32.271; Info; BackgroundTaskService; 35296; 1] (11879)Skipping StartAsync because it's running in a background context.
+2026-04-22 04:40:32.271; Info; CoreServiceManager; 35296; 1] (11879)Start ArmouryCrate.Console.Uwp.Core.Services.BackgroundTaskService spend 4 ms
+2026-04-22 04:40:32.271; Info; CoreServiceManager; 35296; 1] (11882)Get theme from previous recrod => ROG
+2026-04-22 04:40:32.271; Info; CoreServiceManager; 35296; 1] (11882)GetTheme... ROG
+2026-04-22 04:40:32.271; Info; App; 35296; 1] (11882)DeveloperMode:NotSet
+2026-04-22 04:40:32.285; Info; App; 35296; 1] (11889)IsAdmin:True
+2026-04-22 04:40:32.348; Info; Redemption; 35296; 1] (11962)[AppService.DoPromotion(30)] Begin
+2026-04-22 04:40:32.348; Info; Redemption; 35296; 1] (11964)[AppService.InitPromotion(215)] ProductLine Value=NB, Status=True
+2026-04-22 04:40:32.348; Info; Redemption; 35296; 1] (11964)[AppService.InitPromotion(227)] Subbrand Value=ROG, Status=True
+2026-04-22 04:40:32.348; Info; Redemption; 35296; 1] (11965)[AppService.InitPromotion(242)] SystemManufacturer=ASUSTeK COMPUTER INC., Status=False
+2026-04-22 04:40:32.348; Info; Redemption; 35296; 1] (11965)[AppService.InitPromotion(259)] isAcceptablePL=True, isAcceptableSB=True, isAcceptableGamingDT=False, PrivacyPolicy=True, isGamingProduct=True, DeveloperModeEnabled=False
+2026-04-22 04:40:32.348; Info; Redemption; 35296; 1] (11965)[AppService.InitPromotion(278)] RedeemEntry: PN=Routine, SN=M5NRKD028966197, API=AdobeEvent, Source=Background
+2026-04-22 04:40:42.410; Warning; ConnectionHandler(UserSession); 35296; 9] (22021)failed on SendVersion
+2026-04-22 04:40:42.410; Warning; ConnectionHandler(UserSession); 35296; 9] (22021)failed to handshake for connection
+2026-04-22 04:40:42.410; Warning; CoreStreamService; 35296; 8] (22021)connection peer UserSession is not connected
+2026-04-22 04:40:42.410; Error; Redemption; 35296; 8] (22021)[DeviceQueryHandler.GetDeviceSN_List(56)] Service Connection Failed: E_AC_STREAM_UNREACHABLE
+2026-04-22 04:40:42.410; Info; ConnectionHandler(Service); 35296; 2] (22021)send keep alive packet, SN: 0
+2026-04-22 04:40:42.410; Error; Redemption; 35296; 8] (22022)[AppService.InitPromotion(283)] Device List can't be access. End Process.
+2026-04-22 04:44:45.575; System; Armoury Crate; 35296; 9] Delete ArmouryCrate_20260408.BackgroundTask.log
+2026-04-22 04:44:45.610; System; Armoury Crate; 35296; 7] Delete ArmouryCrate_20260409.BackgroundTask.log
+2026-04-22 04:44:45.623; System; Armoury Crate; 35296; 7] Delete ArmouryCrate_20260410.BackgroundTask.log
+2026-04-22 04:44:45.639; System; Armoury Crate; 35296; 7] Delete ArmouryCrate_20260411.BackgroundTask.log
+2026-04-22 04:44:50.425; Info; ConnectionHandler(Service); 35296; 3] (270029)received keep alive packet, SN: 0
+2026-04-22 05:00:03.873; Info; ConnectionHandler(Service); 35296; 2] (1183477)send keep alive packet, SN: 1
+2026-04-22 05:11:59.184; Info; ConnectionHandler(Service); 35296; 2] (1898788)send keep alive packet, SN: 2
+2026-04-22 05:12:19.196; Info; ConnectionHandler(Service); 35296; 2] (1918800)send keep alive packet, SN: 3
+2026-04-22 05:12:33.320; Info; ConnectionHandler(Service); 35296; 3] (1932924)disconnected for peer: Service
+2026-04-22 10:02:59.777; Info; GameLibraryPlugin; 35296; 14] (19359380)[AppService..ctor(19)] Begin
+2026-04-22 10:02:59.821; Info; GameLibraryPlugin; 35296; 14] (19359424)[AppService..ctor(27)] End
+2026-04-22 10:03:18.936; Info; Redemption; 35296; 14] (19378539)[AppService.DoPromotion(30)] Begin
+2026-04-22 10:03:18.938; Info; Redemption; 35296; 14] (19378541)[AppService.InitPromotion(215)] ProductLine Value=NB, Status=True
+2026-04-22 10:03:18.938; Info; Redemption; 35296; 14] (19378542)[AppService.InitPromotion(227)] Subbrand Value=ROG, Status=True
+2026-04-22 10:03:18.938; Info; Redemption; 35296; 14] (19378542)[AppService.InitPromotion(242)] SystemManufacturer=ASUSTeK COMPUTER INC., Status=False
+2026-04-22 10:03:18.939; Info; Redemption; 35296; 14] (19378542)[AppService.InitPromotion(259)] isAcceptablePL=True, isAcceptableSB=True, isAcceptableGamingDT=False, PrivacyPolicy=True, isGamingProduct=True, DeveloperModeEnabled=False
+2026-04-22 10:03:18.939; Info; Redemption; 35296; 14] (19378543)[AppService.InitPromotion(278)] RedeemEntry: PN=Routine, SN=M5NRKD028966197, API=AdobeEvent, Source=Background
+2026-04-22 10:03:18.961; Info; ConnectionHandler(UserSession); 35296; 12] (19378565)Final version: 1.1
+2026-04-22 10:03:18.996; Info; ConnectionHandler(UserSession); 35296; 12] (19378600)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 10:03:18.996; Info; ConnectionHandler(UserSession); 35296; 12] (19378600)connected for peer: UserSession
+2026-04-22 10:03:19.009; Info; ConnectionHandler(Service); 35296; 8] (19378613)Final version: 1.1
+2026-04-22 10:03:19.023; Info; ConnectionHandler(Service); 35296; 8] (19378627)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 10:03:19.023; Info; ConnectionHandler(Service); 35296; 8] (19378627)connected for peer: Service
+2026-04-22 10:03:19.076; Info; ROGID; 35296; 14] (19378680)[ROGID.ROGIDService.SSO]SSO Module Init Status : True
+2026-04-22 10:03:19.396; Critical; Redemption; 35296; 13] (19378999)[CountryCode.GetCountryCode(86)] GetCountryCode: NL
+2026-04-22 10:03:19.396; Info; Redemption; 35296; 13] (19379000)[PromotionTask.PollingTimerUpdate(629)] PollingTimerUpdate: PollingTimer=604800000, Weeks=8, RequestCounter=3, Trigger=Background
+2026-04-22 10:03:19.396; Info; Redemption; 35296; 13] (19379000)[PromotionTask.DoPromotionAppServiceTask(347)] DoPromotionAppServiceTask - TimeChecker(Before) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/15/2026 4:16:22 PM, 1/1/0001 3:00:00 AM, 4/22/2026 10:03:19 AM)
+2026-04-22 10:03:19.396; Info; Redemption; 35296; 13] (19379000)[PromotionTask.DoPromotionAppServiceTask(359)] DoPromotionAppServiceTask - TimeChecker(After) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/15/2026 4:16:22 PM, 1/1/0001 3:00:00 AM, 4/22/2026 10:03:19 AM)
+2026-04-22 10:03:19.402; Info; Redemption; 35296; 7] (19379005)[PromotionTask.DoPromotionAppServiceTask(463)] DoPromotionAppServiceTask - Leave. NeedRetry: False, LastPollingTime: 4/15/2026 4:16:22 PM
+2026-04-22 10:03:19.402; Info; Redemption; 35296; 14] (19379005)[AppService.DoPromotion(58)] True
+2026-04-22 10:03:19.402; Info; Redemption; 35296; 14] (19379006)[AppService.DoPromotion(79)] End
+2026-04-22 10:03:19.476; Info; Redemption; 35296; 10] (19379080)[AppService.DoPromotion(30)] Begin
+2026-04-22 10:03:19.477; Info; Redemption; 35296; 10] (19379080)[AppService.InitPromotion(215)] ProductLine Value=NB, Status=True
+2026-04-22 10:03:19.477; Info; Redemption; 35296; 10] (19379080)[AppService.InitPromotion(227)] Subbrand Value=ROG, Status=True
+2026-04-22 10:03:19.477; Info; Redemption; 35296; 10] (19379080)[AppService.InitPromotion(242)] SystemManufacturer=ASUSTeK COMPUTER INC., Status=False
+2026-04-22 10:03:19.477; Info; Redemption; 35296; 10] (19379080)[AppService.InitPromotion(259)] isAcceptablePL=True, isAcceptableSB=True, isAcceptableGamingDT=False, PrivacyPolicy=True, isGamingProduct=True, DeveloperModeEnabled=False
+2026-04-22 10:03:19.477; Info; Redemption; 35296; 10] (19379080)[AppService.InitPromotion(278)] RedeemEntry: PN=Routine, SN=M5NRKD028966197, API=NormalEvent, Source=Background
+2026-04-22 10:03:19.542; Critical; Redemption; 35296; 11] (19379145)[CountryCode.GetCountryCode(86)] GetCountryCode: NL
+2026-04-22 10:03:19.542; Info; Redemption; 35296; 11] (19379145)[PromotionTask.PollingTimerUpdate(629)] PollingTimerUpdate: PollingTimer=604800000, Weeks=8, RequestCounter=3, Trigger=Background
+2026-04-22 10:03:19.542; Info; Redemption; 35296; 11] (19379145)[PromotionTask.DoPromotionAppServiceTask(347)] DoPromotionAppServiceTask - TimeChecker(Before) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/15/2026 4:17:03 PM, 1/1/0001 3:00:00 AM, 4/22/2026 10:03:19 AM)
+2026-04-22 10:03:19.542; Info; Redemption; 35296; 11] (19379145)[PromotionTask.DoPromotionAppServiceTask(359)] DoPromotionAppServiceTask - TimeChecker(After) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/15/2026 4:17:03 PM, 1/1/0001 3:00:00 AM, 4/22/2026 10:03:19 AM)
+2026-04-22 10:03:19.548; Info; Redemption; 35296; 6] (19379151)[PromotionTask.DoPromotionAppServiceTask(463)] DoPromotionAppServiceTask - Leave. NeedRetry: False, LastPollingTime: 4/15/2026 4:17:03 PM
+2026-04-22 10:03:19.548; Info; Redemption; 35296; 10] (19379151)[AppService.DoPromotion(58)] True
+2026-04-22 10:03:19.548; Info; Redemption; 35296; 10] (19379151)[AppService.DoPromotion(79)] End
+2026-04-22 10:03:19.586; Info; Redemption; 35296; 17] (19379189)[AppService.DoPromotion(30)] Begin
+2026-04-22 10:03:19.586; Info; Redemption; 35296; 17] (19379189)[AppService.InitPromotion(215)] ProductLine Value=NB, Status=True
+2026-04-22 10:03:19.586; Info; Redemption; 35296; 17] (19379189)[AppService.InitPromotion(227)] Subbrand Value=ROG, Status=True
+2026-04-22 10:03:19.586; Info; Redemption; 35296; 17] (19379189)[AppService.InitPromotion(242)] SystemManufacturer=ASUSTeK COMPUTER INC., Status=False
+2026-04-22 10:03:19.586; Info; Redemption; 35296; 17] (19379189)[AppService.InitPromotion(259)] isAcceptablePL=True, isAcceptableSB=True, isAcceptableGamingDT=False, PrivacyPolicy=True, isGamingProduct=True, DeveloperModeEnabled=False
+2026-04-22 10:03:19.586; Info; Redemption; 35296; 17] (19379189)[AppService.InitPromotion(278)] RedeemEntry: PN=Routine, SN=M5NRKD028966197, API=AdobeEvent, Source=Background
+2026-04-22 10:03:19.651; Critical; Redemption; 35296; 19] (19379255)[CountryCode.GetCountryCode(86)] GetCountryCode: NL
+2026-04-22 10:03:19.652; Info; Redemption; 35296; 19] (19379255)[PromotionTask.PollingTimerUpdate(629)] PollingTimerUpdate: PollingTimer=604800000, Weeks=8, RequestCounter=3, Trigger=Background
+2026-04-22 10:03:19.652; Info; Redemption; 35296; 19] (19379255)[PromotionTask.DoPromotionAppServiceTask(347)] DoPromotionAppServiceTask - TimeChecker(Before) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/15/2026 4:16:22 PM, 1/1/0001 3:00:00 AM, 4/22/2026 10:03:19 AM)
+2026-04-22 10:03:19.652; Info; Redemption; 35296; 19] (19379255)[PromotionTask.DoPromotionAppServiceTask(359)] DoPromotionAppServiceTask - TimeChecker(After) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/15/2026 4:16:22 PM, 1/1/0001 3:00:00 AM, 4/22/2026 10:03:19 AM)
+2026-04-22 10:03:19.656; Info; Redemption; 35296; 18] (19379260)[PromotionTask.DoPromotionAppServiceTask(463)] DoPromotionAppServiceTask - Leave. NeedRetry: False, LastPollingTime: 4/15/2026 4:16:22 PM
+2026-04-22 10:03:19.657; Info; Redemption; 35296; 17] (19379260)[AppService.DoPromotion(58)] True
+2026-04-22 10:03:19.657; Info; Redemption; 35296; 17] (19379260)[AppService.DoPromotion(79)] End
+2026-04-22 10:03:19.727; Info; Redemption; 35296; 20] (19379330)[AppService.DoPromotion(30)] Begin
+2026-04-22 10:03:19.727; Info; Redemption; 35296; 20] (19379331)[AppService.InitPromotion(215)] ProductLine Value=NB, Status=True
+2026-04-22 10:03:19.727; Info; Redemption; 35296; 20] (19379331)[AppService.InitPromotion(227)] Subbrand Value=ROG, Status=True
+2026-04-22 10:03:19.727; Info; Redemption; 35296; 20] (19379331)[AppService.InitPromotion(242)] SystemManufacturer=ASUSTeK COMPUTER INC., Status=False
+2026-04-22 10:03:19.727; Info; Redemption; 35296; 20] (19379331)[AppService.InitPromotion(259)] isAcceptablePL=True, isAcceptableSB=True, isAcceptableGamingDT=False, PrivacyPolicy=True, isGamingProduct=True, DeveloperModeEnabled=False
+2026-04-22 10:03:19.727; Info; Redemption; 35296; 20] (19379331)[AppService.InitPromotion(278)] RedeemEntry: PN=Routine, SN=M5NRKD028966197, API=NormalEvent, Source=Background
+2026-04-22 10:03:19.792; Critical; Redemption; 35296; 22] (19379395)[CountryCode.GetCountryCode(86)] GetCountryCode: NL
+2026-04-22 10:03:19.792; Info; Redemption; 35296; 22] (19379395)[PromotionTask.PollingTimerUpdate(629)] PollingTimerUpdate: PollingTimer=604800000, Weeks=8, RequestCounter=3, Trigger=Background
+2026-04-22 10:03:19.792; Info; Redemption; 35296; 22] (19379395)[PromotionTask.DoPromotionAppServiceTask(347)] DoPromotionAppServiceTask - TimeChecker(Before) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/15/2026 4:17:03 PM, 1/1/0001 3:00:00 AM, 4/22/2026 10:03:19 AM)
+2026-04-22 10:03:19.792; Info; Redemption; 35296; 22] (19379395)[PromotionTask.DoPromotionAppServiceTask(359)] DoPromotionAppServiceTask - TimeChecker(After) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/15/2026 4:17:03 PM, 1/1/0001 3:00:00 AM, 4/22/2026 10:03:19 AM)
+2026-04-22 10:03:19.799; Info; Redemption; 35296; 21] (19379402)[PromotionTask.DoPromotionAppServiceTask(463)] DoPromotionAppServiceTask - Leave. NeedRetry: False, LastPollingTime: 4/15/2026 4:17:03 PM
+2026-04-22 10:03:19.799; Info; Redemption; 35296; 20] (19379402)[AppService.DoPromotion(58)] True
+2026-04-22 10:03:19.799; Info; Redemption; 35296; 20] (19379402)[AppService.DoPromotion(79)] End
+2026-04-22 11:02:28.875; System; Armoury Crate; 38012; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 11:02:28.875; System; Armoury Crate; 38012; 2] [4/22/2026 11:02:28 AM]
+2026-04-22 11:02:28.875; System; Armoury Crate; 38012; 2] Armoury Crate Version : 6.4.12.0
+2026-04-22 11:02:28.875; System; Armoury Crate; 38012; 2] OS Version Build : 26200
+2026-04-22 11:02:28.875; System; Armoury Crate; 38012; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 11:02:29.381; Error; UwpDebugOptions; 38012; 1] (525)Failed to read ExceptionList.txt: Could not load file or assembly 'C:\Users\vrudi\AppData\Local\Packages\B9ECED6F.ArmouryCrate_qmba6cd70vzyy\LocalState\ExceptionList.txt'. The system cannot find the file specified.
+2026-04-22 11:02:29.383; Info; UwpAppConfiguration; 38012; 1] (527)DebugProductLineEnabled: False, DebugProductLine: Unknown, DebugBrandLineEnabled: False, DebugBrandLine: Unknown, DebugFeatureSetEnabled: False, DebugFeatureSet: Any, DebugLogEnabled: False, DebugLogLevel: Info, IgnoreOnePackageFlow: False, IgnoredPlugins: 
+2026-04-22 11:02:29.397; Info; DeviceInformationService; 38012; 1] (542)FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE
+2026-04-22 11:02:29.404; Info; CoreServiceManager; 38012; 1] (548)Start FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE spend 12 ms
+2026-04-22 11:02:29.445; Info; ConnectionHandler(Service); 38012; 5] (588)Final version: 1.1
+2026-04-22 11:02:29.487; Info; ConnectionHandler(Service); 38012; 5] (635)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 11:02:29.487; Info; ConnectionHandler(Service); 38012; 5] (635)connected for peer: Service
+2026-04-22 11:02:29.494; Info; ConnectionHandler(UserSession); 38012; 8] (639)Final version: 1.1
+2026-04-22 11:02:29.501; Info; AsusDeviceManager; 38012; 6] (647)MessageType:Device,DeviceType:Notebook,DeviceName:G713QE,DeviceId:, Attributes: (CheckBoxEnable:1)  (DependentAppStatus:0)  (DeviceCount:1)  (DeviceGUID:3F49AD29-52D9-46A5-A608-203D54E7D12A)  (DeviceIndex:0)  (DisplayName:G713QE)  (FirstPluginNeedUpdate:0)  (InfoIconEnable:0)  (LightingMode:SUPPORTAURA)  (LinkToDeviceEnable:0)  (LocalFrameworkVersion:4.2.4.8)  (LocalHtmlVersion:0)  (LocalMainSDKVersion:2.01.52)  (LocalSDKVersion:0)  (NeedRestart:false)  (PIDMode:0)  (PartNumber_90:90NR05F2-M01710)  (ProductLine:ROG_Laptop)  (ServerFrameworkVersion:4.2.4.13)  (ServerHtmlVersion:0)  (ServerMainSDKVersion:2.01.56)  (ServerSDKVersion:0)  (SupportCreator:true) 
+2026-04-22 11:02:29.513; Info; ConnectionHandler(UserSession); 38012; 8] (656)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 11:02:29.513; Info; CoreServiceManager; 38012; 1] (656)Start ArmouryCrate.Console.Uwp.Core.Services.CoreStreamService spend 108 ms
+2026-04-22 11:02:29.513; Info; ConnectionHandler(UserSession); 38012; 8] (656)connected for peer: UserSession
+2026-04-22 11:02:29.513; Info; CoreServiceManager; 38012; 1] (656)Start ArmouryCrate.Console.Uwp.Core.Services.SettingsService spend 0 ms
+2026-04-22 11:02:29.513; Info; CoreServiceManager; 38012; 1] (656)Start ArmouryCrate.Console.Uwp.Core.Services.VisualService spend 0 ms
+2026-04-22 11:02:29.513; Info; CoreServiceManager; 38012; 1] (656)Start ArmouryCrate.Console.Uwp.Core.Services.ROGIDService spend 0 ms
+2026-04-22 11:02:29.513; Info; CoreServiceManager; 38012; 1] (657)Start ArmouryCrate.Console.Uwp.Core.Services.DataCollectionService spend 0 ms
+2026-04-22 11:02:29.513; Info; CoreServiceManager; 38012; 1] (657)Start ArmouryCrate.Console.Uwp.Core.Services.PromotionService spend 0 ms
+2026-04-22 11:02:29.514; Info; CoreServiceManager; 38012; 1] (658)Start ArmouryCrate.Console.Uwp.Core.Services.PrivacyPolicyService spend 1 ms
+2026-04-22 11:02:29.518; Info; BackgroundTaskService; 38012; 1] (662)Skipping StartAsync because it's running in a background context.
+2026-04-22 11:02:29.519; Info; CoreServiceManager; 38012; 1] (662)Start ArmouryCrate.Console.Uwp.Core.Services.BackgroundTaskService spend 5 ms
+2026-04-22 11:02:29.519; Info; CoreServiceManager; 38012; 1] (663)Get theme from previous recrod => ROG
+2026-04-22 11:02:29.519; Info; CoreServiceManager; 38012; 1] (663)GetTheme... ROG
+2026-04-22 11:02:29.519; Info; App; 38012; 1] (663)DeveloperMode:NotSet
+2026-04-22 11:02:29.545; Info; App; 38012; 1] (689)IsAdmin:True
+2026-04-22 11:02:29.727; Info; GameLibraryPlugin; 38012; 1] (870)[AppService..ctor(19)] Begin
+2026-04-22 11:02:29.727; Info; GameLibraryPlugin; 38012; 1] (871)[AppService..ctor(27)] End
+2026-04-22 11:06:42.918; System; Armoury Crate; 24472; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 11:06:42.918; System; Armoury Crate; 24472; 2] [4/22/2026 11:06:42 AM]
+2026-04-22 11:06:42.918; System; Armoury Crate; 24472; 2] Armoury Crate Version : 6.4.12.0
+2026-04-22 11:06:42.918; System; Armoury Crate; 24472; 2] OS Version Build : 26200
+2026-04-22 11:06:42.918; System; Armoury Crate; 24472; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 11:06:43.326; Error; UwpDebugOptions; 24472; 1] (412)Failed to read ExceptionList.txt: Could not load file or assembly 'C:\Users\vrudi\AppData\Local\Packages\B9ECED6F.ArmouryCrate_qmba6cd70vzyy\LocalState\ExceptionList.txt'. The system cannot find the file specified.
+2026-04-22 11:06:43.327; Info; UwpAppConfiguration; 24472; 1] (413)DebugProductLineEnabled: False, DebugProductLine: Unknown, DebugBrandLineEnabled: False, DebugBrandLine: Unknown, DebugFeatureSetEnabled: False, DebugFeatureSet: Any, DebugLogEnabled: False, DebugLogLevel: Info, IgnoreOnePackageFlow: False, IgnoredPlugins: 
+2026-04-22 11:06:43.328; Info; DeviceInformationService; 24472; 1] (414)FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE
+2026-04-22 11:06:43.328; Info; CoreServiceManager; 24472; 1] (414)Start FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE spend 1 ms
+2026-04-22 11:06:43.351; Info; ConnectionHandler(Service); 24472; 5] (436)Final version: 1.1
+2026-04-22 11:06:43.368; Info; ConnectionHandler(Service); 24472; 5] (453)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 11:06:43.368; Info; ConnectionHandler(Service); 24472; 5] (454)connected for peer: Service
+2026-04-22 11:06:43.371; Info; AsusDeviceManager; 24472; 8] (457)MessageType:Device,DeviceType:Notebook,DeviceName:G713QE,DeviceId:, Attributes: (CheckBoxEnable:1)  (DependentAppStatus:0)  (DeviceCount:1)  (DeviceGUID:3F49AD29-52D9-46A5-A608-203D54E7D12A)  (DeviceIndex:0)  (DisplayName:G713QE)  (FirstPluginNeedUpdate:0)  (InfoIconEnable:0)  (LightingMode:SUPPORTAURA)  (LinkToDeviceEnable:0)  (LocalFrameworkVersion:4.2.4.8)  (LocalHtmlVersion:0)  (LocalMainSDKVersion:2.01.52)  (LocalSDKVersion:0)  (NeedRestart:false)  (PIDMode:0)  (PartNumber_90:90NR05F2-M01710)  (ProductLine:ROG_Laptop)  (ServerFrameworkVersion:4.2.4.13)  (ServerHtmlVersion:0)  (ServerMainSDKVersion:2.01.56)  (ServerSDKVersion:0)  (SupportCreator:true) 
+2026-04-22 11:06:43.371; Info; ConnectionHandler(UserSession); 24472; 9] (457)Final version: 1.1
+2026-04-22 11:06:43.384; Info; ConnectionHandler(UserSession); 24472; 9] (470)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 11:06:43.385; Info; CoreServiceManager; 24472; 1] (470)Start ArmouryCrate.Console.Uwp.Core.Services.CoreStreamService spend 56 ms
+2026-04-22 11:06:43.385; Info; ConnectionHandler(UserSession); 24472; 9] (470)connected for peer: UserSession
+2026-04-22 11:06:43.385; Info; CoreServiceManager; 24472; 1] (470)Start ArmouryCrate.Console.Uwp.Core.Services.SettingsService spend 0 ms
+2026-04-22 11:06:43.385; Info; CoreServiceManager; 24472; 1] (470)Start ArmouryCrate.Console.Uwp.Core.Services.VisualService spend 0 ms
+2026-04-22 11:06:43.385; Info; CoreServiceManager; 24472; 1] (470)Start ArmouryCrate.Console.Uwp.Core.Services.ROGIDService spend 0 ms
+2026-04-22 11:06:43.385; Info; CoreServiceManager; 24472; 1] (470)Start ArmouryCrate.Console.Uwp.Core.Services.DataCollectionService spend 0 ms
+2026-04-22 11:06:43.385; Info; CoreServiceManager; 24472; 1] (470)Start ArmouryCrate.Console.Uwp.Core.Services.PromotionService spend 0 ms
+2026-04-22 11:06:43.385; Info; CoreServiceManager; 24472; 1] (470)Start ArmouryCrate.Console.Uwp.Core.Services.PrivacyPolicyService spend 0 ms
+2026-04-22 11:06:43.386; Info; BackgroundTaskService; 24472; 1] (471)Skipping StartAsync because it's running in a background context.
+2026-04-22 11:06:43.386; Info; CoreServiceManager; 24472; 1] (471)Start ArmouryCrate.Console.Uwp.Core.Services.BackgroundTaskService spend 1 ms
+2026-04-22 11:06:43.386; Info; CoreServiceManager; 24472; 1] (471)Get theme from previous recrod => ROG
+2026-04-22 11:06:43.386; Info; CoreServiceManager; 24472; 1] (471)GetTheme... ROG
+2026-04-22 11:06:43.386; Info; App; 24472; 1] (471)DeveloperMode:NotSet
+2026-04-22 11:06:43.387; Info; App; 24472; 1] (472)IsAdmin:True
+2026-04-22 11:06:43.564; Info; GameLibraryPlugin; 24472; 1] (650)[AppService..ctor(19)] Begin
+2026-04-22 11:06:43.564; Info; GameLibraryPlugin; 24472; 1] (650)[AppService..ctor(27)] End
+2026-04-22 11:06:43.949; Info; GameLibraryPlugin; 24472; 12] (1035)[AppService..ctor(19)] Begin
+2026-04-22 11:06:43.949; Info; GameLibraryPlugin; 24472; 12] (1035)[AppService..ctor(27)] End
+2026-04-22 13:49:33.737; System; Armoury Crate; 17748; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 13:49:33.737; System; Armoury Crate; 17748; 2] [4/22/2026 1:49:33 PM]
+2026-04-22 13:49:33.737; System; Armoury Crate; 17748; 2] Armoury Crate Version : 6.4.12.0
+2026-04-22 13:49:33.737; System; Armoury Crate; 17748; 2] OS Version Build : 26200
+2026-04-22 13:49:33.737; System; Armoury Crate; 17748; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 13:49:34.411; Error; UwpDebugOptions; 17748; 1] (683)Failed to read ExceptionList.txt: Could not load file or assembly 'C:\Users\vrudi\AppData\Local\Packages\B9ECED6F.ArmouryCrate_qmba6cd70vzyy\LocalState\ExceptionList.txt'. The system cannot find the file specified.
+2026-04-22 13:49:34.413; Info; UwpAppConfiguration; 17748; 1] (685)DebugProductLineEnabled: False, DebugProductLine: Unknown, DebugBrandLineEnabled: False, DebugBrandLine: Unknown, DebugFeatureSetEnabled: False, DebugFeatureSet: Any, DebugLogEnabled: False, DebugLogLevel: Info, IgnoreOnePackageFlow: False, IgnoredPlugins: 
+2026-04-22 13:49:34.430; Info; DeviceInformationService; 17748; 1] (703)FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE
+2026-04-22 13:49:34.437; Info; CoreServiceManager; 17748; 1] (709)Start FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE spend 14 ms
+2026-04-22 13:49:34.500; Info; ConnectionHandler(Service); 17748; 5] (772)Final version: 1.1
+2026-04-22 13:49:34.556; Info; ConnectionHandler(Service); 17748; 5] (829)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 13:49:34.556; Info; ConnectionHandler(Service); 17748; 5] (829)connected for peer: Service
+2026-04-22 13:49:34.563; Info; ConnectionHandler(UserSession); 17748; 6] (835)Final version: 1.1
+2026-04-22 13:49:34.570; Info; AsusDeviceManager; 17748; 7] (843)MessageType:Device,DeviceType:Notebook,DeviceName:G713QE,DeviceId:, Attributes: (CheckBoxEnable:1)  (DependentAppStatus:0)  (DeviceCount:1)  (DeviceGUID:3F49AD29-52D9-46A5-A608-203D54E7D12A)  (DeviceIndex:0)  (DisplayName:G713QE)  (FirstPluginNeedUpdate:0)  (InfoIconEnable:0)  (LightingMode:SUPPORTAURA)  (LinkToDeviceEnable:0)  (LocalFrameworkVersion:4.2.4.8)  (LocalHtmlVersion:0)  (LocalMainSDKVersion:2.01.52)  (LocalSDKVersion:0)  (NeedRestart:false)  (PIDMode:0)  (PartNumber_90:90NR05F2-M01710)  (ProductLine:ROG_Laptop)  (ServerFrameworkVersion:4.2.4.13)  (ServerHtmlVersion:0)  (ServerMainSDKVersion:2.01.56)  (ServerSDKVersion:0)  (SupportCreator:true) 
+2026-04-22 13:49:34.582; Info; ConnectionHandler(UserSession); 17748; 6] (854)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 13:49:34.582; Info; CoreServiceManager; 17748; 1] (855)Start ArmouryCrate.Console.Uwp.Core.Services.CoreStreamService spend 145 ms
+2026-04-22 13:49:34.582; Info; ConnectionHandler(UserSession); 17748; 6] (855)connected for peer: UserSession
+2026-04-22 13:49:34.583; Info; CoreServiceManager; 17748; 1] (855)Start ArmouryCrate.Console.Uwp.Core.Services.SettingsService spend 0 ms
+2026-04-22 13:49:34.583; Info; CoreServiceManager; 17748; 1] (855)Start ArmouryCrate.Console.Uwp.Core.Services.VisualService spend 0 ms
+2026-04-22 13:49:34.583; Info; CoreServiceManager; 17748; 1] (855)Start ArmouryCrate.Console.Uwp.Core.Services.ROGIDService spend 0 ms
+2026-04-22 13:49:34.583; Info; CoreServiceManager; 17748; 1] (855)Start ArmouryCrate.Console.Uwp.Core.Services.DataCollectionService spend 1 ms
+2026-04-22 13:49:34.583; Info; CoreServiceManager; 17748; 1] (855)Start ArmouryCrate.Console.Uwp.Core.Services.PromotionService spend 0 ms
+2026-04-22 13:49:34.583; Info; CoreServiceManager; 17748; 1] (856)Start ArmouryCrate.Console.Uwp.Core.Services.PrivacyPolicyService spend 1 ms
+2026-04-22 13:49:34.590; Info; BackgroundTaskService; 17748; 1] (863)Skipping StartAsync because it's running in a background context.
+2026-04-22 13:49:34.591; Info; CoreServiceManager; 17748; 1] (863)Start ArmouryCrate.Console.Uwp.Core.Services.BackgroundTaskService spend 6 ms
+2026-04-22 13:49:34.591; Info; CoreServiceManager; 17748; 1] (863)Get theme from previous recrod => ROG
+2026-04-22 13:49:34.591; Info; CoreServiceManager; 17748; 1] (863)GetTheme... ROG
+2026-04-22 13:49:34.591; Info; App; 17748; 1] (863)DeveloperMode:NotSet
+2026-04-22 13:49:34.598; Info; App; 17748; 1] (870)IsAdmin:True
+2026-04-22 13:49:34.814; Info; GameLibraryPlugin; 17748; 1] (1087)[AppService..ctor(19)] Begin
+2026-04-22 13:49:34.815; Info; GameLibraryPlugin; 17748; 1] (1088)[AppService..ctor(27)] End
+2026-04-22 14:50:16.830; System; Armoury Crate; 22240; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 14:50:16.830; System; Armoury Crate; 22240; 2] [4/22/2026 2:50:16 PM]
+2026-04-22 14:50:16.830; System; Armoury Crate; 22240; 2] Armoury Crate Version : 6.4.12.0
+2026-04-22 14:50:16.830; System; Armoury Crate; 22240; 2] OS Version Build : 26200
+2026-04-22 14:50:16.830; System; Armoury Crate; 22240; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 14:50:17.793; Error; UwpDebugOptions; 22240; 1] (976)Failed to read ExceptionList.txt: Could not load file or assembly 'C:\Users\vrudi\AppData\Local\Packages\B9ECED6F.ArmouryCrate_qmba6cd70vzyy\LocalState\ExceptionList.txt'. The system cannot find the file specified.
+2026-04-22 14:50:17.795; Info; UwpAppConfiguration; 22240; 1] (978)DebugProductLineEnabled: False, DebugProductLine: Unknown, DebugBrandLineEnabled: False, DebugBrandLine: Unknown, DebugFeatureSetEnabled: False, DebugFeatureSet: Any, DebugLogEnabled: False, DebugLogLevel: Info, IgnoreOnePackageFlow: False, IgnoredPlugins: 
+2026-04-22 14:50:17.846; Info; DeviceInformationService; 22240; 1] (1029)FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE
+2026-04-22 14:50:17.858; Info; CoreServiceManager; 22240; 1] (1041)Start FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE spend 45 ms
+2026-04-22 14:50:17.939; Info; ConnectionHandler(Service); 22240; 4] (1122)Final version: 1.1
+2026-04-22 14:50:18.032; Info; ConnectionHandler(Service); 22240; 4] (1215)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 14:50:18.035; Info; ConnectionHandler(Service); 22240; 4] (1219)connected for peer: Service
+2026-04-22 14:50:18.041; Info; ConnectionHandler(UserSession); 22240; 8] (1224)Final version: 1.1
+2026-04-22 14:50:18.055; Info; AsusDeviceManager; 22240; 7] (1238)MessageType:Device,DeviceType:Notebook,DeviceName:G713QE,DeviceId:, Attributes: (CheckBoxEnable:1)  (DependentAppStatus:0)  (DeviceCount:1)  (DeviceGUID:3F49AD29-52D9-46A5-A608-203D54E7D12A)  (DeviceIndex:0)  (DisplayName:G713QE)  (FirstPluginNeedUpdate:0)  (InfoIconEnable:0)  (LightingMode:SUPPORTAURA)  (LinkToDeviceEnable:0)  (LocalFrameworkVersion:4.2.4.8)  (LocalHtmlVersion:0)  (LocalMainSDKVersion:2.01.52)  (LocalSDKVersion:0)  (NeedRestart:false)  (PIDMode:0)  (PartNumber_90:90NR05F2-M01710)  (ProductLine:ROG_Laptop)  (ServerFrameworkVersion:4.2.4.13)  (ServerHtmlVersion:0)  (ServerMainSDKVersion:2.01.56)  (ServerSDKVersion:0)  (SupportCreator:true) 
+2026-04-22 14:50:18.063; Info; ConnectionHandler(UserSession); 22240; 8] (1246)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 14:50:18.063; Info; ConnectionHandler(UserSession); 22240; 8] (1246)connected for peer: UserSession
+2026-04-22 14:50:18.063; Info; CoreServiceManager; 22240; 1] (1246)Start ArmouryCrate.Console.Uwp.Core.Services.CoreStreamService spend 205 ms
+2026-04-22 14:50:18.064; Info; CoreServiceManager; 22240; 1] (1246)Start ArmouryCrate.Console.Uwp.Core.Services.SettingsService spend 0 ms
+2026-04-22 14:50:18.064; Info; CoreServiceManager; 22240; 1] (1246)Start ArmouryCrate.Console.Uwp.Core.Services.VisualService spend 0 ms
+2026-04-22 14:50:18.064; Info; CoreServiceManager; 22240; 1] (1247)Start ArmouryCrate.Console.Uwp.Core.Services.ROGIDService spend 0 ms
+2026-04-22 14:50:18.064; Info; CoreServiceManager; 22240; 1] (1247)Start ArmouryCrate.Console.Uwp.Core.Services.DataCollectionService spend 0 ms
+2026-04-22 14:50:18.065; Info; CoreServiceManager; 22240; 1] (1247)Start ArmouryCrate.Console.Uwp.Core.Services.PromotionService spend 0 ms
+2026-04-22 14:50:18.066; Info; CoreServiceManager; 22240; 1] (1249)Start ArmouryCrate.Console.Uwp.Core.Services.PrivacyPolicyService spend 2 ms
+2026-04-22 14:50:18.073; Info; BackgroundTaskService; 22240; 1] (1256)Skipping StartAsync because it's running in a background context.
+2026-04-22 14:50:18.074; Info; CoreServiceManager; 22240; 1] (1256)Start ArmouryCrate.Console.Uwp.Core.Services.BackgroundTaskService spend 7 ms
+2026-04-22 14:50:18.074; Info; CoreServiceManager; 22240; 1] (1257)Get theme from previous recrod => ROG
+2026-04-22 14:50:18.074; Info; CoreServiceManager; 22240; 1] (1257)GetTheme... ROG
+2026-04-22 14:50:18.074; Info; App; 22240; 1] (1257)DeveloperMode:NotSet
+2026-04-22 14:50:18.084; Info; App; 22240; 1] (1266)IsAdmin:True
+2026-04-22 14:50:18.500; Info; GameLibraryPlugin; 22240; 3] (1683)[AppService..ctor(19)] Begin
+2026-04-22 14:50:18.500; Info; GameLibraryPlugin; 22240; 1] (1683)[AppService..ctor(19)] Begin
+2026-04-22 14:50:18.502; Info; GameLibraryPlugin; 22240; 1] (1684)[AppService..ctor(27)] End
+2026-04-22 14:50:18.502; Info; GameLibraryPlugin; 22240; 3] (1684)[AppService..ctor(27)] End
+2026-04-22 15:24:43.224; System; Armoury Crate; 15984; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 15:24:43.224; System; Armoury Crate; 15984; 2] [4/22/2026 3:24:43 PM]
+2026-04-22 15:24:43.224; System; Armoury Crate; 15984; 2] Armoury Crate Version : 6.4.12.0
+2026-04-22 15:24:43.224; System; Armoury Crate; 15984; 2] OS Version Build : 26200
+2026-04-22 15:24:43.224; System; Armoury Crate; 15984; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 15:24:43.889; Error; UwpDebugOptions; 15984; 1] (673)Failed to read ExceptionList.txt: Could not load file or assembly 'C:\Users\vrudi\AppData\Local\Packages\B9ECED6F.ArmouryCrate_qmba6cd70vzyy\LocalState\ExceptionList.txt'. The system cannot find the file specified.
+2026-04-22 15:24:43.892; Info; UwpAppConfiguration; 15984; 1] (675)DebugProductLineEnabled: False, DebugProductLine: Unknown, DebugBrandLineEnabled: False, DebugBrandLine: Unknown, DebugFeatureSetEnabled: False, DebugFeatureSet: Any, DebugLogEnabled: False, DebugLogLevel: Info, IgnoreOnePackageFlow: False, IgnoredPlugins: 
+2026-04-22 15:24:43.908; Info; DeviceInformationService; 15984; 1] (692)FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE
+2026-04-22 15:24:43.915; Info; CoreServiceManager; 15984; 1] (700)Start FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE spend 13 ms
+2026-04-22 15:24:43.980; Info; ConnectionHandler(Service); 15984; 5] (764)Final version: 1.1
+2026-04-22 15:24:44.047; Info; ConnectionHandler(Service); 15984; 5] (831)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 15:24:44.050; Info; ConnectionHandler(Service); 15984; 5] (831)connected for peer: Service
+2026-04-22 15:24:44.054; Info; ConnectionHandler(UserSession); 15984; 8] (838)Final version: 1.1
+2026-04-22 15:24:44.060; Info; AsusDeviceManager; 15984; 7] (845)MessageType:Device,DeviceType:Notebook,DeviceName:G713QE,DeviceId:, Attributes: (CheckBoxEnable:1)  (DependentAppStatus:0)  (DeviceCount:1)  (DeviceGUID:3F49AD29-52D9-46A5-A608-203D54E7D12A)  (DeviceIndex:0)  (DisplayName:G713QE)  (FirstPluginNeedUpdate:0)  (InfoIconEnable:0)  (LightingMode:SUPPORTAURA)  (LinkToDeviceEnable:0)  (LocalFrameworkVersion:4.2.4.8)  (LocalHtmlVersion:0)  (LocalMainSDKVersion:2.01.52)  (LocalSDKVersion:0)  (NeedRestart:false)  (PIDMode:0)  (PartNumber_90:90NR05F2-M01710)  (ProductLine:ROG_Laptop)  (ServerFrameworkVersion:4.2.4.13)  (ServerHtmlVersion:0)  (ServerMainSDKVersion:2.01.56)  (ServerSDKVersion:0)  (SupportCreator:true) 
+2026-04-22 15:24:44.071; Info; ConnectionHandler(UserSession); 15984; 8] (855)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 15:24:44.071; Info; CoreServiceManager; 15984; 1] (855)Start ArmouryCrate.Console.Uwp.Core.Services.CoreStreamService spend 156 ms
+2026-04-22 15:24:44.071; Info; ConnectionHandler(UserSession); 15984; 8] (855)connected for peer: UserSession
+2026-04-22 15:24:44.072; Info; CoreServiceManager; 15984; 1] (856)Start ArmouryCrate.Console.Uwp.Core.Services.SettingsService spend 0 ms
+2026-04-22 15:24:44.072; Info; CoreServiceManager; 15984; 1] (856)Start ArmouryCrate.Console.Uwp.Core.Services.VisualService spend 0 ms
+2026-04-22 15:24:44.072; Info; CoreServiceManager; 15984; 1] (856)Start ArmouryCrate.Console.Uwp.Core.Services.ROGIDService spend 0 ms
+2026-04-22 15:24:44.072; Info; CoreServiceManager; 15984; 1] (856)Start ArmouryCrate.Console.Uwp.Core.Services.DataCollectionService spend 1 ms
+2026-04-22 15:24:44.072; Info; CoreServiceManager; 15984; 1] (856)Start ArmouryCrate.Console.Uwp.Core.Services.PromotionService spend 0 ms
+2026-04-22 15:24:44.073; Info; CoreServiceManager; 15984; 1] (857)Start ArmouryCrate.Console.Uwp.Core.Services.PrivacyPolicyService spend 1 ms
+2026-04-22 15:24:44.077; Info; BackgroundTaskService; 15984; 1] (861)Skipping StartAsync because it's running in a background context.
+2026-04-22 15:24:44.077; Info; CoreServiceManager; 15984; 1] (861)Start ArmouryCrate.Console.Uwp.Core.Services.BackgroundTaskService spend 3 ms
+2026-04-22 15:24:44.077; Info; CoreServiceManager; 15984; 1] (861)Get theme from previous recrod => ROG
+2026-04-22 15:24:44.077; Info; CoreServiceManager; 15984; 1] (861)GetTheme... ROG
+2026-04-22 15:24:44.077; Info; App; 15984; 1] (861)DeveloperMode:NotSet
+2026-04-22 15:24:44.084; Info; App; 15984; 1] (868)IsAdmin:True
+2026-04-22 15:24:44.293; Info; GameLibraryPlugin; 15984; 1] (1077)[AppService..ctor(19)] Begin
+2026-04-22 15:24:44.293; Info; GameLibraryPlugin; 15984; 1] (1078)[AppService..ctor(27)] End
+2026-04-22 16:16:21.388; System; Armoury Crate; 15948; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 16:16:21.388; System; Armoury Crate; 15948; 2] [4/22/2026 4:16:21 PM]
+2026-04-22 16:16:21.388; System; Armoury Crate; 15948; 2] Armoury Crate Version : 6.4.12.0
+2026-04-22 16:16:21.388; System; Armoury Crate; 15948; 2] OS Version Build : 26200
+2026-04-22 16:16:21.388; System; Armoury Crate; 15948; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 16:16:21.944; Error; UwpDebugOptions; 15948; 1] (565)Failed to read ExceptionList.txt: Could not load file or assembly 'C:\Users\vrudi\AppData\Local\Packages\B9ECED6F.ArmouryCrate_qmba6cd70vzyy\LocalState\ExceptionList.txt'. The system cannot find the file specified.
+2026-04-22 16:16:21.945; Info; UwpAppConfiguration; 15948; 1] (566)DebugProductLineEnabled: False, DebugProductLine: Unknown, DebugBrandLineEnabled: False, DebugBrandLine: Unknown, DebugFeatureSetEnabled: False, DebugFeatureSet: Any, DebugLogEnabled: False, DebugLogLevel: Info, IgnoreOnePackageFlow: False, IgnoredPlugins: 
+2026-04-22 16:16:21.963; Info; DeviceInformationService; 15948; 1] (584)FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE
+2026-04-22 16:16:21.970; Info; CoreServiceManager; 15948; 1] (590)Start FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE spend 15 ms
+2026-04-22 16:16:22.018; Info; ConnectionHandler(Service); 15948; 5] (639)Final version: 1.1
+2026-04-22 16:16:22.068; Info; ConnectionHandler(Service); 15948; 5] (688)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 16:16:22.068; Info; ConnectionHandler(Service); 15948; 5] (688)connected for peer: Service
+2026-04-22 16:16:22.072; Info; ConnectionHandler(UserSession); 15948; 8] (693)Final version: 1.1
+2026-04-22 16:16:22.080; Info; AsusDeviceManager; 15948; 7] (701)MessageType:Device,DeviceType:Notebook,DeviceName:G713QE,DeviceId:, Attributes: (CheckBoxEnable:1)  (DependentAppStatus:0)  (DeviceCount:1)  (DeviceGUID:3F49AD29-52D9-46A5-A608-203D54E7D12A)  (DeviceIndex:0)  (DisplayName:G713QE)  (FirstPluginNeedUpdate:0)  (InfoIconEnable:0)  (LightingMode:SUPPORTAURA)  (LinkToDeviceEnable:0)  (LocalFrameworkVersion:4.2.4.8)  (LocalHtmlVersion:0)  (LocalMainSDKVersion:2.01.52)  (LocalSDKVersion:0)  (NeedRestart:false)  (PIDMode:0)  (PartNumber_90:90NR05F2-M01710)  (ProductLine:ROG_Laptop)  (ServerFrameworkVersion:4.2.4.13)  (ServerHtmlVersion:0)  (ServerMainSDKVersion:2.01.56)  (ServerSDKVersion:0)  (SupportCreator:true) 
+2026-04-22 16:16:22.088; Info; ConnectionHandler(UserSession); 15948; 8] (708)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 16:16:22.088; Info; CoreServiceManager; 15948; 1] (708)Start ArmouryCrate.Console.Uwp.Core.Services.CoreStreamService spend 118 ms
+2026-04-22 16:16:22.088; Info; ConnectionHandler(UserSession); 15948; 8] (708)connected for peer: UserSession
+2026-04-22 16:16:22.088; Info; CoreServiceManager; 15948; 1] (709)Start ArmouryCrate.Console.Uwp.Core.Services.SettingsService spend 0 ms
+2026-04-22 16:16:22.088; Info; CoreServiceManager; 15948; 1] (709)Start ArmouryCrate.Console.Uwp.Core.Services.VisualService spend 0 ms
+2026-04-22 16:16:22.088; Info; CoreServiceManager; 15948; 1] (709)Start ArmouryCrate.Console.Uwp.Core.Services.ROGIDService spend 0 ms
+2026-04-22 16:16:22.089; Info; CoreServiceManager; 15948; 1] (709)Start ArmouryCrate.Console.Uwp.Core.Services.DataCollectionService spend 1 ms
+2026-04-22 16:16:22.089; Info; CoreServiceManager; 15948; 1] (709)Start ArmouryCrate.Console.Uwp.Core.Services.PromotionService spend 0 ms
+2026-04-22 16:16:22.090; Info; CoreServiceManager; 15948; 1] (710)Start ArmouryCrate.Console.Uwp.Core.Services.PrivacyPolicyService spend 0 ms
+2026-04-22 16:16:22.093; Info; BackgroundTaskService; 15948; 1] (714)Skipping StartAsync because it's running in a background context.
+2026-04-22 16:16:22.093; Info; CoreServiceManager; 15948; 1] (714)Start ArmouryCrate.Console.Uwp.Core.Services.BackgroundTaskService spend 3 ms
+2026-04-22 16:16:22.093; Info; CoreServiceManager; 15948; 1] (714)Get theme from previous recrod => ROG
+2026-04-22 16:16:22.093; Info; CoreServiceManager; 15948; 1] (714)GetTheme... ROG
+2026-04-22 16:16:22.093; Info; App; 15948; 1] (714)DeveloperMode:NotSet
+2026-04-22 16:16:22.099; Info; App; 15948; 1] (720)IsAdmin:True
+2026-04-22 16:16:22.181; Info; Redemption; 15948; 1] (801)[AppService.DoPromotion(30)] Begin
+2026-04-22 16:16:22.182; Info; Redemption; 15948; 1] (803)[AppService.InitPromotion(215)] ProductLine Value=NB, Status=True
+2026-04-22 16:16:22.183; Info; Redemption; 15948; 1] (803)[AppService.InitPromotion(227)] Subbrand Value=ROG, Status=True
+2026-04-22 16:16:22.183; Info; Redemption; 15948; 1] (803)[AppService.InitPromotion(242)] SystemManufacturer=ASUSTeK COMPUTER INC., Status=False
+2026-04-22 16:16:22.183; Info; Redemption; 15948; 1] (804)[AppService.InitPromotion(259)] isAcceptablePL=True, isAcceptableSB=True, isAcceptableGamingDT=False, PrivacyPolicy=True, isGamingProduct=True, DeveloperModeEnabled=False
+2026-04-22 16:16:22.184; Info; Redemption; 15948; 1] (804)[AppService.InitPromotion(278)] RedeemEntry: PN=Routine, SN=M5NRKD028966197, API=AdobeEvent, Source=Background
+2026-04-22 16:16:22.207; Info; ROGID; 15948; 1] (828)[ROGID.ROGIDService.SSO]SSO Module Init Status : True
+2026-04-22 16:16:22.583; Critical; Redemption; 15948; 9] (1203)[CountryCode.GetCountryCode(86)] GetCountryCode: NL
+2026-04-22 16:16:22.583; Info; Redemption; 15948; 9] (1203)[PromotionTask.PollingTimerUpdate(629)] PollingTimerUpdate: PollingTimer=604800000, Weeks=9, RequestCounter=3, Trigger=Background
+2026-04-22 16:16:22.583; Info; Redemption; 15948; 9] (1203)[PromotionTask.DoPromotionAppServiceTask(347)] DoPromotionAppServiceTask - TimeChecker(Before) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/15/2026 4:16:22 PM, 1/1/0001 3:00:00 AM, 4/22/2026 4:16:22 PM)
+2026-04-22 16:16:22.583; Info; Redemption; 15948; 9] (1203)[PromotionTask.SyncWithServer(1472)] Start
+2026-04-22 16:16:23.519; Critical; Redemption; 15948; 10] (2139)[CountryCode.GetCountryCode(86)] GetCountryCode: NL
+2026-04-22 16:16:25.289; Info; Redemption; 15948; 9] (3910)[AOCCAPI.GetLocalActiveToken(455)] Local TitanAPI token is not active, need to get new token
+2026-04-22 16:16:27.929; Info; Redemption; 15948; 9] (6549)[PromotionTask.PollingTimerUpdate(629)] PollingTimerUpdate: PollingTimer=604800000, Weeks=9, RequestCounter=4, Trigger=Background
+2026-04-22 16:16:27.929; Info; Redemption; 15948; 9] (6549)[PromotionTask.DoPromotionAppServiceTask(359)] DoPromotionAppServiceTask - TimeChecker(After) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/22/2026 4:16:23 PM, 1/1/0001 3:00:00 AM, 4/22/2026 4:16:27 PM)
+2026-04-22 16:16:27.948; Info; Redemption; 15948; 12] (6569)[PromotionTask.DoPromotionAppServiceTask(463)] DoPromotionAppServiceTask - Leave. NeedRetry: False, LastPollingTime: 4/22/2026 4:16:23 PM
+2026-04-22 16:16:27.948; Info; Redemption; 15948; 1] (6569)[AppService.DoPromotion(58)] True
+2026-04-22 16:16:27.948; Info; Redemption; 15948; 1] (6569)[AppService.DoPromotion(79)] End
+2026-04-22 16:17:01.995; Info; ConnectionHandler(Service); 15948; 5] (40616)received keep alive packet, SN: 0
+2026-04-22 16:17:01.995; Info; ConnectionHandler(UserSession); 15948; 8] (40616)received keep alive packet, SN: 0
+2026-04-22 16:17:02.057; Info; Redemption; 15948; 10] (40678)[AppService.DoPromotion(30)] Begin
+2026-04-22 16:17:02.057; Info; Redemption; 15948; 10] (40678)[AppService.InitPromotion(215)] ProductLine Value=NB, Status=True
+2026-04-22 16:17:02.057; Info; Redemption; 15948; 10] (40678)[AppService.InitPromotion(227)] Subbrand Value=ROG, Status=True
+2026-04-22 16:17:02.057; Info; Redemption; 15948; 10] (40678)[AppService.InitPromotion(242)] SystemManufacturer=ASUSTeK COMPUTER INC., Status=False
+2026-04-22 16:17:02.057; Info; Redemption; 15948; 10] (40678)[AppService.InitPromotion(259)] isAcceptablePL=True, isAcceptableSB=True, isAcceptableGamingDT=False, PrivacyPolicy=True, isGamingProduct=True, DeveloperModeEnabled=False
+2026-04-22 16:17:02.057; Info; Redemption; 15948; 10] (40678)[AppService.InitPromotion(278)] RedeemEntry: PN=Routine, SN=M5NRKD028966197, API=NormalEvent, Source=Background
+2026-04-22 16:17:02.137; Critical; Redemption; 15948; 2] (40757)[CountryCode.GetCountryCode(86)] GetCountryCode: NL
+2026-04-22 16:17:02.137; Info; Redemption; 15948; 2] (40757)[PromotionTask.PollingTimerUpdate(629)] PollingTimerUpdate: PollingTimer=604800000, Weeks=9, RequestCounter=3, Trigger=Background
+2026-04-22 16:17:02.137; Info; Redemption; 15948; 2] (40757)[PromotionTask.DoPromotionAppServiceTask(347)] DoPromotionAppServiceTask - TimeChecker(Before) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/15/2026 4:17:03 PM, 1/1/0001 3:00:00 AM, 4/22/2026 4:17:02 PM)
+2026-04-22 16:17:02.137; Info; Redemption; 15948; 2] (40757)[PromotionTask.SyncWithServer(1472)] Start
+2026-04-22 16:17:02.303; Critical; Redemption; 15948; 6] (40923)[CountryCode.GetCountryCode(86)] GetCountryCode: NL
+2026-04-22 16:17:04.115; Info; Redemption; 15948; 9] (42735)[PromotionTask.PollingTimerUpdate(629)] PollingTimerUpdate: PollingTimer=604800000, Weeks=9, RequestCounter=4, Trigger=Background
+2026-04-22 16:17:04.115; Info; Redemption; 15948; 9] (42735)[PromotionTask.DoPromotionAppServiceTask(359)] DoPromotionAppServiceTask - TimeChecker(After) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/22/2026 4:17:02 PM, 1/1/0001 3:00:00 AM, 4/22/2026 4:17:04 PM)
+2026-04-22 16:17:04.134; Info; Redemption; 15948; 12] (42755)[PromotionTask.DoPromotionAppServiceTask(463)] DoPromotionAppServiceTask - Leave. NeedRetry: False, LastPollingTime: 4/22/2026 4:17:02 PM
+2026-04-22 16:17:04.134; Info; Redemption; 15948; 10] (42755)[AppService.DoPromotion(58)] True
+2026-04-22 16:17:04.134; Info; Redemption; 15948; 10] (42755)[AppService.DoPromotion(79)] End
+2026-04-22 17:00:23.240; System; Armoury Crate; 36444; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 17:00:23.240; System; Armoury Crate; 36444; 2] [4/22/2026 5:00:23 PM]
+2026-04-22 17:00:23.240; System; Armoury Crate; 36444; 2] Armoury Crate Version : 6.4.12.0
+2026-04-22 17:00:23.240; System; Armoury Crate; 36444; 2] OS Version Build : 26200
+2026-04-22 17:00:23.240; System; Armoury Crate; 36444; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 17:00:25.074; Error; UwpDebugOptions; 36444; 1] (1894)Failed to read ExceptionList.txt: Could not load file or assembly 'C:\Users\vrudi\AppData\Local\Packages\B9ECED6F.ArmouryCrate_qmba6cd70vzyy\LocalState\ExceptionList.txt'. The system cannot find the file specified.
+2026-04-22 17:00:25.075; Info; UwpAppConfiguration; 36444; 1] (1895)DebugProductLineEnabled: False, DebugProductLine: Unknown, DebugBrandLineEnabled: False, DebugBrandLine: Unknown, DebugFeatureSetEnabled: False, DebugFeatureSet: Any, DebugLogEnabled: False, DebugLogLevel: Info, IgnoreOnePackageFlow: False, IgnoredPlugins: 
+2026-04-22 17:00:25.096; Info; DeviceInformationService; 36444; 1] (1916)FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE
+2026-04-22 17:00:25.103; Info; CoreServiceManager; 36444; 1] (1923)Start FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE spend 14 ms
+2026-04-22 17:00:25.234; Info; ConnectionHandler(Service); 36444; 7] (2054)Final version: 1.1
+2026-04-22 17:00:25.280; Info; ConnectionHandler(Service); 36444; 7] (2101)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 17:00:25.280; Info; ConnectionHandler(Service); 36444; 7] (2101)connected for peer: Service
+2026-04-22 17:00:25.285; Info; ConnectionHandler(UserSession); 36444; 8] (2105)Final version: 1.1
+2026-04-22 17:00:25.294; Info; AsusDeviceManager; 36444; 2] (2113)MessageType:Device,DeviceType:Notebook,DeviceName:G713QE,DeviceId:, Attributes: (CheckBoxEnable:1)  (DependentAppStatus:0)  (DeviceCount:1)  (DeviceGUID:3F49AD29-52D9-46A5-A608-203D54E7D12A)  (DeviceIndex:0)  (DisplayName:G713QE)  (FirstPluginNeedUpdate:0)  (InfoIconEnable:0)  (LightingMode:SUPPORTAURA)  (LinkToDeviceEnable:0)  (LocalFrameworkVersion:4.2.4.8)  (LocalHtmlVersion:0)  (LocalMainSDKVersion:2.01.52)  (LocalSDKVersion:0)  (NeedRestart:false)  (PIDMode:0)  (PartNumber_90:90NR05F2-M01710)  (ProductLine:ROG_Laptop)  (ServerFrameworkVersion:4.2.4.13)  (ServerHtmlVersion:0)  (ServerMainSDKVersion:2.01.56)  (ServerSDKVersion:0)  (SupportCreator:true) 
+2026-04-22 17:00:25.303; Info; ConnectionHandler(UserSession); 36444; 8] (2123)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 17:00:25.303; Info; CoreServiceManager; 36444; 1] (2123)Start ArmouryCrate.Console.Uwp.Core.Services.CoreStreamService spend 200 ms
+2026-04-22 17:00:25.303; Info; ConnectionHandler(UserSession); 36444; 8] (2123)connected for peer: UserSession
+2026-04-22 17:00:25.303; Info; CoreServiceManager; 36444; 1] (2123)Start ArmouryCrate.Console.Uwp.Core.Services.SettingsService spend 0 ms
+2026-04-22 17:00:25.303; Info; CoreServiceManager; 36444; 1] (2123)Start ArmouryCrate.Console.Uwp.Core.Services.VisualService spend 0 ms
+2026-04-22 17:00:25.303; Info; CoreServiceManager; 36444; 1] (2123)Start ArmouryCrate.Console.Uwp.Core.Services.ROGIDService spend 0 ms
+2026-04-22 17:00:25.304; Info; CoreServiceManager; 36444; 1] (2124)Start ArmouryCrate.Console.Uwp.Core.Services.DataCollectionService spend 1 ms
+2026-04-22 17:00:25.304; Info; CoreServiceManager; 36444; 1] (2124)Start ArmouryCrate.Console.Uwp.Core.Services.PromotionService spend 0 ms
+2026-04-22 17:00:25.305; Info; CoreServiceManager; 36444; 1] (2125)Start ArmouryCrate.Console.Uwp.Core.Services.PrivacyPolicyService spend 1 ms
+2026-04-22 17:00:25.309; Info; BackgroundTaskService; 36444; 1] (2129)Skipping StartAsync because it's running in a background context.
+2026-04-22 17:00:25.310; Info; CoreServiceManager; 36444; 1] (2129)Start ArmouryCrate.Console.Uwp.Core.Services.BackgroundTaskService spend 5 ms
+2026-04-22 17:00:25.310; Info; CoreServiceManager; 36444; 1] (2129)Get theme from previous recrod => ROG
+2026-04-22 17:00:25.310; Info; CoreServiceManager; 36444; 1] (2129)GetTheme... ROG
+2026-04-22 17:00:25.310; Info; App; 36444; 1] (2129)DeveloperMode:NotSet
+2026-04-22 17:00:25.317; Info; App; 36444; 1] (2136)IsAdmin:True
+2026-04-22 17:00:25.411; Info; Redemption; 36444; 1] (2231)[AppService.DoPromotion(30)] Begin
+2026-04-22 17:00:25.413; Info; Redemption; 36444; 1] (2233)[AppService.InitPromotion(215)] ProductLine Value=NB, Status=True
+2026-04-22 17:00:25.413; Info; Redemption; 36444; 1] (2233)[AppService.InitPromotion(227)] Subbrand Value=ROG, Status=True
+2026-04-22 17:00:25.413; Info; Redemption; 36444; 1] (2233)[AppService.InitPromotion(242)] SystemManufacturer=ASUSTeK COMPUTER INC., Status=False
+2026-04-22 17:00:25.414; Info; Redemption; 36444; 1] (2234)[AppService.InitPromotion(259)] isAcceptablePL=True, isAcceptableSB=True, isAcceptableGamingDT=False, PrivacyPolicy=True, isGamingProduct=True, DeveloperModeEnabled=False
+2026-04-22 17:00:25.414; Info; Redemption; 36444; 1] (2234)[AppService.InitPromotion(278)] RedeemEntry: PN=Routine, SN=M5NRKD028966197, API=AdobeEvent, Source=Background
+2026-04-22 17:00:25.437; Info; ROGID; 36444; 1] (2257)[ROGID.ROGIDService.SSO]SSO Module Init Status : True
+2026-04-22 17:00:25.821; Critical; Redemption; 36444; 10] (2641)[CountryCode.GetCountryCode(86)] GetCountryCode: NL
+2026-04-22 17:00:25.821; Info; Redemption; 36444; 10] (2641)[PromotionTask.PollingTimerUpdate(629)] PollingTimerUpdate: PollingTimer=604800000, Weeks=9, RequestCounter=4, Trigger=Background
+2026-04-22 17:00:25.821; Info; Redemption; 36444; 10] (2641)[PromotionTask.DoPromotionAppServiceTask(347)] DoPromotionAppServiceTask - TimeChecker(Before) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/22/2026 4:16:23 PM, 1/1/0001 3:00:00 AM, 4/22/2026 5:00:25 PM)
+2026-04-22 17:00:25.821; Info; Redemption; 36444; 10] (2641)[PromotionTask.DoPromotionAppServiceTask(359)] DoPromotionAppServiceTask - TimeChecker(After) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/22/2026 4:16:23 PM, 1/1/0001 3:00:00 AM, 4/22/2026 5:00:25 PM)
+2026-04-22 17:00:25.826; Info; Redemption; 36444; 9] (2647)[PromotionTask.DoPromotionAppServiceTask(463)] DoPromotionAppServiceTask - Leave. NeedRetry: False, LastPollingTime: 4/22/2026 4:16:23 PM
+2026-04-22 17:00:25.827; Info; Redemption; 36444; 1] (2647)[AppService.DoPromotion(58)] True
+2026-04-22 17:00:25.827; Info; Redemption; 36444; 1] (2647)[AppService.DoPromotion(79)] End
+2026-04-22 17:00:25.890; Info; Redemption; 36444; 12] (2710)[AppService.DoPromotion(30)] Begin
+2026-04-22 17:00:25.890; Info; Redemption; 36444; 12] (2710)[AppService.InitPromotion(215)] ProductLine Value=NB, Status=True
+2026-04-22 17:00:25.891; Info; Redemption; 36444; 12] (2710)[AppService.InitPromotion(227)] Subbrand Value=ROG, Status=True
+2026-04-22 17:00:25.891; Info; Redemption; 36444; 12] (2710)[AppService.InitPromotion(242)] SystemManufacturer=ASUSTeK COMPUTER INC., Status=False
+2026-04-22 17:00:25.891; Info; Redemption; 36444; 12] (2710)[AppService.InitPromotion(259)] isAcceptablePL=True, isAcceptableSB=True, isAcceptableGamingDT=False, PrivacyPolicy=True, isGamingProduct=True, DeveloperModeEnabled=False
+2026-04-22 17:00:25.891; Info; Redemption; 36444; 12] (2710)[AppService.InitPromotion(278)] RedeemEntry: PN=Routine, SN=M5NRKD028966197, API=NormalEvent, Source=Background
+2026-04-22 17:00:25.972; Critical; Redemption; 36444; 14] (2791)[CountryCode.GetCountryCode(86)] GetCountryCode: NL
+2026-04-22 17:00:25.972; Info; Redemption; 36444; 14] (2791)[PromotionTask.PollingTimerUpdate(629)] PollingTimerUpdate: PollingTimer=604800000, Weeks=9, RequestCounter=4, Trigger=Background
+2026-04-22 17:00:25.972; Info; Redemption; 36444; 14] (2791)[PromotionTask.DoPromotionAppServiceTask(347)] DoPromotionAppServiceTask - TimeChecker(Before) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/22/2026 4:17:02 PM, 1/1/0001 3:00:00 AM, 4/22/2026 5:00:25 PM)
+2026-04-22 17:00:25.972; Info; Redemption; 36444; 14] (2791)[PromotionTask.DoPromotionAppServiceTask(359)] DoPromotionAppServiceTask - TimeChecker(After) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/22/2026 4:17:02 PM, 1/1/0001 3:00:00 AM, 4/22/2026 5:00:25 PM)
+2026-04-22 17:00:25.979; Info; Redemption; 36444; 13] (2798)[PromotionTask.DoPromotionAppServiceTask(463)] DoPromotionAppServiceTask - Leave. NeedRetry: False, LastPollingTime: 4/22/2026 4:17:02 PM
+2026-04-22 17:00:25.979; Info; Redemption; 36444; 12] (2798)[AppService.DoPromotion(58)] True
+2026-04-22 17:00:25.979; Info; Redemption; 36444; 12] (2798)[AppService.DoPromotion(79)] End
+2026-04-22 17:00:37.780; Info; GameLibraryPlugin; 36444; 12] (14599)[AppService..ctor(19)] Begin
+2026-04-22 17:00:37.780; Info; GameLibraryPlugin; 36444; 12] (14600)[AppService..ctor(27)] End
+2026-04-22 17:07:41.983; System; Armoury Crate; 39496; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 17:07:41.983; System; Armoury Crate; 39496; 2] [4/22/2026 5:07:41 PM]
+2026-04-22 17:07:41.983; System; Armoury Crate; 39496; 2] Armoury Crate Version : 6.4.12.0
+2026-04-22 17:07:41.983; System; Armoury Crate; 39496; 2] OS Version Build : 26200
+2026-04-22 17:07:41.983; System; Armoury Crate; 39496; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 17:07:42.632; Error; UwpDebugOptions; 39496; 1] (657)Failed to read ExceptionList.txt: Could not load file or assembly 'C:\Users\vrudi\AppData\Local\Packages\B9ECED6F.ArmouryCrate_qmba6cd70vzyy\LocalState\ExceptionList.txt'. The system cannot find the file specified.
+2026-04-22 17:07:42.633; Info; UwpAppConfiguration; 39496; 1] (659)DebugProductLineEnabled: False, DebugProductLine: Unknown, DebugBrandLineEnabled: False, DebugBrandLine: Unknown, DebugFeatureSetEnabled: False, DebugFeatureSet: Any, DebugLogEnabled: False, DebugLogLevel: Info, IgnoreOnePackageFlow: False, IgnoredPlugins: 
+2026-04-22 17:07:42.650; Info; DeviceInformationService; 39496; 1] (675)FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE
+2026-04-22 17:07:42.657; Info; CoreServiceManager; 39496; 1] (682)Start FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE spend 13 ms
+2026-04-22 17:07:42.741; Info; ConnectionHandler(Service); 39496; 5] (766)Final version: 1.1
+2026-04-22 17:07:42.788; Info; ConnectionHandler(Service); 39496; 5] (813)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 17:07:42.788; Info; ConnectionHandler(Service); 39496; 5] (814)connected for peer: Service
+2026-04-22 17:07:42.818; Info; ConnectionHandler(UserSession); 39496; 9] (842)Final version: 1.1
+2026-04-22 17:07:42.827; Info; AsusDeviceManager; 39496; 6] (852)MessageType:Device,DeviceType:Notebook,DeviceName:G713QE,DeviceId:, Attributes: (CheckBoxEnable:1)  (DependentAppStatus:0)  (DeviceCount:1)  (DeviceGUID:3F49AD29-52D9-46A5-A608-203D54E7D12A)  (DeviceIndex:0)  (DisplayName:G713QE)  (FirstPluginNeedUpdate:0)  (InfoIconEnable:0)  (LightingMode:SUPPORTAURA)  (LinkToDeviceEnable:0)  (LocalFrameworkVersion:4.2.4.8)  (LocalHtmlVersion:0)  (LocalMainSDKVersion:2.01.52)  (LocalSDKVersion:0)  (NeedRestart:false)  (PIDMode:0)  (PartNumber_90:90NR05F2-M01710)  (ProductLine:ROG_Laptop)  (ServerFrameworkVersion:4.2.4.13)  (ServerHtmlVersion:0)  (ServerMainSDKVersion:2.01.56)  (ServerSDKVersion:0)  (SupportCreator:true) 
+2026-04-22 17:07:42.831; Info; ConnectionHandler(UserSession); 39496; 9] (857)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 17:07:42.831; Info; CoreServiceManager; 39496; 1] (857)Start ArmouryCrate.Console.Uwp.Core.Services.CoreStreamService spend 174 ms
+2026-04-22 17:07:42.831; Info; ConnectionHandler(UserSession); 39496; 9] (857)connected for peer: UserSession
+2026-04-22 17:07:42.832; Info; CoreServiceManager; 39496; 1] (857)Start ArmouryCrate.Console.Uwp.Core.Services.SettingsService spend 1 ms
+2026-04-22 17:07:42.832; Info; CoreServiceManager; 39496; 1] (857)Start ArmouryCrate.Console.Uwp.Core.Services.VisualService spend 0 ms
+2026-04-22 17:07:42.832; Info; CoreServiceManager; 39496; 1] (857)Start ArmouryCrate.Console.Uwp.Core.Services.ROGIDService spend 0 ms
+2026-04-22 17:07:42.846; Info; CoreServiceManager; 39496; 1] (871)Start ArmouryCrate.Console.Uwp.Core.Services.DataCollectionService spend 13 ms
+2026-04-22 17:07:42.846; Info; CoreServiceManager; 39496; 1] (871)Start ArmouryCrate.Console.Uwp.Core.Services.PromotionService spend 0 ms
+2026-04-22 17:07:42.847; Info; CoreServiceManager; 39496; 1] (872)Start ArmouryCrate.Console.Uwp.Core.Services.PrivacyPolicyService spend 1 ms
+2026-04-22 17:07:42.851; Info; BackgroundTaskService; 39496; 1] (876)Skipping StartAsync because it's running in a background context.
+2026-04-22 17:07:42.851; Info; CoreServiceManager; 39496; 1] (876)Start ArmouryCrate.Console.Uwp.Core.Services.BackgroundTaskService spend 4 ms
+2026-04-22 17:07:42.851; Info; CoreServiceManager; 39496; 1] (876)Get theme from previous recrod => ROG
+2026-04-22 17:07:42.851; Info; CoreServiceManager; 39496; 1] (876)GetTheme... ROG
+2026-04-22 17:07:42.851; Info; App; 39496; 1] (876)DeveloperMode:NotSet
+2026-04-22 17:07:42.858; Info; App; 39496; 1] (882)IsAdmin:True
+2026-04-22 17:07:42.939; Info; Redemption; 39496; 1] (964)[AppService.DoPromotion(30)] Begin
+2026-04-22 17:07:42.941; Info; Redemption; 39496; 1] (966)[AppService.InitPromotion(215)] ProductLine Value=NB, Status=True
+2026-04-22 17:07:42.941; Info; Redemption; 39496; 1] (966)[AppService.InitPromotion(227)] Subbrand Value=ROG, Status=True
+2026-04-22 17:07:42.941; Info; Redemption; 39496; 1] (966)[AppService.InitPromotion(242)] SystemManufacturer=ASUSTeK COMPUTER INC., Status=False
+2026-04-22 17:07:42.942; Info; Redemption; 39496; 1] (967)[AppService.InitPromotion(259)] isAcceptablePL=True, isAcceptableSB=True, isAcceptableGamingDT=False, PrivacyPolicy=True, isGamingProduct=True, DeveloperModeEnabled=False
+2026-04-22 17:07:42.942; Info; Redemption; 39496; 1] (967)[AppService.InitPromotion(278)] RedeemEntry: PN=Routine, SN=M5NRKD028966197, API=AdobeEvent, Source=Background
+2026-04-22 17:07:42.963; Info; ROGID; 39496; 1] (988)[ROGID.ROGIDService.SSO]SSO Module Init Status : True
+2026-04-22 17:07:43.339; Critical; Redemption; 39496; 2] (1364)[CountryCode.GetCountryCode(86)] GetCountryCode: NL
+2026-04-22 17:07:43.339; Info; Redemption; 39496; 2] (1364)[PromotionTask.PollingTimerUpdate(629)] PollingTimerUpdate: PollingTimer=604800000, Weeks=9, RequestCounter=4, Trigger=Background
+2026-04-22 17:07:43.339; Info; Redemption; 39496; 2] (1364)[PromotionTask.DoPromotionAppServiceTask(347)] DoPromotionAppServiceTask - TimeChecker(Before) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/22/2026 4:16:23 PM, 1/1/0001 3:00:00 AM, 4/22/2026 5:07:43 PM)
+2026-04-22 17:07:43.339; Info; Redemption; 39496; 2] (1364)[PromotionTask.DoPromotionAppServiceTask(359)] DoPromotionAppServiceTask - TimeChecker(After) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/22/2026 4:16:23 PM, 1/1/0001 3:00:00 AM, 4/22/2026 5:07:43 PM)
+2026-04-22 17:07:43.345; Info; Redemption; 39496; 6] (1370)[PromotionTask.DoPromotionAppServiceTask(463)] DoPromotionAppServiceTask - Leave. NeedRetry: False, LastPollingTime: 4/22/2026 4:16:23 PM
+2026-04-22 17:07:43.345; Info; Redemption; 39496; 1] (1370)[AppService.DoPromotion(58)] True
+2026-04-22 17:07:43.345; Info; Redemption; 39496; 1] (1370)[AppService.DoPromotion(79)] End
+2026-04-22 17:07:43.407; Info; Redemption; 39496; 12] (1432)[AppService.DoPromotion(30)] Begin
+2026-04-22 17:07:43.408; Info; Redemption; 39496; 12] (1433)[AppService.InitPromotion(215)] ProductLine Value=NB, Status=True
+2026-04-22 17:07:43.408; Info; Redemption; 39496; 12] (1433)[AppService.InitPromotion(227)] Subbrand Value=ROG, Status=True
+2026-04-22 17:07:43.408; Info; Redemption; 39496; 12] (1433)[AppService.InitPromotion(242)] SystemManufacturer=ASUSTeK COMPUTER INC., Status=False
+2026-04-22 17:07:43.408; Info; Redemption; 39496; 12] (1433)[AppService.InitPromotion(259)] isAcceptablePL=True, isAcceptableSB=True, isAcceptableGamingDT=False, PrivacyPolicy=True, isGamingProduct=True, DeveloperModeEnabled=False
+2026-04-22 17:07:43.408; Info; Redemption; 39496; 12] (1433)[AppService.InitPromotion(278)] RedeemEntry: PN=Routine, SN=M5NRKD028966197, API=NormalEvent, Source=Background
+2026-04-22 17:07:43.488; Critical; Redemption; 39496; 14] (1513)[CountryCode.GetCountryCode(86)] GetCountryCode: NL
+2026-04-22 17:07:43.488; Info; Redemption; 39496; 14] (1513)[PromotionTask.PollingTimerUpdate(629)] PollingTimerUpdate: PollingTimer=604800000, Weeks=9, RequestCounter=4, Trigger=Background
+2026-04-22 17:07:43.488; Info; Redemption; 39496; 14] (1513)[PromotionTask.DoPromotionAppServiceTask(347)] DoPromotionAppServiceTask - TimeChecker(Before) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/22/2026 4:17:02 PM, 1/1/0001 3:00:00 AM, 4/22/2026 5:07:43 PM)
+2026-04-22 17:07:43.488; Info; Redemption; 39496; 14] (1513)[PromotionTask.DoPromotionAppServiceTask(359)] DoPromotionAppServiceTask - TimeChecker(After) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/22/2026 4:17:02 PM, 1/1/0001 3:00:00 AM, 4/22/2026 5:07:43 PM)
+2026-04-22 17:07:43.494; Info; Redemption; 39496; 14] (1519)[PromotionTask.DoPromotionAppServiceTask(463)] DoPromotionAppServiceTask - Leave. NeedRetry: False, LastPollingTime: 4/22/2026 4:17:02 PM
+2026-04-22 17:07:43.494; Info; Redemption; 39496; 12] (1519)[AppService.DoPromotion(58)] True
+2026-04-22 17:07:43.494; Info; Redemption; 39496; 12] (1519)[AppService.DoPromotion(79)] End
+2026-04-22 17:07:53.564; Info; GameLibraryPlugin; 39496; 6] (11589)[AppService..ctor(19)] Begin
+2026-04-22 17:07:53.565; Info; GameLibraryPlugin; 39496; 6] (11590)[AppService..ctor(27)] End
+2026-04-22 18:33:25.241; System; Armoury Crate; 40272; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 18:33:25.241; System; Armoury Crate; 40272; 2] [4/22/2026 6:33:25 PM]
+2026-04-22 18:33:25.241; System; Armoury Crate; 40272; 2] Armoury Crate Version : 6.4.12.0
+2026-04-22 18:33:25.241; System; Armoury Crate; 40272; 2] OS Version Build : 26200
+2026-04-22 18:33:25.241; System; Armoury Crate; 40272; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 18:33:36.147; Error; UwpDebugOptions; 40272; 1] (10939)Failed to read ExceptionList.txt: Could not load file or assembly 'C:\Users\vrudi\AppData\Local\Packages\B9ECED6F.ArmouryCrate_qmba6cd70vzyy\LocalState\ExceptionList.txt'. The system cannot find the file specified.
+2026-04-22 18:33:36.151; Info; UwpAppConfiguration; 40272; 1] (10943)DebugProductLineEnabled: False, DebugProductLine: Unknown, DebugBrandLineEnabled: False, DebugBrandLine: Unknown, DebugFeatureSetEnabled: False, DebugFeatureSet: Any, DebugLogEnabled: False, DebugLogLevel: Info, IgnoreOnePackageFlow: False, IgnoredPlugins: 
+2026-04-22 18:33:36.199; Info; DeviceInformationService; 40272; 1] (10991)FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE
+2026-04-22 18:33:36.215; Info; CoreServiceManager; 40272; 1] (11007)Start FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE spend 31 ms
+2026-04-22 18:33:36.338; Info; ConnectionHandler(Service); 40272; 5] (11130)Final version: 1.1
+2026-04-22 18:33:36.465; Info; ConnectionHandler(Service); 40272; 5] (11256)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 18:33:36.467; Info; ConnectionHandler(Service); 40272; 5] (11258)connected for peer: Service
+2026-04-22 18:33:36.473; Info; ConnectionHandler(UserSession); 40272; 8] (11264)Final version: 1.1
+2026-04-22 18:33:36.517; Info; AsusDeviceManager; 40272; 7] (11309)MessageType:Device,DeviceType:Notebook,DeviceName:G713QE,DeviceId:, Attributes: (CheckBoxEnable:1)  (DependentAppStatus:0)  (DeviceCount:1)  (DeviceGUID:3F49AD29-52D9-46A5-A608-203D54E7D12A)  (DeviceIndex:0)  (DisplayName:G713QE)  (FirstPluginNeedUpdate:0)  (InfoIconEnable:0)  (LightingMode:SUPPORTAURA)  (LinkToDeviceEnable:0)  (LocalFrameworkVersion:4.2.4.8)  (LocalHtmlVersion:0)  (LocalMainSDKVersion:2.01.52)  (LocalSDKVersion:0)  (NeedRestart:false)  (PIDMode:0)  (PartNumber_90:90NR05F2-M01710)  (ProductLine:ROG_Laptop)  (ServerFrameworkVersion:4.2.4.13)  (ServerHtmlVersion:0)  (ServerMainSDKVersion:2.01.56)  (ServerSDKVersion:0)  (SupportCreator:true) 
+2026-04-22 18:33:36.517; Info; ConnectionHandler(UserSession); 40272; 8] (11309)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 18:33:36.517; Info; CoreServiceManager; 40272; 1] (11309)Start ArmouryCrate.Console.Uwp.Core.Services.CoreStreamService spend 302 ms
+2026-04-22 18:33:36.517; Info; ConnectionHandler(UserSession); 40272; 8] (11309)connected for peer: UserSession
+2026-04-22 18:33:36.518; Info; CoreServiceManager; 40272; 1] (11309)Start ArmouryCrate.Console.Uwp.Core.Services.SettingsService spend 0 ms
+2026-04-22 18:33:36.518; Info; CoreServiceManager; 40272; 1] (11309)Start ArmouryCrate.Console.Uwp.Core.Services.VisualService spend 0 ms
+2026-04-22 18:33:36.518; Info; CoreServiceManager; 40272; 1] (11309)Start ArmouryCrate.Console.Uwp.Core.Services.ROGIDService spend 0 ms
+2026-04-22 18:33:36.518; Info; CoreServiceManager; 40272; 1] (11310)Start ArmouryCrate.Console.Uwp.Core.Services.DataCollectionService spend 0 ms
+2026-04-22 18:33:36.518; Info; CoreServiceManager; 40272; 1] (11310)Start ArmouryCrate.Console.Uwp.Core.Services.PromotionService spend 0 ms
+2026-04-22 18:33:36.520; Info; CoreServiceManager; 40272; 1] (11312)Start ArmouryCrate.Console.Uwp.Core.Services.PrivacyPolicyService spend 2 ms
+2026-04-22 18:33:36.526; Info; BackgroundTaskService; 40272; 1] (11317)Skipping StartAsync because it's running in a background context.
+2026-04-22 18:33:36.526; Info; CoreServiceManager; 40272; 1] (11317)Start ArmouryCrate.Console.Uwp.Core.Services.BackgroundTaskService spend 6 ms
+2026-04-22 18:33:36.526; Info; CoreServiceManager; 40272; 1] (11317)Get theme from previous recrod => ROG
+2026-04-22 18:33:36.526; Info; CoreServiceManager; 40272; 1] (11317)GetTheme... ROG
+2026-04-22 18:33:36.526; Info; App; 40272; 1] (11317)DeveloperMode:NotSet
+2026-04-22 18:33:36.536; Info; App; 40272; 1] (11328)IsAdmin:True
+2026-04-22 18:33:36.725; Info; Redemption; 40272; 1] (11516)[AppService.DoPromotion(30)] Begin
+2026-04-22 18:33:36.728; Info; Redemption; 40272; 1] (11520)[AppService.InitPromotion(215)] ProductLine Value=NB, Status=True
+2026-04-22 18:33:36.729; Info; Redemption; 40272; 1] (11520)[AppService.InitPromotion(227)] Subbrand Value=ROG, Status=True
+2026-04-22 18:33:36.742; Info; Redemption; 40272; 1] (11534)[AppService.InitPromotion(242)] SystemManufacturer=ASUSTeK COMPUTER INC., Status=False
+2026-04-22 18:33:36.743; Info; Redemption; 40272; 1] (11535)[AppService.InitPromotion(259)] isAcceptablePL=True, isAcceptableSB=True, isAcceptableGamingDT=False, PrivacyPolicy=True, isGamingProduct=True, DeveloperModeEnabled=False
+2026-04-22 18:33:36.743; Info; Redemption; 40272; 1] (11535)[AppService.InitPromotion(278)] RedeemEntry: PN=Routine, SN=M5NRKD028966197, API=AdobeEvent, Source=Background
+2026-04-22 18:33:36.879; Info; ROGID; 40272; 1] (11670)[ROGID.ROGIDService.SSO]SSO Module Init Status : True
+2026-04-22 18:33:37.465; Critical; Redemption; 40272; 6] (12257)[CountryCode.GetCountryCode(86)] GetCountryCode: NL
+2026-04-22 18:33:37.466; Info; Redemption; 40272; 6] (12257)[PromotionTask.PollingTimerUpdate(629)] PollingTimerUpdate: PollingTimer=604800000, Weeks=9, RequestCounter=4, Trigger=Background
+2026-04-22 18:33:37.466; Info; Redemption; 40272; 6] (12257)[PromotionTask.DoPromotionAppServiceTask(347)] DoPromotionAppServiceTask - TimeChecker(Before) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/22/2026 4:16:23 PM, 1/1/0001 3:00:00 AM, 4/22/2026 6:33:37 PM)
+2026-04-22 18:33:37.466; Info; Redemption; 40272; 6] (12257)[PromotionTask.DoPromotionAppServiceTask(359)] DoPromotionAppServiceTask - TimeChecker(After) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/22/2026 4:16:23 PM, 1/1/0001 3:00:00 AM, 4/22/2026 6:33:37 PM)
+2026-04-22 18:33:37.476; Info; Redemption; 40272; 10] (12267)[PromotionTask.DoPromotionAppServiceTask(463)] DoPromotionAppServiceTask - Leave. NeedRetry: False, LastPollingTime: 4/22/2026 4:16:23 PM
+2026-04-22 18:33:37.476; Info; Redemption; 40272; 1] (12268)[AppService.DoPromotion(58)] True
+2026-04-22 18:33:37.476; Info; Redemption; 40272; 1] (12268)[AppService.DoPromotion(79)] End
+2026-04-22 18:33:38.131; Info; Redemption; 40272; 6] (12923)[AppService.DoPromotion(30)] Begin
+2026-04-22 18:33:38.132; Info; Redemption; 40272; 6] (12923)[AppService.InitPromotion(215)] ProductLine Value=NB, Status=True
+2026-04-22 18:33:38.132; Info; Redemption; 40272; 6] (12923)[AppService.InitPromotion(227)] Subbrand Value=ROG, Status=True
+2026-04-22 18:33:38.132; Info; Redemption; 40272; 6] (12923)[AppService.InitPromotion(242)] SystemManufacturer=ASUSTeK COMPUTER INC., Status=False
+2026-04-22 18:33:38.132; Info; Redemption; 40272; 6] (12923)[AppService.InitPromotion(259)] isAcceptablePL=True, isAcceptableSB=True, isAcceptableGamingDT=False, PrivacyPolicy=True, isGamingProduct=True, DeveloperModeEnabled=False
+2026-04-22 18:33:38.132; Info; Redemption; 40272; 6] (12923)[AppService.InitPromotion(278)] RedeemEntry: PN=Routine, SN=M5NRKD028966197, API=NormalEvent, Source=Background
+2026-04-22 18:33:38.221; Critical; Redemption; 40272; 12] (13012)[CountryCode.GetCountryCode(86)] GetCountryCode: NL
+2026-04-22 18:33:38.221; Info; Redemption; 40272; 12] (13013)[PromotionTask.PollingTimerUpdate(629)] PollingTimerUpdate: PollingTimer=604800000, Weeks=9, RequestCounter=4, Trigger=Background
+2026-04-22 18:33:38.221; Info; Redemption; 40272; 12] (13013)[PromotionTask.DoPromotionAppServiceTask(347)] DoPromotionAppServiceTask - TimeChecker(Before) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/22/2026 4:17:02 PM, 1/1/0001 3:00:00 AM, 4/22/2026 6:33:38 PM)
+2026-04-22 18:33:38.221; Info; Redemption; 40272; 12] (13013)[PromotionTask.DoPromotionAppServiceTask(359)] DoPromotionAppServiceTask - TimeChecker(After) (LastServerPolling, ErrorRetryTimeOut, Now)=(4/22/2026 4:17:02 PM, 1/1/0001 3:00:00 AM, 4/22/2026 6:33:38 PM)
+2026-04-22 18:33:38.231; Info; Redemption; 40272; 2] (13023)[PromotionTask.DoPromotionAppServiceTask(463)] DoPromotionAppServiceTask - Leave. NeedRetry: False, LastPollingTime: 4/22/2026 4:17:02 PM
+2026-04-22 18:33:38.232; Info; Redemption; 40272; 6] (13023)[AppService.DoPromotion(58)] True
+2026-04-22 18:33:38.232; Info; Redemption; 40272; 6] (13023)[AppService.DoPromotion(79)] End
+2026-04-22 18:33:42.320; Info; GameLibraryPlugin; 40272; 1] (17112)[AppService..ctor(19)] Begin
+2026-04-22 18:33:42.320; Info; GameLibraryPlugin; 40272; 1] (17112)[AppService..ctor(27)] End
+2026-04-22 19:24:56.723; System; Armoury Crate; 41948; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 19:24:56.723; System; Armoury Crate; 41948; 2] [4/22/2026 7:24:56 PM]
+2026-04-22 19:24:56.723; System; Armoury Crate; 41948; 2] Armoury Crate Version : 6.4.12.0
+2026-04-22 19:24:56.723; System; Armoury Crate; 41948; 2] OS Version Build : 26200
+2026-04-22 19:24:56.723; System; Armoury Crate; 41948; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 19:24:57.295; Error; UwpDebugOptions; 41948; 1] (577)Failed to read ExceptionList.txt: Could not load file or assembly 'C:\Users\vrudi\AppData\Local\Packages\B9ECED6F.ArmouryCrate_qmba6cd70vzyy\LocalState\ExceptionList.txt'. The system cannot find the file specified.
+2026-04-22 19:24:57.297; Info; UwpAppConfiguration; 41948; 1] (579)DebugProductLineEnabled: False, DebugProductLine: Unknown, DebugBrandLineEnabled: False, DebugBrandLine: Unknown, DebugFeatureSetEnabled: False, DebugFeatureSet: Any, DebugLogEnabled: False, DebugLogLevel: Info, IgnoreOnePackageFlow: False, IgnoredPlugins: 
+2026-04-22 19:24:57.312; Info; DeviceInformationService; 41948; 1] (595)FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE
+2026-04-22 19:24:57.318; Info; CoreServiceManager; 41948; 1] (601)Start FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE spend 12 ms
+2026-04-22 19:24:57.373; Info; ConnectionHandler(Service); 41948; 5] (655)Final version: 1.1
+2026-04-22 19:24:57.426; Info; ConnectionHandler(Service); 41948; 5] (709)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 19:24:57.426; Info; ConnectionHandler(Service); 41948; 5] (709)connected for peer: Service
+2026-04-22 19:24:57.431; Info; ConnectionHandler(UserSession); 41948; 8] (713)Final version: 1.1
+2026-04-22 19:24:57.438; Info; AsusDeviceManager; 41948; 6] (721)MessageType:Device,DeviceType:Notebook,DeviceName:G713QE,DeviceId:, Attributes: (CheckBoxEnable:1)  (DependentAppStatus:0)  (DeviceCount:1)  (DeviceGUID:3F49AD29-52D9-46A5-A608-203D54E7D12A)  (DeviceIndex:0)  (DisplayName:G713QE)  (FirstPluginNeedUpdate:0)  (InfoIconEnable:0)  (LightingMode:SUPPORTAURA)  (LinkToDeviceEnable:0)  (LocalFrameworkVersion:4.2.4.8)  (LocalHtmlVersion:0)  (LocalMainSDKVersion:2.01.52)  (LocalSDKVersion:0)  (NeedRestart:false)  (PIDMode:0)  (PartNumber_90:90NR05F2-M01710)  (ProductLine:ROG_Laptop)  (ServerFrameworkVersion:4.2.4.13)  (ServerHtmlVersion:0)  (ServerMainSDKVersion:2.01.56)  (ServerSDKVersion:0)  (SupportCreator:true) 
+2026-04-22 19:24:57.446; Info; ConnectionHandler(UserSession); 41948; 8] (729)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 19:24:57.446; Info; CoreServiceManager; 41948; 1] (729)Start ArmouryCrate.Console.Uwp.Core.Services.CoreStreamService spend 129 ms
+2026-04-22 19:24:57.446; Info; ConnectionHandler(UserSession); 41948; 8] (729)connected for peer: UserSession
+2026-04-22 19:24:57.447; Info; CoreServiceManager; 41948; 1] (729)Start ArmouryCrate.Console.Uwp.Core.Services.SettingsService spend 0 ms
+2026-04-22 19:24:57.447; Info; CoreServiceManager; 41948; 1] (729)Start ArmouryCrate.Console.Uwp.Core.Services.VisualService spend 0 ms
+2026-04-22 19:24:57.447; Info; CoreServiceManager; 41948; 1] (729)Start ArmouryCrate.Console.Uwp.Core.Services.ROGIDService spend 0 ms
+2026-04-22 19:24:57.447; Info; CoreServiceManager; 41948; 1] (730)Start ArmouryCrate.Console.Uwp.Core.Services.DataCollectionService spend 0 ms
+2026-04-22 19:24:57.447; Info; CoreServiceManager; 41948; 1] (730)Start ArmouryCrate.Console.Uwp.Core.Services.PromotionService spend 0 ms
+2026-04-22 19:24:57.448; Info; CoreServiceManager; 41948; 1] (731)Start ArmouryCrate.Console.Uwp.Core.Services.PrivacyPolicyService spend 1 ms
+2026-04-22 19:24:57.454; Info; BackgroundTaskService; 41948; 1] (737)Skipping StartAsync because it's running in a background context.
+2026-04-22 19:24:57.455; Info; CoreServiceManager; 41948; 1] (737)Start ArmouryCrate.Console.Uwp.Core.Services.BackgroundTaskService spend 6 ms
+2026-04-22 19:24:57.455; Info; CoreServiceManager; 41948; 1] (737)Get theme from previous recrod => ROG
+2026-04-22 19:24:57.455; Info; CoreServiceManager; 41948; 1] (737)GetTheme... ROG
+2026-04-22 19:24:57.455; Info; App; 41948; 1] (737)DeveloperMode:NotSet
+2026-04-22 19:24:57.461; Info; App; 41948; 1] (744)IsAdmin:True
+2026-04-22 19:24:57.653; Info; GameLibraryPlugin; 41948; 1] (936)[AppService..ctor(19)] Begin
+2026-04-22 19:24:57.654; Info; GameLibraryPlugin; 41948; 1] (937)[AppService..ctor(27)] End
+2026-04-22 22:14:30.937; System; Armoury Crate; 37528; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 22:14:30.937; System; Armoury Crate; 37528; 2] [4/22/2026 10:14:30 PM]
+2026-04-22 22:14:30.937; System; Armoury Crate; 37528; 2] Armoury Crate Version : 6.4.12.0
+2026-04-22 22:14:30.937; System; Armoury Crate; 37528; 2] OS Version Build : 26200
+2026-04-22 22:14:30.937; System; Armoury Crate; 37528; 2] ----------------------------------------------------------------------------------------------------
+2026-04-22 22:14:31.546; Error; UwpDebugOptions; 37528; 1] (617)Failed to read ExceptionList.txt: Could not load file or assembly 'C:\Users\vrudi\AppData\Local\Packages\B9ECED6F.ArmouryCrate_qmba6cd70vzyy\LocalState\ExceptionList.txt'. The system cannot find the file specified.
+2026-04-22 22:14:31.548; Info; UwpAppConfiguration; 37528; 1] (620)DebugProductLineEnabled: False, DebugProductLine: Unknown, DebugBrandLineEnabled: False, DebugBrandLine: Unknown, DebugFeatureSetEnabled: False, DebugFeatureSet: Any, DebugLogEnabled: False, DebugLogLevel: Info, IgnoreOnePackageFlow: False, IgnoredPlugins: 
+2026-04-22 22:14:31.584; Info; DeviceInformationService; 37528; 1] (655)FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE
+2026-04-22 22:14:31.591; Info; CoreServiceManager; 37528; 1] (662)Start FeatureSet : Core, Playground, Assistants, Contents 、 ProductLine : NB 、 BrandLine : ROG 、 TUFStyle : Default 、 ModelName : G713QE 、 MarketingName : ROG Strix G713QE_G713QE 、 SystemSerialNumber : M5NRKD028966197 、 BaseBoardSerialNumber : 5T15MC00G1 、 SystemManufacturer : ASUSTeK COMPUTER INC. 、 BaseBoardManufacturer : ASUSTeK COMPUTER INC. 、 SystemDeviceUUID : d08228c3-b9b6-4ac8-be60-d883d3dd126d 、 SystemFamilyName : ROG Strix 、 SystemPartNumber : 90NR05F2-M01710 、 BIOSYear : 0 、 BIOSYearType : 0 、 PartnerBrand : None 、 HostDisplayName : G713QE spend 25 ms
+2026-04-22 22:14:31.683; Info; ConnectionHandler(Service); 37528; 5] (755)Final version: 1.1
+2026-04-22 22:14:31.734; Info; ConnectionHandler(Service); 37528; 5] (812)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 22:14:31.734; Info; ConnectionHandler(Service); 37528; 5] (813)connected for peer: Service
+2026-04-22 22:14:31.744; Info; ConnectionHandler(UserSession); 37528; 8] (818)Final version: 1.1
+2026-04-22 22:14:31.757; Info; AsusDeviceManager; 37528; 7] (828)MessageType:Device,DeviceType:Notebook,DeviceName:G713QE,DeviceId:, Attributes: (CheckBoxEnable:1)  (DependentAppStatus:0)  (DeviceCount:1)  (DeviceGUID:3F49AD29-52D9-46A5-A608-203D54E7D12A)  (DeviceIndex:0)  (DisplayName:G713QE)  (FirstPluginNeedUpdate:0)  (InfoIconEnable:0)  (LightingMode:SUPPORTAURA)  (LinkToDeviceEnable:0)  (LocalFrameworkVersion:4.2.4.8)  (LocalHtmlVersion:0)  (LocalMainSDKVersion:2.01.52)  (LocalSDKVersion:0)  (NeedRestart:false)  (PIDMode:0)  (PartNumber_90:90NR05F2-M01710)  (ProductLine:ROG_Laptop)  (ServerFrameworkVersion:4.2.4.13)  (ServerHtmlVersion:0)  (ServerMainSDKVersion:2.01.56)  (ServerSDKVersion:0)  (SupportCreator:true) 
+2026-04-22 22:14:31.766; Info; ConnectionHandler(UserSession); 37528; 8] (837)Own Keep Alive segment: { 20000, 3 }, Other Keep Alive segment: { 20000, 3 }
+2026-04-22 22:14:31.766; Info; CoreServiceManager; 37528; 1] (837)Start ArmouryCrate.Console.Uwp.Core.Services.CoreStreamService spend 175 ms
+2026-04-22 22:14:31.766; Info; ConnectionHandler(UserSession); 37528; 8] (837)connected for peer: UserSession
+2026-04-22 22:14:31.766; Info; CoreServiceManager; 37528; 1] (837)Start ArmouryCrate.Console.Uwp.Core.Services.SettingsService spend 1 ms
+2026-04-22 22:14:31.766; Info; CoreServiceManager; 37528; 1] (837)Start ArmouryCrate.Console.Uwp.Core.Services.VisualService spend 0 ms
+2026-04-22 22:14:31.766; Info; CoreServiceManager; 37528; 1] (837)Start ArmouryCrate.Console.Uwp.Core.Services.ROGIDService spend 0 ms
+2026-04-22 22:14:31.766; Info; CoreServiceManager; 37528; 1] (838)Start ArmouryCrate.Console.Uwp.Core.Services.DataCollectionService spend 0 ms
+2026-04-22 22:14:31.766; Info; CoreServiceManager; 37528; 1] (838)Start ArmouryCrate.Console.Uwp.Core.Services.PromotionService spend 0 ms
+2026-04-22 22:14:31.767; Info; CoreServiceManager; 37528; 1] (838)Start ArmouryCrate.Console.Uwp.Core.Services.PrivacyPolicyService spend 1 ms
+2026-04-22 22:14:31.772; Info; BackgroundTaskService; 37528; 1] (843)Skipping StartAsync because it's running in a background context.
+2026-04-22 22:14:31.772; Info; CoreServiceManager; 37528; 1] (844)Start ArmouryCrate.Console.Uwp.Core.Services.BackgroundTaskService spend 5 ms
+2026-04-22 22:14:31.772; Info; CoreServiceManager; 37528; 1] (844)Get theme from previous recrod => ROG
+2026-04-22 22:14:31.772; Info; CoreServiceManager; 37528; 1] (844)GetTheme... ROG
+2026-04-22 22:14:31.772; Info; App; 37528; 1] (844)DeveloperMode:NotSet
+2026-04-22 22:14:31.776; Info; App; 37528; 1] (850)IsAdmin:True
+2026-04-22 22:14:31.966; Info; GameLibraryPlugin; 37528; 1] (1041)[AppService..ctor(19)] Begin
+2026-04-22 22:14:31.966; Info; GameLibraryPlugin; 37528; 1] (1042)[AppService..ctor(27)] End

@@ -1,0 +1,64 @@
+name: Product Ready Gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "codex/**"
+  workflow_dispatch:
+
+jobs:
+  focused-release:
+    name: Focused Release Check
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Run focused release gate
+        shell: pwsh
+        run: >
+          powershell -ExecutionPolicy Bypass -File .\scripts\release_check.ps1
+          -Root Si
+          -SkipFullPytest
+          -SkipDocker
+          -SkipPerformance
+          -SkipRestore
+          -SkipBrowser
+
+  browser-smoke:
+    name: Browser Smoke
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev,browser]"
+
+      - name: Install Playwright browser
+        run: python -m playwright install chromium
+
+      - name: Run browser smoke
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File .\scripts\browser_smoke.ps1 -Root Si

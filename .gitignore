@@ -2,6 +2,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
+.tmp/
+.automation-tmp/
 .venv/
 .vendor/
 
@@ -24,4 +26,7 @@ apps/ui/.next/
 local.db
 local.db-journal
 .smoke-local/
+.smoke-*.db
+.smoke-*.db-journal
+.office-cleanup-backup-*/
 *.egg-info/

@@ -1,6 +1,6 @@
 # Product-Ready Execution Plan
 
-Updated: 2026-04-23
+Updated: 2026-05-14
 
 This document is the working execution plan for taking the IMOEX app from a feature-rich operator prototype to a product-ready decision-support system. The priority order is strict:
 
@@ -80,6 +80,7 @@ Exit criteria:
 
 ### P1
 
+- Morning Command Brief for the daily operator ritual.
 - Watchlist upgrade for daily use.
 - Review loop: end-of-day, post-resolution, tagging, drill-downs.
 - Notification explainability.
@@ -92,21 +93,168 @@ Exit criteria:
 - UX compression and keyboard-first polish.
 - Mobile sanity pass.
 
-## Current Tranche
+## Completed Stabilization Work
 
-This tranche is about establishing launch discipline without blocking future UX work.
+The first stabilization pass established the basic product-ready control plane.
 
 - [x] Add a product-readiness execution plan to the repository.
 - [x] Add a machine-readable product-readiness health gate for key operator surfaces.
 - [x] Wire the health gate into the local smoke flow.
-- [ ] Audit degraded states across workspace, signal detail, council, and runtime pages.
-- [ ] Add prompt template versioning and restore points.
-- [ ] Add performance budgets and capture baseline timings for workspace.
+- [x] Audit degraded states across workspace, signal detail, council, and runtime pages.
+- [x] Add prompt template versioning, diff, validation, restore, approval, dismiss, and audit trail.
+- [x] Add the autonomous delivery operating model with Product, Systems Analyst, UI/UX, Engineering, and QA/Release roles.
+- [x] Complete the five-role readiness audit and define the next stabilization tranche.
+
+## Current Tranche
+
+This tranche is `Operator-Ready Beta`. It turns the stabilized control plane into a daily operator workflow that is understandable on first use and repeatable across review cycles.
+
+- [x] Add performance budgets and capture baseline timings for workspace, signal detail, runtime, council, and compare-heavy views.
+- [x] Add release and rollback checklists.
+- [x] Add a single local release-check command that runs the minimum release gates.
+- [x] Add backup restore drill support and verification.
+- [x] Expand product-readiness checks with backup freshness, scheduler health, delivery readiness, migration status, and environment market-data policy.
+- [x] Add browser-level smoke coverage for workspace and runtime prompt governance.
+- [x] Add market-data provider failure circuit-breaker and tighten degraded-mode performance budgets.
+- [x] Add security baseline for admin and runtime-control APIs with product-readiness enforcement.
+- [x] Add runtime-page operator UI for saving and clearing the admin API key locally.
+- [x] Expand browser smoke to cover current price plus day/week/month chart rendering and drag measurement.
+- [x] Add Postgres backup and restore-drill runbook support for production-like deployments.
+- [x] Add CI workflow for focused release checks and browser smoke on product-ready branches.
+- [x] Identify and complete the first low-risk extraction from the large dashboard route module.
+- [x] Enforce staging/production launch policy for fresh live market data and restore-drill evidence.
+- [x] Extract reusable page sidebar rendering into a dedicated dashboard sidebar module.
+- [x] Extract pure market-panel chart helpers into a dedicated dashboard market module.
+- [x] Wire active market-panel HTML rendering through the dedicated dashboard market module.
+- [x] Remove legacy in-file market renderer copies after a green verification pass.
+- [x] Add a small import-boundary check to keep market rendering outside the route module.
+- [x] Extract trust-ribbon rendering into a dedicated dashboard trust module with a boundary check.
+- [x] Extract watchlist rendering into a dedicated dashboard watchlist module with a boundary check.
+- [x] Extract decision timeline and review-bundle rendering into a dedicated dashboard decision module with boundary checks.
+- [x] Extract confidence decomposition and similar-setup rendering into a dedicated dashboard insight module with boundary checks.
+- [x] Extract horizon-comparison and signal-diff rendering into a dedicated dashboard comparison module with boundary checks.
+- [x] Extract workspace root-pulse cards and signal-lane tiles into a dedicated dashboard workspace module with boundary checks.
+- [x] Extract action, journal, and related-signal card rendering into a dedicated dashboard cards module with boundary checks.
+- [x] Extract journal decision-log and journal-tape card rendering into a dedicated dashboard journal module with boundary checks.
+- [x] Extract runtime/control-panel helper rendering into a dedicated dashboard control module with boundary checks.
+- [x] Extract delivery-window and delivery-activity rendering into a dedicated dashboard delivery module with boundary checks.
+- [x] Extract compact dashboard signal-list rendering into a dedicated dashboard signal-list module with boundary checks.
+- [x] Extract workflow-state chip and panel rendering into a dedicated dashboard workflow module with boundary checks.
+- [x] Extract metric, lifecycle timeline, and horizon-pulse visualization rendering into a dedicated dashboard visuals module with boundary checks.
+- [x] Extract quality-pair and journal-filter helper rendering into a dedicated dashboard quality module with boundary checks.
+- [x] Extract surface-state strip rendering into a dedicated dashboard surface module with boundary checks.
+- [x] Extract delivery-activity export serialization into a dedicated dashboard export module with boundary checks.
+- [x] Extract dashboard language cookie/query resolution into a dedicated dashboard language module with boundary checks.
+- [x] Extract dashboard feature-gate enforcement into a dedicated dashboard gate module with boundary checks.
+- [x] Extract page hint copy into a dedicated dashboard page-hints module with boundary checks.
+- [x] Extract page utility shell rendering into a dedicated dashboard page-shell module with boundary checks.
+- [x] Extract delivery snapshot data builders into a dedicated dashboard delivery-data module with boundary checks.
+- [x] Extract workspace snapshot data builders into a dedicated dashboard workspace-data module with boundary checks.
+- [x] Prune route-level delivery data contract imports after data-builder extraction with boundary checks.
+- [x] Extract council role-label mapping into a dedicated dashboard council-data module with boundary checks.
+- [x] Extract reusable council prompt-context text helpers into the dashboard council-data module with boundary checks.
+- [x] Extract runtime prompt approval-state labeling into the dashboard control module with boundary checks.
+- [x] Extract runtime prompt version and preview fallback helpers into the dashboard control module with boundary checks.
+- [x] Extract runtime prompt history rendering into the dashboard control module with boundary checks.
+- [x] Remove obsolete legacy runtime prompt-card renderer after the dedicated renderer path is covered.
+- [x] Start Operator-Ready Beta with daily watchlist queue metadata and UI cards for priority, focus reason, and review state.
+- [x] Add workspace Attention Inbox for the highest-priority signal/root next actions.
+- [x] Add watchlist review actions so the daily queue can be marked reviewed directly from the workspace.
+- [x] Add watchlist filters for review state, root, and signal-linked versus root-level items.
+- [x] Add first-run workspace onboarding and an operator glossary for trust, price, horizons, council roles, stale states, and prompt governance.
+- [x] Expand the workspace review bundle with end-of-day queue counts, watched roots, outcome summaries, tag suggestions, and next review actions.
+- [x] Add lightweight journal tag capture from workspace quick capture and render saved tags in journal cards.
+- [x] Add notification reason trails to delivery activity cards so sent, skipped, and suppressed actions explain why they happened.
+- [x] Confirm browser smoke already covers multi-root and mobile current-price plus day/week/month chart confidence.
+- [x] Add watchlist bulk review and remove-from-queue actions for the currently filtered daily queue.
+- [x] Add browser-local onboarding collapse and dismiss controls so experienced operators can keep the cockpit compact.
+- [x] Polish the watchlist into Today's Operating Queue with start-of-day summary counts and per-item next steps after the Morning Brief.
+- [x] Add a typed Today's Operating Queue workbench snapshot to `/api/v1/workspace` so the daily queue is evidenceable without scraping HTML.
+- [x] Extend delivery activity CSV/JSONL exports with computed reason labels for offline notification review.
+- [x] Add journal tag filters and tag quality drill-downs for the review loop.
+- [x] Run the full Playwright browser smoke against workspace, runtime prompt governance, multi-root switching, and day/week/month chart confidence.
+- [x] Add a private-beta acceptance checklist with evidence-pack requirements and release blockers.
+- [x] Define external alerting expectations for feed loss, stale references, scheduler drift, backup failures, and product-readiness failures.
+- [x] Define a privacy-first product analytics event catalog before adding any telemetry.
+- [x] Add private-beta sales-readiness positioning, demo narrative, support boundaries, and onboarding checklist without pricing or deployment commitments.
+- [x] Add a local private-beta evidence manifest generator so candidate artifacts can be checked without authorizing deployment, pricing, or execution.
+- [x] Add a private-beta release-notes template for accepted warnings, explicit non-goals, support boundaries, rollback, and decision owner.
+- [x] Add a local private-beta candidate evidence wrapper that collects release-check logs, product-readiness/admin snapshots, draft release notes, and an evidence manifest without authorizing launch.
+- [x] Harden draft private-beta candidate generation so non-fatal release-check stderr is logged without aborting zero-exit evidence runs.
+- [x] Add a private-beta evidence validator so draft/full candidate packs can be checked for required artifacts and no-launch/no-pricing/no-order-routing/no-autotrading guardrails.
+- [x] Add behavioral release-gate tests for the private-beta evidence validator, including complete, draft-missing, and forbidden-launch-flag manifests.
+- [x] Tighten private-beta evidence validation so browser smoke, restore drill, and performance baseline artifacts are checked for required content, not just file presence.
+- [x] Add an operator-readable private-beta candidate summary so evidence directories can be reviewed without opening multiple JSON files.
+- [x] Add evidence validation status plus warning/failure rollups to the private-beta candidate summary for faster operator review.
+- [x] Add candidate git revision, working-tree state, and git-status snapshot to private-beta candidate summaries.
+- [x] Add an opt-in clean-git guard to private-beta candidate generation for final candidate approval.
+- [x] Add candidate review status, skipped-gate rollup, and next actions to private-beta candidate summaries.
+- [x] Require a known candidate git revision in full private-beta evidence validation while allowing draft warning mode.
+- [x] Add a candidate-local acceptance checklist draft to private-beta candidate output directories.
+- [x] Prefill candidate-local acceptance checklist drafts with candidate metadata, artifact paths, validation status, and safety flags.
+- [x] Wire candidate-local acceptance checklist drafts into private-beta evidence manifests.
+- [x] Validate that full private-beta evidence includes a candidate-local acceptance checklist prefill and no-authorization safety phrase.
+- [x] Validate that full private-beta release notes are completed and do not contain unresolved template placeholders.
+- [x] Require prepared release notes for full private-beta candidate generation while keeping draft evidence explicit.
+- [x] Validate that full private-beta release notes explicitly confirm every support-boundary item as accepted.
+- [x] Validate that full private-beta release notes include decision status, concrete owner, and UTC decision timestamp.
+- [x] Validate that full private-beta release notes include concrete rollback owner, revision, artifact, stop-owner, and verification coverage.
+- [x] Validate that full private-beta release notes mark every operator walkthrough check as pass.
+- [x] Block draft private-beta evidence if release notes claim the candidate is accepted.
+- [x] Validate that full private-beta release notes record accepted warnings as None or concrete entries.
+- [x] Validate that accepted warning entries include warning, owner, and expiry or follow-up.
+- [x] Validate that full private-beta release notes record a truthful market-data mode.
+- [x] Validate that full private-beta release notes candidate revision matches the evidence manifest.
+- [x] Validate that full private-beta release notes analytics mode matches the evidence manifest.
+- [x] Validate that full private-beta release notes record an explicit Telegram mode.
+- [x] Include Telegram preview JSON in private-beta evidence manifests and validate preview readiness without authorizing sends.
+- [x] Include Telegram ops preview JSON in private-beta evidence manifests and validate alert preview readiness without authorizing sends.
+- [x] Add Telegram delivery and ops preview evidence links to the private-beta release notes template.
+- [x] Validate that full private-beta release notes include concrete Telegram delivery and ops preview evidence links.
+- [x] Start Morning Command Brief with a read-only workspace panel for market truth, top attention, review delta, and do-not-chase warnings.
+- [x] Add a typed Morning Command Brief API contract so `/api/v1/workspace` exposes the daily brief without scraping HTML.
+- [x] Archive and validate the Morning Command Brief workspace snapshot in private-beta evidence so the daily ritual is acceptance-checkable.
+- [x] Add Morning Command Brief visibility to the browser-smoke evidence contract.
+- [x] Align acceptance checklist wording with release-note validation for Workspace snapshot evidence links.
+- [x] Validate Today's Operating Queue workspace snapshot evidence so the daily review workbench is acceptance-checkable.
+- [x] Add Today's Operating Queue visibility to the browser-smoke evidence contract.
+- [x] Block execution-language drift in Morning Command Brief and Today's Operating Queue workspace snapshot evidence.
+- [x] Warn on draft private-beta evidence when release-check evidence is skipped or not green.
+- [x] Add a daily workflow evidence rollup to private-beta candidate summaries so Morning Command Brief and Today's Operating Queue can be reviewed without opening raw JSON.
+- [x] Validate Today's Operating Queue evidence totals against the archived workspace watchlist.
+- [x] Validate Today's Operating Queue item-state counts, first due identity, and next-step shape against the archived workspace watchlist.
+- [x] Classify local browser-smoke permission-denied startup as an explicit release blocker with machine-readable failure output.
+- [x] Expose Morning Command Brief and Today's Operating Queue reconciliation details in private-beta evidence validation JSON.
+- [x] Add daily workflow validation reconciliation flags to private-beta candidate summaries so reviewers can confirm queue evidence without opening validation JSON.
+- [x] Wire browser-smoke headed mode correctly so local permission/startup blockers can be diagnosed without changing release-gate semantics.
+- [x] Keep draft private-beta candidate summaries reviewable when browser smoke fails locally, while preserving full browser smoke as a release blocker.
+- [x] Expose browser-smoke failure code, detail, and completed/planned check counts in private-beta candidate summaries and checklist prefills.
+- [x] Require private-beta evidence manifests, candidate summaries, and checklist prefills to explicitly deny autotrading authorization.
+- [x] Validate archived candidate-summary safety flags when wrapper-generated private-beta evidence includes the operator-readable summary.
+- [x] Harden private-beta candidate wrapper process logging so native commands keep stdout/stderr evidence without shell command-string quoting.
+- [x] Force local private-beta candidate snapshots into non-production hidden-market-data mode so draft evidence stays truthful and does not hang on unavailable live feeds.
+- [x] Align the private-beta acceptance checklist entry point with the no-autotrading evidence guardrails.
+- [x] Fail private-beta candidate generation if final archived checklist or candidate-summary evidence copies are missing.
+- [x] Reject nested execution-authorization flags in archived workspace snapshot evidence.
+- [x] Reject execution-authorization flags in archived Telegram delivery and ops preview evidence.
+- [x] Add a read-only Readiness Next Steps workspace panel and typed API slice for market-data truth, Telegram mode, daily review, and delivery reason-trail gaps.
+- [x] Archive and validate Readiness Next Steps workspace evidence so private-beta reviewers can check required gaps without scraping HTML.
+- [x] Add typed workspace market freshness alerts for hidden or degraded selected-root feed states without execution language.
+- [x] Add browser-smoke and release-note evidence checks for workspace market freshness alerts.
+- [x] Add machine-readable candidate-summary rollups for market freshness alert evidence and validation.
+- [x] Add a read-only `/workspace/market` large-chart view with candles, line, a level map, visible idea corridor/change levels, and hidden-state handling backed only by the existing traceable market snapshot.
+- [x] Move market-chart level text out of candle SVGs into level strips and keep idea corridors/change levels consistent for active directional signals on secondary roots.
+- [x] Simplify the focused `/workspace/market` chart page by removing the global utility shell and duplicate large-chart actions.
+- [x] Clarify Council versus Runtime ownership by replacing the duplicated full runtime panel on Council with a compact read-only context summary and a single Runtime handoff.
+- [x] Bind market-chart corridors to horizon-specific active signals so 1D, 1W, and 1M no longer reuse one identical idea/level set.
+- [x] Replace the duplicate `/workspace/market` levels chart with a dedicated level-map view showing price, entry, target, idea-change line, and distance chips.
+- [x] Surface a market-hours/candle-availability reason when charts are hidden, including local MOEX/FORTS session state and missing timeframe codes instead of a generic hidden message.
 
 ## Immediate Next Steps
 
-1. Degraded-state audit: make every `no data / stale / unavailable` surface explicit and consistent.
-2. Prompt governance v2: version history, diff-before-save, restore point, and validation.
-3. Performance baseline: capture server build cost and front-end polling/render cost for workspace.
-4. Release checklist: define the minimum pre-release verification pack.
+Safe cleanup is now at the point where remaining extractions are no longer obvious low-risk tail work. Further route-module reductions should happen only when they support a product feature or a well-scoped renderer migration with browser coverage.
 
+1. Productization: define packaging, pricing, and deployment only after explicit operator approval.
+2. Private-beta readiness: run the full acceptance checklist and evidence manifest against a non-production candidate build.
+3. Launch hardening: collect external alert destination test evidence once a deployment target is chosen.
+4. Product analytics: implement opt-in/local-only telemetry only after explicit approval and privacy tests.
